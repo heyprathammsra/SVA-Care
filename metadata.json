@@ -1,0 +1,6 @@
+{
+  "name": "Saraswati Vidya Academy — School Nurse Room",
+  "description": "Minimal, fast school nurse room web application for Saraswati Vidya Academy to record student visits, maintain health records, and print daily A4 visit logs backed by Google Sheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

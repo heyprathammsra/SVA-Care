@@ -1,0 +1,2690 @@
+{
+  "db": {
+    "students": [
+      {
+        "student_id": "STU-2026-0001",
+        "full_name": "Ajinkya Balu Gurav",
+        "section": "Sparkle",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0002",
+        "full_name": "Ankita Rangnath Ghige",
+        "section": "Sparkle",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0003",
+        "full_name": "Anushka Balasaheb Jalhare",
+        "section": "Sparkle",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0004",
+        "full_name": "Bhakti Dnyaneshwar Aghav",
+        "section": "Sparkle",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0005",
+        "full_name": "Dhananjay Gajanan Ghuge",
+        "section": "Sparkle",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0006",
+        "full_name": "Divya Raju Rathod",
+        "section": "Sparkle",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0007",
+        "full_name": "Dnyaneshwari Kailas Bhivarkar",
+        "section": "Sparkle",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0008",
+        "full_name": "Gaikawad Prem Narayan",
+        "section": "Sparkle",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0009",
+        "full_name": "Gulshan Vilas Atram",
+        "section": "Sparkle",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0010",
+        "full_name": "Haresh Tarsing Vasave",
+        "section": "Sparkle",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0011",
+        "full_name": "Harshal Shubhash Linge",
+        "section": "Sparkle",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0012",
+        "full_name": "Ishwari Rajaram Ubale",
+        "section": "Sparkle",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0013",
+        "full_name": "Komal Babasaheb Suryvanshi",
+        "section": "Sparkle",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0014",
+        "full_name": "Krish Yogendra Thakare",
+        "section": "Sparkle",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0015",
+        "full_name": "Krushna Amol Dhole",
+        "section": "Sparkle",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0016",
+        "full_name": "Krushna Sarjerao Gaikwad",
+        "section": "Sparkle",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0017",
+        "full_name": "Manyata Navnath More",
+        "section": "Sparkle",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0018",
+        "full_name": "Mukta Navanath Sarang",
+        "section": "Sparkle",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0019",
+        "full_name": "Narayan Pradip Kashid",
+        "section": "Sparkle",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0020",
+        "full_name": "Om Suresh Sadar",
+        "section": "Sparkle",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0021",
+        "full_name": "Parth Amol Faltankar",
+        "section": "Sparkle",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0022",
+        "full_name": "Pooja Purushottam Indore",
+        "section": "Sparkle",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0023",
+        "full_name": "Pragati Chandrakumar Late",
+        "section": "Sparkle",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0024",
+        "full_name": "Pragati Ramprabhu Jadhav",
+        "section": "Sparkle",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0025",
+        "full_name": "Prathmesh Sagar Yawale",
+        "section": "Sparkle",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0026",
+        "full_name": "Rishabh Ranjit Sabale",
+        "section": "Sparkle",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0027",
+        "full_name": "Rudra Uddhav Sanap",
+        "section": "Sparkle",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0028",
+        "full_name": "Sakshi Sandip Nagargoje",
+        "section": "Sparkle",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0029",
+        "full_name": "Shreyas Santosh Bankar",
+        "section": "Sparkle",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0030",
+        "full_name": "Swaraj Ajit Patil",
+        "section": "Sparkle",
+        "roll_number": "30",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0031",
+        "full_name": "Aayush Satish Nalawade",
+        "section": "Twinkle",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0032",
+        "full_name": "Anita Gopal Tengse",
+        "section": "Twinkle",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0033",
+        "full_name": "Ankita Bharat Mulik",
+        "section": "Twinkle",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0034",
+        "full_name": "Antara Manoj Karete",
+        "section": "Twinkle",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0035",
+        "full_name": "Anushka Rajaram Gangurde",
+        "section": "Twinkle",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0036",
+        "full_name": "Bhagyashree Nandkishor Raut",
+        "section": "Twinkle",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0037",
+        "full_name": "Bhakti Gajanan Ingale",
+        "section": "Twinkle",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0038",
+        "full_name": "Eshwari Uttam Desai",
+        "section": "Twinkle",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0039",
+        "full_name": "Harshada Haridas Bahir",
+        "section": "Twinkle",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0040",
+        "full_name": "Manswi Gautam Jamdhade",
+        "section": "Twinkle",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0041",
+        "full_name": "Prabuddha Pritam Nawghare",
+        "section": "Twinkle",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0042",
+        "full_name": "Prachi Gautam Dudhawade",
+        "section": "Twinkle",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0043",
+        "full_name": "Pragati Udhav Hinge",
+        "section": "Twinkle",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0044",
+        "full_name": "Prajakta Ram Thorat",
+        "section": "Twinkle",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0045",
+        "full_name": "Pruthviraj Gajanan Manavatkar",
+        "section": "Twinkle",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0046",
+        "full_name": "Raj Shahaji Mali",
+        "section": "Twinkle",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0047",
+        "full_name": "Sagar Laxman Umap",
+        "section": "Twinkle",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0048",
+        "full_name": "Sahan Mersing Pawara",
+        "section": "Twinkle",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0049",
+        "full_name": "Sai Sukhadev Manjare",
+        "section": "Twinkle",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0050",
+        "full_name": "Sainath Dnyanoba Kale",
+        "section": "Twinkle",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0051",
+        "full_name": "Sanket Yogesh Bhadane",
+        "section": "Twinkle",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0052",
+        "full_name": "Sanskar Vikram Gurnule",
+        "section": "Twinkle",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0053",
+        "full_name": "Sarthak Hanumant Chavan",
+        "section": "Twinkle",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0054",
+        "full_name": "Shraddha Narayan Wandhare",
+        "section": "Twinkle",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0055",
+        "full_name": "Shrijit Vilas Chaukhande",
+        "section": "Twinkle",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0056",
+        "full_name": "Swarali Machhindra Bhashte",
+        "section": "Twinkle",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0057",
+        "full_name": "Tanmay Ram Sangule",
+        "section": "Twinkle",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0058",
+        "full_name": "Tanmay Shivaji Tahakik",
+        "section": "Twinkle",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0059",
+        "full_name": "Ved Bhikaji Jondhale",
+        "section": "Twinkle",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0060",
+        "full_name": "ANAND VISHNU TATAR",
+        "section": "Topaz",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0061",
+        "full_name": "ANAYA VINIT MESHRAM",
+        "section": "Topaz",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0062",
+        "full_name": "ANKITA SANDIP BORKAR",
+        "section": "Topaz",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0063",
+        "full_name": "ARYAN RAMCHANDRA KAMBLE",
+        "section": "Topaz",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0064",
+        "full_name": "BAJRANG AMBADAS PARSAKAR",
+        "section": "Topaz",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0065",
+        "full_name": "CHAITANYA GOVIND KORDE",
+        "section": "Topaz",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0066",
+        "full_name": "DNYANESHWARI BIBHISHAN KOKATE",
+        "section": "Topaz",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0067",
+        "full_name": "GANESH ASHOK SHINDE",
+        "section": "Topaz",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0068",
+        "full_name": "GANESH VIJAY SAIDANE",
+        "section": "Topaz",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0069",
+        "full_name": "GAURI DEVIDAS CHAVAN",
+        "section": "Topaz",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0070",
+        "full_name": "ISHWARI EKNATH JAMGE",
+        "section": "Topaz",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0071",
+        "full_name": "KANISHKA VILAS BANSODE",
+        "section": "Topaz",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0072",
+        "full_name": "KARTIK ASHOK SHINDE",
+        "section": "Topaz",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0073",
+        "full_name": "LAVANYA LAXMAN MORE",
+        "section": "Topaz",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0074",
+        "full_name": "MANGESH GODHAJI NARWADE",
+        "section": "Topaz",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0075",
+        "full_name": "MAYUR DIPAK PATIL",
+        "section": "Topaz",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0076",
+        "full_name": "MOKSHADA RAMA BHALERAO",
+        "section": "Topaz",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0077",
+        "full_name": "NISHA YOGESH CHAVHAN",
+        "section": "Topaz",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0078",
+        "full_name": "PALLAVI SAHEBARAO SHINDE",
+        "section": "Topaz",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0079",
+        "full_name": "PRANAV UTTRESHWAR UBALE",
+        "section": "Topaz",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0080",
+        "full_name": "RAHUL RAMCHANDRA SALUNKE",
+        "section": "Topaz",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0081",
+        "full_name": "ROSHANI PUNAMCHAND PRAJAPATI",
+        "section": "Topaz",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0082",
+        "full_name": "SAI RAMKISHAN CHAVHAN",
+        "section": "Topaz",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0083",
+        "full_name": "SAMARTH BHAGWAT KAKDE",
+        "section": "Topaz",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0084",
+        "full_name": "SANDHYA SANTOSH KUTE",
+        "section": "Topaz",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0085",
+        "full_name": "SANGHARSH DILIPARAO SALVE",
+        "section": "Topaz",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0086",
+        "full_name": "SARTHAK SANDIP MORMARE",
+        "section": "Topaz",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0087",
+        "full_name": "SHIVRAJ RAMCHANDRA DHUMAL",
+        "section": "Topaz",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0088",
+        "full_name": "SHIVTEJ EKNATH CHAVAN",
+        "section": "Topaz",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0089",
+        "full_name": "SHREYA YOGESHKUMAR KANDEKAR",
+        "section": "Topaz",
+        "roll_number": "30",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0090",
+        "full_name": "SHRUTI NARESH PATIL",
+        "section": "Topaz",
+        "roll_number": "31",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0091",
+        "full_name": "SNEHAL SATISH YEVLE",
+        "section": "Topaz",
+        "roll_number": "32",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0092",
+        "full_name": "SOHAM KISHANRAO BHUSSE",
+        "section": "Topaz",
+        "roll_number": "33",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0093",
+        "full_name": "SWARA PRAVIN JADHAV",
+        "section": "Topaz",
+        "roll_number": "34",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0094",
+        "full_name": "SWARUP PRAKASH MOHITE",
+        "section": "Topaz",
+        "roll_number": "35",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0095",
+        "full_name": "VAISHNAV KRUSHNA JADHAV",
+        "section": "Topaz",
+        "roll_number": "36",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0096",
+        "full_name": "VAISHNAVI BALU GATKAL",
+        "section": "Topaz",
+        "roll_number": "37",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0097",
+        "full_name": "VAISHNAVI BHAURAO SAVANDAKAR",
+        "section": "Topaz",
+        "roll_number": "38",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0098",
+        "full_name": "YASH ASHOK GIRAM",
+        "section": "Topaz",
+        "roll_number": "39",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0099",
+        "full_name": "YASHASHRI YUVRAJ BHAVAR",
+        "section": "Topaz",
+        "roll_number": "40",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0100",
+        "full_name": "AARADHYA VIJAY BORKAR",
+        "section": "Jade",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0101",
+        "full_name": "ABHILASHA SHIVAJI GHUGE",
+        "section": "Jade",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0102",
+        "full_name": "AKSHARA ANIL NISARGANDH",
+        "section": "Jade",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0103",
+        "full_name": "ANISHA ARUN KEDAR",
+        "section": "Jade",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0104",
+        "full_name": "ANSH GULAB JANBANDHU",
+        "section": "Jade",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0105",
+        "full_name": "ANUSHKA SHIVAJI PATIL",
+        "section": "Jade",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0106",
+        "full_name": "ASHISH GORAKHNATH BHUMARE",
+        "section": "Jade",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0107",
+        "full_name": "DINESH MARUTI SONWANE",
+        "section": "Jade",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0108",
+        "full_name": "DIVYA GOVIND ALANE",
+        "section": "Jade",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0109",
+        "full_name": "DNYANESHWARI NAVNATH CHAVHAN",
+        "section": "Jade",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0110",
+        "full_name": "GANESH CHANDU SURYAVANSHI",
+        "section": "Jade",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0111",
+        "full_name": "GURURAJ AVINASH DABHADE",
+        "section": "Jade",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0112",
+        "full_name": "JANHAVI SURESH JADHAV",
+        "section": "Jade",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0113",
+        "full_name": "JIGNESH HARIDAS MORE",
+        "section": "Jade",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0114",
+        "full_name": "KARTIK MAHENDRA CHAVHAN",
+        "section": "Jade",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0115",
+        "full_name": "KAVERI SHESHRAO SATARE",
+        "section": "Jade",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0116",
+        "full_name": "MAYUR MANOJ AMBHORE",
+        "section": "Jade",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0117",
+        "full_name": "PIYUSH GAUTAM JAMDHADE",
+        "section": "Jade",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0118",
+        "full_name": "PRACHI PRAKASH NAWGHRE",
+        "section": "Jade",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0119",
+        "full_name": "PRANALI ANIL GAIKWAD",
+        "section": "Jade",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0120",
+        "full_name": "PRANJAL PRASADARAO GARUD",
+        "section": "Jade",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0121",
+        "full_name": "PRAVIN DEVANAND BANJARA",
+        "section": "Jade",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0122",
+        "full_name": "RAJRATAN RAHUL THORAT",
+        "section": "Jade",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0123",
+        "full_name": "RUDRA MILIND KHADE",
+        "section": "Jade",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0124",
+        "full_name": "SAMIKSHA SANDIP TAKANKHAR",
+        "section": "Jade",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0125",
+        "full_name": "SANDIP SANJAY HIRAS",
+        "section": "Jade",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0126",
+        "full_name": "SANVIDHAN DILIP INGOLE",
+        "section": "Jade",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0127",
+        "full_name": "SARTHAK SACHIN SANAP",
+        "section": "Jade",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0128",
+        "full_name": "SAURAV KIRAN NARWADE",
+        "section": "Jade",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0129",
+        "full_name": "SAYLI DNYANOBA CHAUDHARI",
+        "section": "Jade",
+        "roll_number": "30",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0130",
+        "full_name": "SHRADDHA SANDIP GHUGE",
+        "section": "Jade",
+        "roll_number": "31",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0131",
+        "full_name": "SNEHA BABAN GHUGE",
+        "section": "Jade",
+        "roll_number": "32",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0132",
+        "full_name": "SOHAM RAVI GHANGALE",
+        "section": "Jade",
+        "roll_number": "33",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0133",
+        "full_name": "SOMESHWAR PARMESHWAR BABARE",
+        "section": "Jade",
+        "roll_number": "34",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0134",
+        "full_name": "SUSHANT SANTOSH AMBORKAR",
+        "section": "Jade",
+        "roll_number": "35",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0135",
+        "full_name": "VAIBHAV NANA KOKANI",
+        "section": "Jade",
+        "roll_number": "36",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0136",
+        "full_name": "VAISHNAVI SUNIL PADVI",
+        "section": "Jade",
+        "roll_number": "37",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0137",
+        "full_name": "VIRA RAMDAS PAWARA",
+        "section": "Jade",
+        "roll_number": "38",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0138",
+        "full_name": "YASHKUMAR KIRAN PAVARA",
+        "section": "Jade",
+        "roll_number": "39",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0139",
+        "full_name": "YOGESHWARI KAMALAJI BHUMARE",
+        "section": "Jade",
+        "roll_number": "40",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0140",
+        "full_name": "Akshara Ashok Rasve",
+        "section": "Garnet",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0141",
+        "full_name": "Anurag Baban Kanade",
+        "section": "Garnet",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0142",
+        "full_name": "Anushka Govind Sawant",
+        "section": "Garnet",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0143",
+        "full_name": "Ayush Sopan Dalave",
+        "section": "Garnet",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0144",
+        "full_name": "Devesh Nilesh Thakur",
+        "section": "Garnet",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0145",
+        "full_name": "Dhananjay Bapurao Sawant",
+        "section": "Garnet",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0146",
+        "full_name": "Gauri Chandrakant Tekule",
+        "section": "Garnet",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0147",
+        "full_name": "Ishwari Somanath Lakade",
+        "section": "Garnet",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0148",
+        "full_name": "Ishwari Pralhad Khirasagar",
+        "section": "Garnet",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0149",
+        "full_name": "Jay Rohidas Jadhav",
+        "section": "Garnet",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0150",
+        "full_name": "Jayashree Jagannath Aher",
+        "section": "Garnet",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0151",
+        "full_name": "Jihan Shakil Shaikh",
+        "section": "Garnet",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0152",
+        "full_name": "Kavita Shantaram Kumbhar",
+        "section": "Garnet",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0153",
+        "full_name": "Ketaki Laxman Potawade",
+        "section": "Garnet",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0154",
+        "full_name": "Kirti Balu Yevale",
+        "section": "Garnet",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0155",
+        "full_name": "Krish Roshan Karete",
+        "section": "Garnet",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0156",
+        "full_name": "Krishna Digambar Gajmal",
+        "section": "Garnet",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0157",
+        "full_name": "Krushna Rakesh Zanjad",
+        "section": "Garnet",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0158",
+        "full_name": "Mangesh Gajanan Rathod",
+        "section": "Garnet",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0159",
+        "full_name": "Payal Gopal Bharti",
+        "section": "Garnet",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0160",
+        "full_name": "Pooja Janardhan Barve",
+        "section": "Garnet",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0161",
+        "full_name": "Pranali Sandip Kute",
+        "section": "Garnet",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0162",
+        "full_name": "Prathamesh Anil Phadatare",
+        "section": "Garnet",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0163",
+        "full_name": "Pratiksha Navnath Nevhal",
+        "section": "Garnet",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0164",
+        "full_name": "Radhika Satwaji Shinde",
+        "section": "Garnet",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0165",
+        "full_name": "Sampada Shankar Thodasare",
+        "section": "Garnet",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0166",
+        "full_name": "Sarthak Ganesh Dolas",
+        "section": "Garnet",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0167",
+        "full_name": "Satyam Suresh Wankhede",
+        "section": "Garnet",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0168",
+        "full_name": "Shradha Devarao Sawandkar",
+        "section": "Garnet",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0169",
+        "full_name": "Shrawani Santosh Waghmare",
+        "section": "Garnet",
+        "roll_number": "30",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0170",
+        "full_name": "Siddharth Ramdas Golim",
+        "section": "Garnet",
+        "roll_number": "31",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0171",
+        "full_name": "Sofiya Begam Shakil Shaikh",
+        "section": "Garnet",
+        "roll_number": "32",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0172",
+        "full_name": "Viraj Balaji Mali",
+        "section": "Garnet",
+        "roll_number": "33",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0173",
+        "full_name": "Yash Dnyaneshwar Darade",
+        "section": "Garnet",
+        "roll_number": "34",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0174",
+        "full_name": "Yash Divakar Zanjal",
+        "section": "Garnet",
+        "roll_number": "35",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0175",
+        "full_name": "Aarohi Ashok Gajmal",
+        "section": "Emerald",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0176",
+        "full_name": "Aarti Munjaji Thorat",
+        "section": "Emerald",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0177",
+        "full_name": "Aradhya Manoharsha Boga",
+        "section": "Emerald",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0178",
+        "full_name": "Atish Kishan Dhore",
+        "section": "Emerald",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0179",
+        "full_name": "Bhakti Bandu Sangale",
+        "section": "Emerald",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0180",
+        "full_name": "Bhushan Aatmaram Bhil",
+        "section": "Emerald",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0181",
+        "full_name": "Dipti Manesh Raut",
+        "section": "Emerald",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0182",
+        "full_name": "Gayatri Manik Ingle",
+        "section": "Emerald",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0183",
+        "full_name": "Janhavi Parasram Pawar",
+        "section": "Emerald",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0184",
+        "full_name": "Jivak Chandu Chakre",
+        "section": "Emerald",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0185",
+        "full_name": "Mahi Rakesh Meshram",
+        "section": "Emerald",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0186",
+        "full_name": "Mayuresh Arjun Bhogaonkar",
+        "section": "Emerald",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0187",
+        "full_name": "Nakusha Sanjay Surye",
+        "section": "Emerald",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0188",
+        "full_name": "Pratiksha Keshav Balkhande",
+        "section": "Emerald",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0189",
+        "full_name": "Pratiksha Sanjay Thoke",
+        "section": "Emerald",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0190",
+        "full_name": "Rameshwar Apparao Bhumare",
+        "section": "Emerald",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0191",
+        "full_name": "Sai Munjaji Mahale",
+        "section": "Emerald",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0192",
+        "full_name": "Sairaj Kishan Dake",
+        "section": "Emerald",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0193",
+        "full_name": "Sambhaji Namdev Chavan",
+        "section": "Emerald",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0194",
+        "full_name": "Sangharsh Sunil Survase",
+        "section": "Emerald",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0195",
+        "full_name": "Shahaji Narayan Navghare",
+        "section": "Emerald",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0196",
+        "full_name": "Shital Kaloji Panchal",
+        "section": "Emerald",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0197",
+        "full_name": "Shivani Sampat Shinde",
+        "section": "Emerald",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0198",
+        "full_name": "Shravani Gangadhar Survase",
+        "section": "Emerald",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0199",
+        "full_name": "Shubham Sandip Mane",
+        "section": "Emerald",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0200",
+        "full_name": "Siddhanth Jagdish Raychure",
+        "section": "Emerald",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0201",
+        "full_name": "Sidharaj Balaji Karhale",
+        "section": "Emerald",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0202",
+        "full_name": "Sneha Dnyanoba Dalave",
+        "section": "Emerald",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0203",
+        "full_name": "Srushti Subhash Kharate",
+        "section": "Emerald",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0204",
+        "full_name": "Tanvi Munjaji Kadam",
+        "section": "Emerald",
+        "roll_number": "30",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0205",
+        "full_name": "Utkarsha Madhav Kure",
+        "section": "Emerald",
+        "roll_number": "31",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0206",
+        "full_name": "Vaishnav Ganesh Dhore",
+        "section": "Emerald",
+        "roll_number": "32",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0207",
+        "full_name": "Vasant Trymbak Jadhav",
+        "section": "Emerald",
+        "roll_number": "33",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0208",
+        "full_name": "Yashwant Bhagwan Jadhav",
+        "section": "Emerald",
+        "roll_number": "34",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0209",
+        "full_name": "Akshara Shadanan Masure",
+        "section": "Ruby",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0210",
+        "full_name": "Amarnath Arvind Pacharne",
+        "section": "Ruby",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0211",
+        "full_name": "Aradhya Vishnu Chavan",
+        "section": "Ruby",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0212",
+        "full_name": "Atharv Sandip Awghade",
+        "section": "Ruby",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0213",
+        "full_name": "Dinesh Anil Chaudhari",
+        "section": "Ruby",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0214",
+        "full_name": "Dipashree Purushottam Moranakar",
+        "section": "Ruby",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0215",
+        "full_name": "Ganesh Laxman Chavan",
+        "section": "Ruby",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0216",
+        "full_name": "Gaurav Shahaji Malave",
+        "section": "Ruby",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0217",
+        "full_name": "Gurudeo Vijay Godbole",
+        "section": "Ruby",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0218",
+        "full_name": "Harshada Laxman Mirase",
+        "section": "Ruby",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0219",
+        "full_name": "Janhavi Maruti Varake",
+        "section": "Ruby",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0220",
+        "full_name": "Jiya Bashir Shanediwan",
+        "section": "Ruby",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0221",
+        "full_name": "Khushi Pralhad Chavan",
+        "section": "Ruby",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0222",
+        "full_name": "Madhavi Prakash Patil",
+        "section": "Ruby",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0223",
+        "full_name": "Naitik Pandurang Kamble",
+        "section": "Ruby",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0224",
+        "full_name": "Omkar Shankarrao Chavan",
+        "section": "Ruby",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0225",
+        "full_name": "Patil Nilgriv Manohar",
+        "section": "Ruby",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0226",
+        "full_name": "Payal Ramesh Shillar",
+        "section": "Ruby",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0227",
+        "full_name": "Prathmesh Pradip Chavan",
+        "section": "Ruby",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0228",
+        "full_name": "Priyanka Babasaheb Ture",
+        "section": "Ruby",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0229",
+        "full_name": "Rudranil Sachin Raut",
+        "section": "Ruby",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0230",
+        "full_name": "Samarth Bhikaji Gurav",
+        "section": "Ruby",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0231",
+        "full_name": "Samiksha Prashant Jawale",
+        "section": "Ruby",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0232",
+        "full_name": "Samrudhi Aatamaram Lohat",
+        "section": "Ruby",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0233",
+        "full_name": "Sanskruti Mayur Hagwane",
+        "section": "Ruby",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0234",
+        "full_name": "Sarthak Rajaram Ranmale",
+        "section": "Ruby",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0235",
+        "full_name": "Sharvari Mukunda Meshram",
+        "section": "Ruby",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0236",
+        "full_name": "Shivraj Vishnu Ingale",
+        "section": "Ruby",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0237",
+        "full_name": "Shreya Santosh Chavan",
+        "section": "Ruby",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0238",
+        "full_name": "Snehal Jagdish Desale",
+        "section": "Ruby",
+        "roll_number": "30",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0239",
+        "full_name": "Soham Dnyaneshwar Ippar",
+        "section": "Ruby",
+        "roll_number": "31",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0240",
+        "full_name": "Soham Pradip Khandare",
+        "section": "Ruby",
+        "roll_number": "32",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0241",
+        "full_name": "Swapnali Dilip Gavad",
+        "section": "Ruby",
+        "roll_number": "33",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0242",
+        "full_name": "Vedant Sopan Vaidya",
+        "section": "Ruby",
+        "roll_number": "34",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0243",
+        "full_name": "Vighnesh Vijay Shinde",
+        "section": "Ruby",
+        "roll_number": "35",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0244",
+        "full_name": "Yash Narendra Fadale",
+        "section": "Ruby",
+        "roll_number": "36",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0245",
+        "full_name": "Yuvaraj Jagdish Chavan",
+        "section": "Ruby",
+        "roll_number": "37",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0246",
+        "full_name": "Anjali Sandip Chavan",
+        "section": "Diamond",
+        "roll_number": "01",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0247",
+        "full_name": "Anushka Sachin Patil",
+        "section": "Diamond",
+        "roll_number": "02",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0248",
+        "full_name": "Arnav Navnath Waghole",
+        "section": "Diamond",
+        "roll_number": "03",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0249",
+        "full_name": "Astha Ajay Jhariya",
+        "section": "Diamond",
+        "roll_number": "04",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0250",
+        "full_name": "Atharv Rajendra Barad",
+        "section": "Diamond",
+        "roll_number": "05",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0251",
+        "full_name": "Atharv Suresh Chavan",
+        "section": "Diamond",
+        "roll_number": "06",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0252",
+        "full_name": "Bhairavi Avinash Kurve",
+        "section": "Diamond",
+        "roll_number": "07",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0253",
+        "full_name": "Bhakti Gopichand Chavan",
+        "section": "Diamond",
+        "roll_number": "08",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0254",
+        "full_name": "Gaurav Arunrao Ghumare",
+        "section": "Diamond",
+        "roll_number": "09",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0255",
+        "full_name": "Harshada Pandurang Kadam",
+        "section": "Diamond",
+        "roll_number": "10",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0256",
+        "full_name": "Jivan Jitendra Chavan",
+        "section": "Diamond",
+        "roll_number": "11",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0257",
+        "full_name": "Karan Jagannath Ghuge",
+        "section": "Diamond",
+        "roll_number": "12",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0258",
+        "full_name": "Lavanya Ganesh Jadhav",
+        "section": "Diamond",
+        "roll_number": "13",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0259",
+        "full_name": "Nandini Vishvaambar Raut",
+        "section": "Diamond",
+        "roll_number": "14",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0260",
+        "full_name": "Om Sambhaji Patil",
+        "section": "Diamond",
+        "roll_number": "15",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0261",
+        "full_name": "Prachi Mansing Pawara",
+        "section": "Diamond",
+        "roll_number": "16",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0262",
+        "full_name": "Pranita Radhakishan Gore",
+        "section": "Diamond",
+        "roll_number": "17",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0263",
+        "full_name": "Prathmesh Gajanan Jadhav",
+        "section": "Diamond",
+        "roll_number": "18",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0264",
+        "full_name": "Rajveer Nitin Tiruke",
+        "section": "Diamond",
+        "roll_number": "19",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0265",
+        "full_name": "Sahil Popat Vasane",
+        "section": "Diamond",
+        "roll_number": "20",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0266",
+        "full_name": "Samarth Satish Bhalerao",
+        "section": "Diamond",
+        "roll_number": "21",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0267",
+        "full_name": "Samruddhi Shyamrao Gajmal",
+        "section": "Diamond",
+        "roll_number": "22",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0268",
+        "full_name": "Sanika Gajanan Dalave",
+        "section": "Diamond",
+        "roll_number": "23",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0269",
+        "full_name": "Sanket Santosh Chavan",
+        "section": "Diamond",
+        "roll_number": "24",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0270",
+        "full_name": "Satish Mahadev Patil",
+        "section": "Diamond",
+        "roll_number": "25",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0271",
+        "full_name": "Shivam Bhaurao Holkar",
+        "section": "Diamond",
+        "roll_number": "26",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0272",
+        "full_name": "Shravan Nanasaheb Jadhav",
+        "section": "Diamond",
+        "roll_number": "27",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0273",
+        "full_name": "Sneha Sandip Patil",
+        "section": "Diamond",
+        "roll_number": "28",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0274",
+        "full_name": "Soham Pandurang More",
+        "section": "Diamond",
+        "roll_number": "29",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0275",
+        "full_name": "Srushti Shivaji Dudhate",
+        "section": "Diamond",
+        "roll_number": "30",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0276",
+        "full_name": "Tanuja Ashok Arkile",
+        "section": "Diamond",
+        "roll_number": "31",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0277",
+        "full_name": "Varnav Ajay Patil",
+        "section": "Diamond",
+        "roll_number": "32",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0278",
+        "full_name": "Vedika Keshav Ture",
+        "section": "Diamond",
+        "roll_number": "33",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0279",
+        "full_name": "Viranjali Varsha Kamble",
+        "section": "Diamond",
+        "roll_number": "34",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      },
+      {
+        "student_id": "STU-2026-0280",
+        "full_name": "Yashraj Suresh Maskar",
+        "section": "Diamond",
+        "roll_number": "35",
+        "active_status": "Active",
+        "created_at": "2026-06-15T08:30:00.000Z",
+        "updated_at": "2026-10-18T14:27:26.597Z"
+      }
+    ],
+    "visits": [
+      {
+        "visit_id": "VIS-2026-0001",
+        "student_id": "STU-2026-0001",
+        "visit_datetime": "2026-10-18T08:45",
+        "reason": "Superficial knee abrasion during morning ground assembly",
+        "observations": "Minor 1.5 cm skin scrape on right knee; vitals normal, no active bleeding.",
+        "action_taken": "Cleaned wound with normal saline and antiseptic solution; applied sterile gauze dressing.",
+        "medicine_status": "none",
+        "medicine_name": "None (No medicine given)",
+        "dosage": "",
+        "dosage_unit": "",
+        "route": "",
+        "administration_time": "",
+        "notes": "Advised to avoid running during recess today.",
+        "recorded_by": "Sister Kavita Nair, RN",
+        "created_at": "2026-10-18T08:48:00.000Z"
+      },
+      {
+        "visit_id": "VIS-2026-0002",
+        "student_id": "STU-2026-0004",
+        "visit_datetime": "2026-10-18T09:35",
+        "reason": "Mild headache and fatigue after second period",
+        "observations": "Oral temperature 98.4°F, pulse 80 bpm. Student had light breakfast.",
+        "action_taken": "Provided oral rehydration (ORS 200 ml) and 20 minutes rest in infirmary.",
+        "medicine_status": "given",
+        "medicine_name": "ORS Electoral Solution",
+        "dosage": "200",
+        "dosage_unit": "ml",
+        "route": "Oral",
+        "administration_time": "09:40 AM",
+        "notes": "Felt comfortable after hydration and returned to classroom.",
+        "recorded_by": "Sister Kavita Nair, RN",
+        "created_at": "2026-10-18T09:58:00.000Z"
+      },
+      {
+        "visit_id": "VIS-2026-0004",
+        "student_id": "STU-2026-0022",
+        "visit_datetime": "2026-10-10T12:10",
+        "reason": "Allergic sneezing from chalk dust",
+        "observations": "Clear chest, SpO2 99%, mild nasal congestion.",
+        "action_taken": "Face washed with cool water; rested in ventilated nurse room.",
+        "medicine_status": "given",
+        "medicine_name": "Cetirizine Syrup",
+        "dosage": "2.5",
+        "dosage_unit": "ml",
+        "route": "Oral",
+        "administration_time": "12:15 PM",
+        "notes": "Administered per parent-authorized care note.",
+        "recorded_by": "Sister Kavita Nair, RN",
+        "created_at": "2026-10-10T12:30:00.000Z"
+      },
+      {
+        "visit_id": "VIS-2026-0003",
+        "student_id": "STU-2026-0001",
+        "visit_datetime": "2026-09-18T11:15",
+        "reason": "Mild stomach discomfort after mid-day tiffin",
+        "observations": "Abdomen soft, afebrile (98.2°F).",
+        "action_taken": "Warm water given and rested for 15 minutes.",
+        "medicine_status": "none",
+        "medicine_name": "None (No medicine given)",
+        "dosage": "",
+        "dosage_unit": "",
+        "route": "",
+        "administration_time": "",
+        "notes": "Resolved completely after rest.",
+        "recorded_by": "Sister Kavita Nair, RN",
+        "created_at": "2026-09-18T11:32:00.000Z"
+      },
+      {
+        "visit_id": "VIS-2026-0014",
+        "student_id": "STU-2026-0014",
+        "visit_datetime": "2026-10-18T10:20",
+        "reason": "Low-grade fever and throat irritation",
+        "observations": "Temperature 100.1°F; mild pharyngeal redness.",
+        "action_taken": "Cold sponging performed; parent informed via school office and paracetamol administered per consent.",
+        "medicine_status": "given",
+        "medicine_name": "Paracetamol Suspension",
+        "dosage": "5",
+        "dosage_unit": "ml",
+        "route": "Oral",
+        "administration_time": "10:25 AM",
+        "notes": "Parent notified by class teacher.",
+        "recorded_by": "Sister Kavita Nair, RN",
+        "created_at": "2026-10-18T10:45:00.000Z"
+      }
+    ],
+    "measurements": [
+      {
+        "measurement_id": "MSR-2026-0006",
+        "student_id": "STU-2026-0022",
+        "measurement_date": "2026-10-05",
+        "height_cm": 143,
+        "weight_kg": 34,
+        "notes": "Mid-year health screening",
+        "updated_at": "2026-10-05T09:50:00.000Z"
+      },
+      {
+        "measurement_id": "MSR-2026-0005",
+        "student_id": "STU-2026-0014",
+        "measurement_date": "2026-10-05",
+        "height_cm": 145,
+        "weight_kg": 36.4,
+        "notes": "Mid-year health screening",
+        "updated_at": "2026-10-05T09:45:00.000Z"
+      },
+      {
+        "measurement_id": "MSR-2026-0004",
+        "student_id": "STU-2026-0004",
+        "measurement_date": "2026-10-05",
+        "height_cm": 140.8,
+        "weight_kg": 32.6,
+        "notes": "Mid-year health screening",
+        "updated_at": "2026-10-05T09:40:00.000Z"
+      },
+      {
+        "measurement_id": "MSR-2026-0003",
+        "student_id": "STU-2026-0002",
+        "measurement_date": "2026-10-05",
+        "height_cm": 141.5,
+        "weight_kg": 33.2,
+        "notes": "Mid-year health screening",
+        "updated_at": "2026-10-05T09:35:00.000Z"
+      },
+      {
+        "measurement_id": "MSR-2026-0002",
+        "student_id": "STU-2026-0001",
+        "measurement_date": "2026-10-05",
+        "height_cm": 144.2,
+        "weight_kg": 35.8,
+        "notes": "Mid-year health screening",
+        "updated_at": "2026-10-05T09:30:00.000Z"
+      },
+      {
+        "measurement_id": "MSR-2026-0001",
+        "student_id": "STU-2026-0001",
+        "measurement_date": "2026-06-20",
+        "height_cm": 142,
+        "weight_kg": 34.5,
+        "notes": "Term 1 physical checkup",
+        "updated_at": "2026-06-20T09:00:00.000Z"
+      }
+    ],
+    "healthProfiles": [
+      {
+        "health_record_id": "HPR-2026-0003",
+        "student_id": "STU-2026-0022",
+        "condition_or_note": "Mild chalk-dust allergic rhinitis. Authorized Cetirizine 2.5ml oral if symptomatic.",
+        "status": "Active",
+        "date_recorded": "2026-06-20",
+        "last_reviewed": "2026-10-10"
+      },
+      {
+        "health_record_id": "HPR-2026-0002",
+        "student_id": "STU-2026-0014",
+        "condition_or_note": "Prone to seasonal throat infection; notify parents if temperature exceeds 99.5°F.",
+        "status": "Monitoring",
+        "date_recorded": "2026-06-18",
+        "last_reviewed": "2026-10-05"
+      }
+    ]
+  },
+  "appsScriptUrl": "https://script.google.com/macros/s/AKfycbxpB8pHEpmaZwnp6Zgzksl5xpFRi55EdE_srVOC7STWHcwiWp-lN-t4R1Zt207diPaLqQ/exec",
+  "autoSyncEnabled": true,
+  "updatedAt": "2026-10-18T14:27:26.599Z"
+}
