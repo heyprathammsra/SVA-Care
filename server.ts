@@ -9,6 +9,9 @@ import {
   normalizeDatetimeString,
   normalizeDateOnlyString,
   normalizeTimeOnlyString,
+  PURGED_TEST_VISIT_IDS,
+  PURGED_TEST_MEASUREMENT_IDS,
+  PURGED_TEST_HEALTH_PROFILE_IDS,
   type NurseDatabase,
   type StudentRecord,
   type VisitRecord,
@@ -30,26 +33,81 @@ interface ServerState {
 }
 
 function normalizeDbSections(db: NurseDatabase): NurseDatabase {
-  return {
-    students: (db.students || []).map((s) => ({
-      ...s,
-      section: normalizeSectionName(s.section),
-    })),
-    visits: (db.visits || []).map((v) => ({
+  const seenStudentSlots = new Set<string>();
+  const seenStudentIds = new Set<string>();
+  const students: StudentRecord[] = [];
+  for (const s of db.students || []) {
+    const rawRoll = String(s.roll_number || '').trim();
+    if (/^\d+\.\d+$/.test(rawRoll)) continue;
+    const section = normalizeSectionName(s.section);
+    const roll_number = /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll;
+    const slotKey = `${section.toLowerCase()}|${roll_number.toLowerCase()}`;
+    if (seenStudentSlots.has(slotKey) || seenStudentIds.has(s.student_id)) continue;
+    seenStudentSlots.add(slotKey);
+    seenStudentIds.add(s.student_id);
+    students.push({ ...s, section, roll_number });
+  }
+
+  const seenVisitIds = new Set<string>();
+  const visits: VisitRecord[] = [];
+  for (const v of db.visits || []) {
+    if (!v.visit_id || PURGED_TEST_VISIT_IDS.has(v.visit_id) || seenVisitIds.has(v.visit_id)) {
+      continue;
+    }
+    seenVisitIds.add(v.visit_id);
+    const matched = students.find((s) => s.student_id === v.student_id);
+    const stuName = v.student_name || matched?.full_name || '';
+    const stuSec = normalizeSectionName(v.section || v.class || matched?.section || '');
+    const rawR = String(v.roll_no || v.roll_number || matched?.roll_number || '').trim();
+    const stuR = /^\d+$/.test(rawR) ? rawR.padStart(2, '0') : rawR;
+    visits.push({
       ...v,
+      student_name: stuName,
+      section: stuSec,
+      class: stuSec,
+      roll_number: stuR,
+      roll_no: stuR,
       visit_datetime: normalizeDatetimeString(v.visit_datetime),
       administration_time: normalizeTimeOnlyString(v.administration_time),
-    })),
-    measurements: (db.measurements || []).map((m) => ({
+    });
+  }
+
+  const seenMeasIds = new Set<string>();
+  const measurements: MeasurementRecord[] = [];
+  for (const m of db.measurements || []) {
+    if (
+      !m.measurement_id ||
+      PURGED_TEST_MEASUREMENT_IDS.has(m.measurement_id) ||
+      seenMeasIds.has(m.measurement_id)
+    ) {
+      continue;
+    }
+    seenMeasIds.add(m.measurement_id);
+    measurements.push({
       ...m,
       measurement_date: normalizeDateOnlyString(m.measurement_date),
-    })),
-    healthProfiles: (db.healthProfiles || []).map((h) => ({
+    });
+  }
+
+  const seenProfileIds = new Set<string>();
+  const healthProfiles: HealthProfileRecord[] = [];
+  for (const h of db.healthProfiles || []) {
+    if (
+      !h.health_record_id ||
+      PURGED_TEST_HEALTH_PROFILE_IDS.has(h.health_record_id) ||
+      seenProfileIds.has(h.health_record_id)
+    ) {
+      continue;
+    }
+    seenProfileIds.add(h.health_record_id);
+    healthProfiles.push({
       ...h,
       date_recorded: normalizeDateOnlyString(h.date_recorded),
       last_reviewed: normalizeDateOnlyString(h.last_reviewed),
-    })),
-  };
+    });
+  }
+
+  return { students, visits, measurements, healthProfiles };
 }
 
 function loadServerState(): ServerState {
@@ -333,8 +391,18 @@ async function startServer() {
 
     if ((action === 'recordVisit' || action === 'createVisit') && body.visit) {
       const rawVisit = body.visit as VisitRecord;
+      const matched = serverState.db.students.find((s) => s.student_id === rawVisit.student_id);
+      const stuName = rawVisit.student_name || matched?.full_name || '';
+      const stuSec = normalizeSectionName(rawVisit.section || rawVisit.class || matched?.section || '');
+      const rawR = String(rawVisit.roll_no || rawVisit.roll_number || matched?.roll_number || '').trim();
+      const stuR = /^\d+$/.test(rawR) ? rawR.padStart(2, '0') : rawR;
       const visit: VisitRecord = {
         ...rawVisit,
+        student_name: stuName,
+        section: stuSec,
+        class: stuSec,
+        roll_number: stuR,
+        roll_no: stuR,
         visit_datetime: normalizeDatetimeString(rawVisit.visit_datetime),
         administration_time: normalizeTimeOnlyString(rawVisit.administration_time),
       };
@@ -344,8 +412,19 @@ async function startServer() {
         saveServerState(serverState);
         broadcastStateUpdate(deviceId);
       }
-      // Always ensure the visit is pushed to Google Sheets using 'createVisit'
-      const sheetSynced = await forwardToAppsScript({ action: 'createVisit', visit });
+      // Always ensure the visit is pushed to Google Sheets with student name, class, and roll no
+      const sheetSynced = await forwardToAppsScript({
+        action: 'createVisit',
+        visit: {
+          ...visit,
+          student_name: stuName,
+          full_name: stuName,
+          class: stuSec,
+          section: stuSec,
+          roll_no: stuR,
+          roll_number: stuR,
+        },
+      });
       return res.json({
         status: 'ok',
         sheetSynced,

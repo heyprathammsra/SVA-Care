@@ -23,7 +23,8 @@ const SHEET_SCHEMAS = {
     'active_status', 'created_at', 'updated_at'
   ],
   'Visits': [
-    'visit_id', 'student_id', 'visit_datetime', 'reason', 'observations',
+    'visit_id', 'student_id', 'student_name', 'class', 'roll_no',
+    'visit_datetime', 'reason', 'observations',
     'action_taken', 'medicine_name', 'dosage', 'dosage_unit', 'route',
     'administration_time', 'notes', 'recorded_by', 'created_at'
   ],
@@ -59,12 +60,13 @@ function setupSpreadsheet() {
 
 /**
  * GET endpoint: returns all records from the 4 sheets.
- * Automatically assigns permanent student_id values to any newly pasted student rows in the Sheet.
+ * Automatically backfills student IDs and student name/class/roll columns in Visits.
  */
 function doGet(e) {
   try {
     setupSpreadsheet();
     ensureStudentIdsInSheet();
+    ensureVisitColumnsInSheet();
     const data = {
       status: 'ok',
       students: readSheetObjects('Students'),
@@ -155,6 +157,102 @@ function ensureStudentIdsInSheet() {
 }
 
 /**
+ * Automatically upgrades existing Visits sheet by inserting student_name, class, roll_no
+ * columns if missing and backfills them from the Students tab.
+ */
+function ensureVisitColumnsInSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Visits');
+  if (!sheet || sheet.getLastRow() < 1) return;
+
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const headersLower = headerRow.map(function(h) {
+    return String(h || '').trim().toLowerCase();
+  });
+
+  const hasName = headersLower.indexOf('student_name') !== -1 ||
+    headersLower.indexOf('student name') !== -1 ||
+    headersLower.indexOf('full_name') !== -1;
+  const hasClass = headersLower.indexOf('class') !== -1 ||
+    headersLower.indexOf('section') !== -1;
+  const hasRoll = headersLower.indexOf('roll_no') !== -1 ||
+    headersLower.indexOf('roll no') !== -1 ||
+    headersLower.indexOf('roll_number') !== -1 ||
+    headersLower.indexOf('roll no.') !== -1;
+
+  if (!hasName || !hasClass || !hasRoll) {
+    const stuIdIdx = headersLower.indexOf('student_id');
+    const insertAfterCol = stuIdIdx !== -1 ? stuIdIdx + 1 : 2;
+
+    sheet.insertColumnsAfter(insertAfterCol, 3);
+    sheet.getRange(1, insertAfterCol + 1, 1, 3).setValues([['student_name', 'class', 'roll_no']]);
+    sheet.getRange(1, insertAfterCol + 1, 1, 3).setFontWeight('bold');
+
+    // Backfill any existing visit rows using the Students tab
+    const studentsSheet = ss.getSheetByName('Students');
+    if (studentsSheet && studentsSheet.getLastRow() >= 2 && sheet.getLastRow() >= 2) {
+      const stuValues = studentsSheet.getDataRange().getValues();
+      const sHeaders = stuValues[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+      const sIdIdx = sHeaders.indexOf('student_id');
+      const sNameIdx = sHeaders.indexOf('full_name') !== -1 ? sHeaders.indexOf('full_name') : sHeaders.indexOf('student_name');
+      const sSecIdx = sHeaders.indexOf('section') !== -1 ? sHeaders.indexOf('section') : sHeaders.indexOf('class');
+      const sRollIdx = sHeaders.indexOf('roll_number') !== -1 ? sHeaders.indexOf('roll_number') : sHeaders.indexOf('roll_no');
+
+      const studentMap = {};
+      for (let i = 1; i < stuValues.length; i++) {
+        const sid = String(stuValues[i][sIdIdx] || '').trim();
+        if (sid) {
+          studentMap[sid] = {
+            name: String(stuValues[i][sNameIdx] || ''),
+            sec: String(stuValues[i][sSecIdx] || ''),
+            roll: String(stuValues[i][sRollIdx] || '')
+          };
+        }
+      }
+
+      const numRows = sheet.getLastRow() - 1;
+      const idColValues = sheet.getRange(2, stuIdIdx + 1, numRows, 1).getValues();
+      const backfillData = [];
+      for (let r = 0; r < numRows; r++) {
+        const sid = String(idColValues[r][0] || '').trim();
+        const sInfo = studentMap[sid] || { name: '', sec: '', roll: '' };
+        backfillData.push([sInfo.name, sInfo.sec, sInfo.roll]);
+      }
+      sheet.getRange(2, insertAfterCol + 1, numRows, 3).setValues(backfillData);
+    }
+  }
+}
+
+/**
+ * Looks up student details from the Students sheet by student_id.
+ */
+function lookupStudentInfo(studentId) {
+  if (!studentId) return { name: '', sec: '', roll: '' };
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Students');
+  if (!sheet || sheet.getLastRow() < 2) return { name: '', sec: '', roll: '' };
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+  const idIdx = headers.indexOf('student_id');
+  const nameIdx = headers.indexOf('full_name') !== -1 ? headers.indexOf('full_name') : headers.indexOf('student_name');
+  const secIdx = headers.indexOf('section') !== -1 ? headers.indexOf('section') : headers.indexOf('class');
+  const rollIdx = headers.indexOf('roll_number') !== -1 ? headers.indexOf('roll_number') : headers.indexOf('roll_no');
+
+  for (let r = 1; r < values.length; r++) {
+    if (String(values[r][idIdx] || '').trim() === String(studentId).trim()) {
+      return {
+        name: String(values[r][nameIdx] || ''),
+        sec: String(values[r][secIdx] || ''),
+        roll: String(values[r][rollIdx] || '')
+      };
+    }
+  }
+  return { name: '', sec: '', roll: '' };
+}
+
+/**
  * POST endpoint: handles createVisit, addMeasurement, addHealthProfile, createStudent,
  * syncStudentsBatch, and syncFullDatabase.
  * Uses LockService to safely handle simultaneous submissions without overwriting rows.
@@ -164,6 +262,7 @@ function doPost(e) {
   try {
     lock.waitLock(10000);
     setupSpreadsheet();
+    ensureVisitColumnsInSheet();
 
     const payload = JSON.parse(e.postData.contents || '{}');
     const action = payload.action;
@@ -180,6 +279,18 @@ function doPost(e) {
       if (duplicate) {
         return jsonSuccess({ visit_id: v.visit_id, deduplicated: true });
       }
+
+      // Automatically fill student_name, class, roll_no if missing
+      if (!v.student_name || !v.class || !v.roll_no) {
+        const sInfo = lookupStudentInfo(v.student_id);
+        if (!v.student_name) v.student_name = sInfo.name;
+        if (!v.full_name) v.full_name = sInfo.name;
+        if (!v.class) v.class = sInfo.sec;
+        if (!v.section) v.section = sInfo.sec;
+        if (!v.roll_no) v.roll_no = sInfo.roll;
+        if (!v.roll_number) v.roll_number = sInfo.roll;
+      }
+
       appendRowBySchema('Visits', v);
       return jsonSuccess({ visit_id: v.visit_id });
     }
@@ -253,20 +364,38 @@ function doPost(e) {
 function batchAppendUniqueRows(tabName, idField, records) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(tabName);
-  const headers = SHEET_SCHEMAS[tabName];
+  if (!sheet) return 0;
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const actualHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   const existing = readSheetObjects(tabName);
   const existingIds = new Set(existing.map(function(r) { return String(r[idField]); }));
   const newRows = [];
+
   records.forEach(function(rec) {
     if (rec && rec[idField] && !existingIds.has(String(rec[idField]))) {
       existingIds.add(String(rec[idField]));
-      newRows.push(headers.map(function(col) {
-        return rec[col] !== undefined && rec[col] !== null ? rec[col] : '';
-      }));
+      const row = actualHeaders.map(function(colHeader) {
+        const rawKey = String(colHeader || '').trim();
+        const key = rawKey.toLowerCase().replace(/[\s._-]+/g, '_');
+        if (rec[rawKey] !== undefined && rec[rawKey] !== null) return rec[rawKey];
+        if (rec[key] !== undefined && rec[key] !== null) return rec[key];
+        if (key === 'student_name' || key === 'full_name' || key === 'name') {
+          return rec.student_name || rec.full_name || '';
+        }
+        if (key === 'class' || key === 'section') {
+          return rec.class || rec.section || '';
+        }
+        if (key === 'roll_no' || key === 'roll_number' || key === 'roll') {
+          return rec.roll_no || rec.roll_number || '';
+        }
+        return '';
+      });
+      newRows.push(row);
     }
   });
+
   if (newRows.length > 0) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows);
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, actualHeaders.length).setValues(newRows);
   }
   return newRows.length;
 }
@@ -289,9 +418,30 @@ function readSheetObjects(tabName) {
 function appendRowBySchema(tabName, recordObj) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(tabName);
-  const headers = SHEET_SCHEMAS[tabName];
-  const row = headers.map(function(col) {
-    return recordObj[col] !== undefined && recordObj[col] !== null ? recordObj[col] : '';
+  if (!sheet) return;
+
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const actualHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const row = actualHeaders.map(function(colHeader) {
+    const rawKey = String(colHeader || '').trim();
+    const key = rawKey.toLowerCase().replace(/[\s._-]+/g, '_');
+    if (recordObj[rawKey] !== undefined && recordObj[rawKey] !== null) {
+      return recordObj[rawKey];
+    }
+    if (recordObj[key] !== undefined && recordObj[key] !== null) {
+      return recordObj[key];
+    }
+    // Field aliases
+    if (key === 'student_name' || key === 'full_name' || key === 'name') {
+      return recordObj.student_name || recordObj.full_name || '';
+    }
+    if (key === 'class' || key === 'section') {
+      return recordObj.class || recordObj.section || '';
+    }
+    if (key === 'roll_no' || key === 'roll_number' || key === 'roll') {
+      return recordObj.roll_no || recordObj.roll_number || '';
+    }
+    return '';
   });
   sheet.appendRow(row);
 }
@@ -307,6 +457,7 @@ function jsonError(msg) {
     .createTextOutput(JSON.stringify({ status: 'error', message: msg }))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
 `;
 
 function escapeCsvCell(val: string | number | undefined | null): string {
@@ -351,6 +502,9 @@ export function exportSheetTabToCsv(
     const headers = [
       'visit_id',
       'student_id',
+      'student_name',
+      'class',
+      'roll_no',
       'visit_datetime',
       'reason',
       'observations',
@@ -365,6 +519,10 @@ export function exportSheetTabToCsv(
       'created_at',
     ];
     const rows = db.visits.map((v) => {
+      const student = db.students.find((s) => s.student_id === v.student_id);
+      const studentName = v.student_name || student?.full_name || '';
+      const studentClass = v.class || v.section || student?.section || '';
+      const studentRoll = v.roll_no || v.roll_number || student?.roll_number || '';
       const sheetMedicineName =
         v.medicine_status === 'none'
           ? 'None (No medicine given)'
@@ -374,6 +532,9 @@ export function exportSheetTabToCsv(
       return [
         v.visit_id,
         v.student_id,
+        studentName,
+        studentClass,
+        studentRoll,
         v.visit_datetime,
         v.reason,
         v.observations,

@@ -270,11 +270,16 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
       <section className="bg-white border border-stone-200/80 rounded-2xl p-6 sm:p-7 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-base font-semibold text-zinc-900 font-display">
-              Apps Script Backend (Code.gs)
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-zinc-900 font-display">
+                Apps Script Backend (Code.gs)
+              </h2>
+              <span className="px-2 py-0.5 text-[10px] font-semibold bg-teal-50 text-teal-800 rounded-full border border-teal-200">
+                Updated with Name, Class &amp; Roll No
+              </span>
+            </div>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Open your Google Sheet &rarr; Extensions &rarr; Apps Script, paste this script, run <code>setupSpreadsheet</code> once, and deploy as a Web App.
+              Every visit now pushes the student&apos;s full name, class section, and roll number directly into your Google Sheet.
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -13,6 +13,11 @@ export type MedicineStatus = 'none' | 'given' | 'not_recorded';
 export interface VisitRecord {
   visit_id: string;
   student_id: string;
+  student_name?: string;
+  section?: string;
+  class?: string;
+  roll_number?: string;
+  roll_no?: string;
   visit_datetime: string; // YYYY-MM-DDTHH:mm
   reason: string;
   observations: string;
@@ -530,8 +535,14 @@ export function parseStudentImportText(
   const newHealthProfiles: HealthProfileRecord[] = [];
 
   const allStudentIds = existingStudents.map((s) => s.student_id);
-  const allMeasurementIds = existingMeasurements.map((m) => m.measurement_id);
-  const allProfileIds = existingProfiles.map((p) => p.health_record_id);
+  const allMeasurementIds = [
+    ...existingMeasurements.map((m) => m.measurement_id),
+    ...Array.from(PURGED_TEST_MEASUREMENT_IDS),
+  ];
+  const allProfileIds = [
+    ...existingProfiles.map((p) => p.health_record_id),
+    ...Array.from(PURGED_TEST_HEALTH_PROFILE_IDS),
+  ];
 
   let detectedSection = normalizeSectionName(defaultSection);
   let rollFirstMode = false;
@@ -664,6 +675,43 @@ export function parseStudentImportText(
   return { newStudents, newMeasurements, newHealthProfiles };
 }
 
+export const PURGED_TEST_VISIT_IDS = new Set<string>([
+  'VIS-2026-0001',
+  'VIS-2026-0002',
+  'VIS-2026-0003',
+  'VIS-2026-0004',
+  'VIS-2026-0005',
+  'VIS-2026-0006',
+  'VIS-2026-0007',
+  'VIS-2026-0008',
+  'VIS-2026-0009',
+  'VIS-2026-0010',
+  'VIS-2026-0011',
+  'VIS-2026-0012',
+  'VIS-2026-0013',
+  'VIS-2026-0014',
+  'VIS-2026-0015',
+  'VIS-2026-0016',
+  'VIS-2026-0017',
+  'VIS-2026-0018',
+  'VIS-2026-0019',
+]);
+
+export const PURGED_TEST_MEASUREMENT_IDS = new Set<string>([
+  'MSR-2026-0001',
+  'MSR-2026-0002',
+  'MSR-2026-0003',
+  'MSR-2026-0004',
+  'MSR-2026-0005',
+  'MSR-2026-0006',
+]);
+
+export const PURGED_TEST_HEALTH_PROFILE_IDS = new Set<string>([
+  'HPR-2026-0001',
+  'HPR-2026-0002',
+  'HPR-2026-0003',
+]);
+
 const KNOWN_SCHOOL_SECTIONS = [
   'sparkle',
   'twinkle',
@@ -696,50 +744,72 @@ export function normalizeSectionName(rawSection: string): string {
  * 1) Pasted student names in Google Sheets without student_id get matched or assigned permanent IDs.
  * 2) Raw string visit records derive accurate medicine_status ('none' | 'given' | 'not_recorded').
  * 3) Raw string measurement records convert height_cm and weight_kg to numbers.
- * 4) Any unsynced local records are preserved rather than overwritten.
+ * 4) Any unsynced local records are preserved rather than overwritten, while purged test records are ignored.
  */
 export function normalizeSheetSyncPayload(
   payload: {
-    students?: Array<Partial<StudentRecord>>;
-    visits?: Array<Partial<VisitRecord>>;
-    measurements?: Array<Partial<Record<keyof MeasurementRecord, string | number>>>;
-    healthProfiles?: Array<Partial<HealthProfileRecord>>;
+    students?: Array<Partial<StudentRecord> & Record<string, any>>;
+    visits?: Array<Partial<VisitRecord> & Record<string, any>>;
+    measurements?: Array<Partial<Record<keyof MeasurementRecord, string | number>> & Record<string, any>>;
+    healthProfiles?: Array<Partial<HealthProfileRecord> & Record<string, any>>;
   },
   currentDb: NurseDatabase,
   nowIso: string = new Date().toISOString()
 ): NurseDatabase {
   const existingByIdentity = new Map<string, StudentRecord>();
+  const existingBySectionRoll = new Map<string, StudentRecord>();
   const existingIds = new Set<string>();
+
   for (const s of currentDb.students) {
+    const rawRoll = String(s.roll_number || '').trim();
+    if (/^\d+\.\d+$/.test(rawRoll)) continue;
+    const normSec = normalizeSectionName(s.section);
+    const normRoll = /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll;
     existingIds.add(s.student_id);
-    const key = `${s.full_name.trim().toLowerCase()}|${normalizeSectionName(s.section).toLowerCase()}|${s.roll_number.trim().padStart(2, '0')}`;
-    existingByIdentity.set(key, s);
+    const idKey = `${s.full_name.trim().toLowerCase()}|${normSec.toLowerCase()}|${normRoll.toLowerCase()}`;
+    const slotKey = `${normSec.toLowerCase()}|${normRoll.toLowerCase()}`;
+    existingByIdentity.set(idKey, s);
+    if (!existingBySectionRoll.has(slotKey)) {
+      existingBySectionRoll.set(slotKey, s);
+    }
   }
 
   const rawStudents = Array.isArray(payload.students) ? payload.students : [];
   const normalizedRemoteStudents: StudentRecord[] = [];
   const assignedIds = new Set<string>(existingIds);
+  const usedRemoteIds = new Set<string>();
+  const seenSectionRolls = new Set<string>();
 
   rawStudents.forEach((row, idx) => {
     const fullName = String(row?.full_name || '').trim();
     if (!fullName) return;
 
-    const section = normalizeSectionName(String(row?.section || 'Sparkle'));
     const rawRoll = String(row?.roll_number || idx + 1).trim();
+    // Ignore accidental spreadsheet autofill decimal roll numbers like "2.8" or "3.02857142857143"
+    if (/^\d+\.\d+$/.test(rawRoll)) return;
+
+    const section = normalizeSectionName(String(row?.section || 'Sparkle'));
     const rollNum = /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll;
 
-    const identityKey = `${fullName.toLowerCase()}|${section.toLowerCase()}|${rollNum.toLowerCase()}`;
-    const matchedLocal = existingByIdentity.get(identityKey);
+    const sectionRollKey = `${section.toLowerCase()}|${rollNum.toLowerCase()}`;
+    if (seenSectionRolls.has(sectionRollKey)) return;
+    seenSectionRolls.add(sectionRollKey);
+
+    const identityKey = `${fullName.toLowerCase()}|${sectionRollKey}`;
+    const matchedExact = existingByIdentity.get(identityKey);
+    const matchedSlot = existingBySectionRoll.get(sectionRollKey);
+    const matchedLocal = matchedExact || matchedSlot;
 
     let studentId = String(row?.student_id || '').trim();
-    if (!studentId) {
-      if (matchedLocal) {
+    if (!studentId || usedRemoteIds.has(studentId)) {
+      if (matchedLocal && !usedRemoteIds.has(matchedLocal.student_id)) {
         studentId = matchedLocal.student_id;
       } else {
         studentId = generatePermanentId('STU', Array.from(assignedIds));
       }
     }
     assignedIds.add(studentId);
+    usedRemoteIds.add(studentId);
 
     normalizedRemoteStudents.push({
       student_id: studentId,
@@ -752,29 +822,44 @@ export function normalizeSheetSyncPayload(
     });
   });
 
-  // If the Google Sheet has students, use them as authoritative while also keeping any local-only students
-  let finalStudents = currentDb.students;
-  if (normalizedRemoteStudents.length > 0) {
+  // If the Google Sheet has a full roster (>= 20 students), treat the Sheet as the authoritative roster
+  // so deleted or undone rows in Google Sheets never stay stuck as ghost duplicates.
+  // For smaller partial payloads, preserve local students whose (section, roll_number) slot wasn't replaced.
+  let finalStudents = currentDb.students.filter(
+    (s) => !/^\d+\.\d+$/.test(String(s.roll_number || '').trim())
+  );
+  if (normalizedRemoteStudents.length >= 20) {
+    finalStudents = normalizedRemoteStudents;
+  } else if (normalizedRemoteStudents.length > 0) {
     const remoteIds = new Set(normalizedRemoteStudents.map((s) => s.student_id));
-    const remoteIdentities = new Set(
+    const remoteSlots = new Set(
       normalizedRemoteStudents.map(
-        (s) => `${s.full_name.toLowerCase()}|${s.section.toLowerCase()}|${s.roll_number.toLowerCase()}`
+        (s) => `${s.section.toLowerCase()}|${s.roll_number.toLowerCase()}`
       )
     );
-    const localOnly = currentDb.students.filter((s) => {
-      const idKey = `${s.full_name.toLowerCase()}|${normalizeSectionName(s.section).toLowerCase()}|${s.roll_number.toLowerCase()}`;
-      return !remoteIds.has(s.student_id) && !remoteIdentities.has(idKey);
+    const localOnly = finalStudents.filter((s) => {
+      const slotKey = `${normalizeSectionName(s.section).toLowerCase()}|${s.roll_number.trim().padStart(2, '0').toLowerCase()}`;
+      return !remoteIds.has(s.student_id) && !remoteSlots.has(slotKey);
     });
     finalStudents = [...normalizedRemoteStudents, ...localOnly];
   }
 
-  // Normalize Visits
+  // Normalize & deduplicate Visits (filtering out purged test visit IDs)
   const rawVisits = Array.isArray(payload.visits) ? payload.visits : [];
   const normalizedRemoteVisits: VisitRecord[] = [];
+  const seenRemoteVisitIds = new Set<string>();
   rawVisits.forEach((row) => {
     const visitId = String(row?.visit_id || '').trim();
     const studentId = String(row?.student_id || '').trim();
-    if (!visitId || !studentId) return;
+    if (
+      !visitId ||
+      !studentId ||
+      PURGED_TEST_VISIT_IDS.has(visitId) ||
+      seenRemoteVisitIds.has(visitId)
+    ) {
+      return;
+    }
+    seenRemoteVisitIds.add(visitId);
 
     const medName = String(row?.medicine_name || '').trim();
     const medNameLower = medName.toLowerCase();
@@ -798,9 +883,24 @@ export function normalizeSheetSyncPayload(
       medStatus = 'given';
     }
 
+    const matchedStudent = finalStudents.find((s) => s.student_id === studentId);
+    const stuName = String(
+      row?.student_name || row?.full_name || row?.name || matchedStudent?.full_name || ''
+    ).trim();
+    const stuSection = normalizeSectionName(
+      String(row?.section || row?.class || matchedStudent?.section || '')
+    );
+    const rawRoll = String(row?.roll_no || row?.roll_number || matchedStudent?.roll_number || '').trim();
+    const stuRoll = /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll;
+
     normalizedRemoteVisits.push({
       visit_id: visitId,
       student_id: studentId,
+      student_name: stuName,
+      section: stuSection,
+      class: stuSection,
+      roll_number: stuRoll,
+      roll_no: stuRoll,
       visit_datetime: normalizeDatetimeString(
         String(row?.visit_datetime || ''),
         nowIso.slice(0, 16)
@@ -820,26 +920,58 @@ export function normalizeSheetSyncPayload(
     });
   });
 
-  let finalVisits = currentDb.visits.map((v) => ({
-    ...v,
-    visit_datetime: normalizeDatetimeString(v.visit_datetime, nowIso.slice(0, 16)),
-    administration_time: normalizeTimeOnlyString(v.administration_time),
-  }));
+  const seenLocalVisitIds = new Set<string>();
+  let finalVisits: VisitRecord[] = currentDb.visits
+    .filter((v) => {
+      if (!v.visit_id || PURGED_TEST_VISIT_IDS.has(v.visit_id) || seenLocalVisitIds.has(v.visit_id)) {
+        return false;
+      }
+      seenLocalVisitIds.add(v.visit_id);
+      return true;
+    })
+    .map((v) => {
+      const matched = finalStudents.find((s) => s.student_id === v.student_id);
+      const stuName = v.student_name || matched?.full_name || '';
+      const stuSec = normalizeSectionName(v.section || v.class || matched?.section || '');
+      const rawR = String(v.roll_no || v.roll_number || matched?.roll_number || '').trim();
+      const stuR = /^\d+$/.test(rawR) ? rawR.padStart(2, '0') : rawR;
+      return {
+        ...v,
+        student_name: stuName,
+        section: stuSec,
+        class: stuSec,
+        roll_number: stuR,
+        roll_no: stuR,
+        visit_datetime: normalizeDatetimeString(v.visit_datetime, nowIso.slice(0, 16)),
+        administration_time: normalizeTimeOnlyString(v.administration_time),
+      };
+    });
   if (normalizedRemoteVisits.length > 0) {
     const remoteVisitIds = new Set(normalizedRemoteVisits.map((v) => v.visit_id));
     const localUnsyncedVisits = finalVisits.filter((v) => !remoteVisitIds.has(v.visit_id));
     finalVisits = [...localUnsyncedVisits, ...normalizedRemoteVisits];
   }
 
-  // Normalize Measurements
+  // Normalize & deduplicate Measurements (filtering out purged test measurement IDs)
   const rawMeasurements = Array.isArray(payload.measurements) ? payload.measurements : [];
   const normalizedRemoteMeasurements: MeasurementRecord[] = [];
+  const seenRemoteMIds = new Set<string>();
   rawMeasurements.forEach((row) => {
     const mId = String(row?.measurement_id || '').trim();
     const stuId = String(row?.student_id || '').trim();
     const h = parseFloat(String(row?.height_cm ?? ''));
     const w = parseFloat(String(row?.weight_kg ?? ''));
-    if (!mId || !stuId || Number.isNaN(h) || Number.isNaN(w)) return;
+    if (
+      !mId ||
+      !stuId ||
+      PURGED_TEST_MEASUREMENT_IDS.has(mId) ||
+      Number.isNaN(h) ||
+      Number.isNaN(w) ||
+      seenRemoteMIds.has(mId)
+    ) {
+      return;
+    }
+    seenRemoteMIds.add(mId);
 
     normalizedRemoteMeasurements.push({
       measurement_id: mId,
@@ -855,24 +987,47 @@ export function normalizeSheetSyncPayload(
     });
   });
 
-  let finalMeasurements = currentDb.measurements.map((m) => ({
-    ...m,
-    measurement_date: normalizeDateOnlyString(m.measurement_date, nowIso.slice(0, 10)),
-  }));
+  const seenLocalMIds = new Set<string>();
+  let finalMeasurements = currentDb.measurements
+    .filter((m) => {
+      if (
+        !m.measurement_id ||
+        PURGED_TEST_MEASUREMENT_IDS.has(m.measurement_id) ||
+        seenLocalMIds.has(m.measurement_id)
+      ) {
+        return false;
+      }
+      seenLocalMIds.add(m.measurement_id);
+      return true;
+    })
+    .map((m) => ({
+      ...m,
+      measurement_date: normalizeDateOnlyString(m.measurement_date, nowIso.slice(0, 10)),
+    }));
   if (normalizedRemoteMeasurements.length > 0) {
     const remoteMIds = new Set(normalizedRemoteMeasurements.map((m) => m.measurement_id));
     const localOnlyM = finalMeasurements.filter((m) => !remoteMIds.has(m.measurement_id));
     finalMeasurements = [...localOnlyM, ...normalizedRemoteMeasurements];
   }
 
-  // Normalize Health Profiles
+  // Normalize & deduplicate Health Profiles (filtering out purged test health profile IDs)
   const rawProfiles = Array.isArray(payload.healthProfiles) ? payload.healthProfiles : [];
   const normalizedRemoteProfiles: HealthProfileRecord[] = [];
+  const seenRemoteHIds = new Set<string>();
   rawProfiles.forEach((row) => {
     const hId = String(row?.health_record_id || '').trim();
     const stuId = String(row?.student_id || '').trim();
     const note = String(row?.condition_or_note || '').trim();
-    if (!hId || !stuId || !note) return;
+    if (
+      !hId ||
+      !stuId ||
+      !note ||
+      PURGED_TEST_HEALTH_PROFILE_IDS.has(hId) ||
+      seenRemoteHIds.has(hId)
+    ) {
+      return;
+    }
+    seenRemoteHIds.add(hId);
 
     const rawStatus = String(row?.status || 'Active').trim();
     const status: 'Active' | 'Monitoring' | 'Resolved' =
@@ -894,11 +1049,24 @@ export function normalizeSheetSyncPayload(
     });
   });
 
-  let finalProfiles = currentDb.healthProfiles.map((h) => ({
-    ...h,
-    date_recorded: normalizeDateOnlyString(h.date_recorded, nowIso.slice(0, 10)),
-    last_reviewed: normalizeDateOnlyString(h.last_reviewed, nowIso.slice(0, 10)),
-  }));
+  const seenLocalHIds = new Set<string>();
+  let finalProfiles = currentDb.healthProfiles
+    .filter((h) => {
+      if (
+        !h.health_record_id ||
+        PURGED_TEST_HEALTH_PROFILE_IDS.has(h.health_record_id) ||
+        seenLocalHIds.has(h.health_record_id)
+      ) {
+        return false;
+      }
+      seenLocalHIds.add(h.health_record_id);
+      return true;
+    })
+    .map((h) => ({
+      ...h,
+      date_recorded: normalizeDateOnlyString(h.date_recorded, nowIso.slice(0, 10)),
+      last_reviewed: normalizeDateOnlyString(h.last_reviewed, nowIso.slice(0, 10)),
+    }));
   if (normalizedRemoteProfiles.length > 0) {
     const remoteHIds = new Set(normalizedRemoteProfiles.map((h) => h.health_record_id));
     const localOnlyH = finalProfiles.filter((h) => !remoteHIds.has(h.health_record_id));
@@ -912,4 +1080,5 @@ export function normalizeSheetSyncPayload(
     healthProfiles: finalProfiles,
   };
 }
+
 

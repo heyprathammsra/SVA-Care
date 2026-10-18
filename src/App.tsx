@@ -12,6 +12,7 @@ import {
   ClipboardList,
   Cloud,
   HeartPulse,
+  LogOut,
 } from 'lucide-react';
 import {
   generatePermanentId,
@@ -26,6 +27,9 @@ import {
   normalizeDatetimeString,
   normalizeDateOnlyString,
   normalizeTimeOnlyString,
+  PURGED_TEST_VISIT_IDS,
+  PURGED_TEST_MEASUREMENT_IDS,
+  PURGED_TEST_HEALTH_PROFILE_IDS,
   type NurseDatabase,
   type StudentRecord,
   type VisitRecord,
@@ -48,59 +52,104 @@ import { StudentProfileView } from './components/StudentProfileView';
 import { DailyLogView } from './components/DailyLogView';
 import { SheetsSetupView } from './components/SheetsSetupView';
 import { PrintableReport, type PrintReportConfig } from './components/PrintableReport';
+import { AuthScreen } from './components/AuthScreen';
+import { type AuthUser } from './utils/auth';
 
 type ActiveScreen = 'home' | 'new-visit' | 'students' | 'daily-log' | 'sheets-setup';
 type RosterFilterMode = 'all' | 'visited-today' | 'health-notes';
 
-const STORAGE_KEY = 'sva_infirmary_db_v5';
+const STORAGE_KEY = 'sva_infirmary_db_v7';
 const APPS_SCRIPT_URL_KEY = 'sva_infirmary_apps_script_url_v1';
 
 function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
-  return {
-    students: (inputDb.students || []).map((s) => ({
-      ...s,
-      section: normalizeSectionName(s.section),
-    })),
-    visits: (inputDb.visits || []).map((v) => ({
+  const seenStudentSlots = new Set<string>();
+  const seenStudentIds = new Set<string>();
+  const students: StudentRecord[] = [];
+  for (const s of inputDb.students || []) {
+    const rawRoll = String(s.roll_number || '').trim();
+    if (/^\d+\.\d+$/.test(rawRoll)) continue;
+    const section = normalizeSectionName(s.section);
+    const roll_number = /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll;
+    const slotKey = `${section.toLowerCase()}|${roll_number.toLowerCase()}`;
+    if (seenStudentSlots.has(slotKey) || seenStudentIds.has(s.student_id)) continue;
+    seenStudentSlots.add(slotKey);
+    seenStudentIds.add(s.student_id);
+    students.push({ ...s, section, roll_number });
+  }
+
+  const seenVisitIds = new Set<string>();
+  const visits: VisitRecord[] = [];
+  for (const v of inputDb.visits || []) {
+    if (!v.visit_id || PURGED_TEST_VISIT_IDS.has(v.visit_id) || seenVisitIds.has(v.visit_id)) {
+      continue;
+    }
+    seenVisitIds.add(v.visit_id);
+    visits.push({
       ...v,
       visit_datetime: normalizeDatetimeString(v.visit_datetime),
       administration_time: normalizeTimeOnlyString(v.administration_time),
-    })),
-    measurements: (inputDb.measurements || []).map((m) => ({
+    });
+  }
+
+  const seenMeasIds = new Set<string>();
+  const measurements: MeasurementRecord[] = [];
+  for (const m of inputDb.measurements || []) {
+    if (
+      !m.measurement_id ||
+      PURGED_TEST_MEASUREMENT_IDS.has(m.measurement_id) ||
+      seenMeasIds.has(m.measurement_id)
+    ) {
+      continue;
+    }
+    seenMeasIds.add(m.measurement_id);
+    measurements.push({
       ...m,
       measurement_date: normalizeDateOnlyString(m.measurement_date),
-    })),
-    healthProfiles: (inputDb.healthProfiles || []).map((h) => ({
+    });
+  }
+
+  const seenProfileIds = new Set<string>();
+  const healthProfiles: HealthProfileRecord[] = [];
+  for (const h of inputDb.healthProfiles || []) {
+    if (
+      !h.health_record_id ||
+      PURGED_TEST_HEALTH_PROFILE_IDS.has(h.health_record_id) ||
+      seenProfileIds.has(h.health_record_id)
+    ) {
+      continue;
+    }
+    seenProfileIds.add(h.health_record_id);
+    healthProfiles.push({
       ...h,
       date_recorded: normalizeDateOnlyString(h.date_recorded),
       last_reviewed: normalizeDateOnlyString(h.last_reviewed),
-    })),
-  };
+    });
+  }
+
+  return { students, visits, measurements, healthProfiles };
 }
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [deviceId] = useState<string>(() => `dev-${Math.random().toString(36).slice(2, 10)}`);
 
   const [db, setDb] = useState<NurseDatabase>(() => {
     const seedDb = normalizeDatabaseSections(createInitialSeedDatabase());
     try {
-      const saved =
-        localStorage.getItem(STORAGE_KEY) ||
-        localStorage.getItem('sva_nurse_room_db_v5') ||
-        localStorage.getItem('sva_nurse_room_db_v4');
+      // Remove legacy storage keys that may contain test records or ghost entries
+      localStorage.removeItem('sva_infirmary_db_v6');
+      localStorage.removeItem('sva_infirmary_db_v5');
+      localStorage.removeItem('sva_nurse_room_db_v5');
+      localStorage.removeItem('sva_nurse_room_db_v4');
+      const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = normalizeDatabaseSections(JSON.parse(saved) as NurseDatabase);
-        if (parsed && Array.isArray(parsed.students) && Array.isArray(parsed.visits)) {
-          if (parsed.students.length < seedDb.students.length) {
-            const existingIds = new Set(parsed.students.map((s) => s.student_id));
-            const mergedStudents = [...parsed.students];
-            for (const seedStu of seedDb.students) {
-              if (!existingIds.has(seedStu.student_id)) {
-                mergedStudents.push(seedStu);
-              }
-            }
-            return { ...parsed, students: mergedStudents };
-          }
+        if (
+          parsed &&
+          Array.isArray(parsed.students) &&
+          parsed.students.length > 0 &&
+          Array.isArray(parsed.visits)
+        ) {
           return parsed;
         }
       }
@@ -163,8 +212,9 @@ export default function App() {
     }
   }, [db]);
 
-  // Connect to shared school server & real-time SSE stream so all phones/laptops share live data
+  // Connect to shared school server & real-time SSE stream only once authenticated
   useEffect(() => {
+    if (!currentUser) return;
     let isMounted = true;
     fetch('/api/state')
       .then((res) => (res.ok ? res.json() : null))
@@ -251,7 +301,7 @@ export default function App() {
       isMounted = false;
       es?.close();
     };
-  }, [deviceId]);
+  }, [deviceId, currentUser]);
 
   const syncWithSheetUrl = async (targetUrl: string, silent: boolean = false) => {
     if (!targetUrl) return;
@@ -314,9 +364,9 @@ export default function App() {
     }
   };
 
-  // Smart auto-sync on tab visibility focus and 15s background check when active
+  // Smart auto-sync on tab visibility focus and 15s background check when active (only when authenticated)
   useEffect(() => {
-    if (!autoSyncEnabled) return;
+    if (!currentUser || !autoSyncEnabled) return;
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -348,7 +398,7 @@ export default function App() {
       window.clearInterval(intervalId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appsScriptUrl, autoSyncEnabled]);
+  }, [appsScriptUrl, autoSyncEnabled, currentUser]);
 
   const handleToggleAutoSync = (enabled: boolean) => {
     setAutoSyncEnabled(enabled);
@@ -423,15 +473,24 @@ export default function App() {
   };
 
   const handleSaveVisit = async (input: VisitFormInput): Promise<VisitRecord> => {
-    const visitId = generatePermanentId(
-      'VIS',
-      db.visits.map((v) => v.visit_id)
-    );
+    const visitId = generatePermanentId('VIS', [
+      ...db.visits.map((v) => v.visit_id),
+      ...Array.from(PURGED_TEST_VISIT_IDS),
+    ]);
     const nowIso = new Date().toISOString();
+    const student = db.students.find((s) => s.student_id === input.student_id);
+    const stuName = student?.full_name || '';
+    const stuSec = student?.section || '';
+    const stuRoll = student?.roll_number || '';
 
     const newVisit: VisitRecord = {
       visit_id: visitId,
       student_id: input.student_id,
+      student_name: stuName,
+      section: stuSec,
+      class: stuSec,
+      roll_number: stuRoll,
+      roll_no: stuRoll,
       visit_datetime: normalizeDatetimeString(input.visit_datetime),
       reason: input.reason.trim(),
       observations: input.observations.trim(),
@@ -451,7 +510,7 @@ export default function App() {
           ? normalizeTimeOnlyString(input.administration_time.trim())
           : '',
       notes: input.notes.trim(),
-      recorded_by: input.recorded_by.trim() || DEFAULT_STAFF_NAME,
+      recorded_by: input.recorded_by.trim() || currentUser?.displayName || DEFAULT_STAFF_NAME,
       created_at: nowIso,
     };
 
@@ -552,10 +611,10 @@ export default function App() {
     weightKg: number,
     notes: string
   ) => {
-    const measurementId = generatePermanentId(
-      'MSR',
-      db.measurements.map((m) => m.measurement_id)
-    );
+    const measurementId = generatePermanentId('MSR', [
+      ...db.measurements.map((m) => m.measurement_id),
+      ...Array.from(PURGED_TEST_MEASUREMENT_IDS),
+    ]);
     const nowIso = new Date().toISOString();
     const newMeas: MeasurementRecord = {
       measurement_id: measurementId,
@@ -603,10 +662,10 @@ export default function App() {
     conditionOrNote: string,
     status: 'Active' | 'Monitoring' | 'Resolved'
   ) => {
-    const recordId = generatePermanentId(
-      'HPR',
-      db.healthProfiles.map((h) => h.health_record_id)
-    );
+    const recordId = generatePermanentId('HPR', [
+      ...db.healthProfiles.map((h) => h.health_record_id),
+      ...Array.from(PURGED_TEST_HEALTH_PROFILE_IDS),
+    ]);
     const today = getTodayLocalDateString();
     const newProfile: HealthProfileRecord = {
       health_record_id: recordId,
@@ -744,6 +803,11 @@ export default function App() {
       }));
   }, [db.visits, db.students]);
 
+  // Authentication gate: strictly requires login on every reload or first visit
+  if (!currentUser) {
+    return <AuthScreen onLoginSuccess={(user) => setCurrentUser(user)} />;
+  }
+
   if (printReportConfig) {
     return (
       <PrintableReport
@@ -844,8 +908,9 @@ export default function App() {
           </a>
         </nav>
 
-        {/* Zone 3: 1 Primary Action */}
-        <div className="flex items-center shrink-0">
+        {/* Zone 3: Record Action + Lock Button */}
+        <div className="flex items-center gap-2.5 shrink-0">
+
           <button
             type="button"
             onClick={() =>
@@ -855,10 +920,20 @@ export default function App() {
                   : ''
               )
             }
-            className="h-9 px-3.5 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-xs bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99]"
+            className="h-9 px-3.5 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-xs bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99] cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.25]" />
             <span>Record Visit</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCurrentUser(null)}
+            title="Lock infirmary terminal"
+            className="h-9 px-2.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200/90 rounded-xl hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition-colors flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="font-medium">Lock</span>
           </button>
         </div>
       </header>
@@ -948,8 +1023,8 @@ export default function App() {
               </div>
             </a>
 
-            {activeScreen !== 'home' && (
-              <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
+              {activeScreen !== 'home' && (
                 <button
                   type="button"
                   onClick={() =>
@@ -961,13 +1036,22 @@ export default function App() {
                   }
                   aria-label="Print today's visit log"
                   title="Print today's visit log"
-                  className="h-8 px-2.5 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-zinc-700 active:bg-stone-100 transition-colors"
+                  className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-zinc-700 active:bg-stone-100 transition-colors"
                 >
                   <Printer className="w-3.5 h-3.5 text-zinc-600" />
-                  <span className="hidden min-[380px]:inline text-[11px]">Print Log</span>
                 </button>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                onClick={() => setCurrentUser(null)}
+                aria-label="Lock infirmary"
+                title="Lock infirmary"
+                className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-zinc-700 active:bg-rose-50 active:text-rose-700 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5 text-zinc-500" />
+                <span className="text-[11px] font-semibold text-zinc-700">Lock</span>
+              </button>
+            </div>
           </>
         )}
       </header>
@@ -1401,6 +1485,7 @@ export default function App() {
             measurements={db.measurements}
             healthProfiles={db.healthProfiles}
             initialStudentId={preselectedStudentIdForVisit}
+            activeNurseName={currentUser?.displayName || 'School Nurse'}
             onSaveVisit={handleSaveVisit}
             onQuickCreateStudent={handleCreateStudent}
             onOpenStudentProfile={openStudentProfile}

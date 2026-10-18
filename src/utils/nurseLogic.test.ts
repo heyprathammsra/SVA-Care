@@ -456,3 +456,201 @@ test('Google Sheets Date.toString() formats normalize cleanly to ISO dates and 1
   const gsEpochTime = 'Sat Dec 30 1899 09:40:00 GMT+0521 (インド標準時)';
   assert.equal(normalizeTimeOnlyString(gsEpochTime), '09:40 AM');
 });
+
+test('normalizeSheetSyncPayload updates renamed students in-place by section+roll and filters accidental float roll numbers', () => {
+  const currentDb: NurseDatabase = {
+    students: [
+      ...sampleStudents,
+      {
+        student_id: 'STU-2026-0293',
+        full_name: 'abc',
+        section: 'Sparkle',
+        roll_number: '2.8',
+        active_status: 'Active',
+        created_at: '2026-10-18T17:38:24Z',
+        updated_at: '2026-10-18T17:38:24Z',
+      },
+    ],
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: [
+        // Renamed Sparkle Roll 01 in Google Sheet (blank student_id)
+        { student_id: '', full_name: 'Student One (Privacy Masked)', section: 'Sparkle', roll_number: '1' },
+        // Accidental spreadsheet drag-fill float roll number should be ignored
+        { student_id: '', full_name: 'def', section: 'Sparkle', roll_number: '3.02857142857143' },
+      ],
+    },
+    currentDb,
+    '2026-10-18T18:00:00Z'
+  );
+
+  // Float roll number 2.8 in currentDb and 3.02857142857143 in payload are stripped;
+  // Sparkle Roll 01 is updated in-place keeping STU-2026-0001
+  assert.equal(synced.students.length, 3);
+  const roll01 = synced.students.find((s) => s.roll_number === '01');
+  assert.ok(roll01);
+  assert.equal(roll01.student_id, 'STU-2026-0001');
+  assert.equal(roll01.full_name, 'Student One (Privacy Masked)');
+});
+
+test('normalizeSheetSyncPayload strips purged test visits, measurements, and health profiles while preserving students and new records', () => {
+  const currentDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: sampleStudents,
+      visits: [
+        // Legacy test visits that should be ignored
+        {
+          visit_id: 'VIS-2026-0001',
+          student_id: 'STU-2026-0001',
+          visit_datetime: '2026-10-18T08:45',
+          reason: 'Test visit',
+          action_taken: 'Test',
+        },
+        {
+          visit_id: 'VIS-2026-0019',
+          student_id: 'STU-2026-0002',
+          visit_datetime: '2026-10-18T20:02',
+          reason: 'Test 2',
+          action_taken: 'Test 2',
+        },
+        // New nurse visit tomorrow (VIS-2026-0020+) that should be kept
+        {
+          visit_id: 'VIS-2026-0020',
+          student_id: 'STU-2026-0001',
+          visit_datetime: '2026-10-19T09:30',
+          reason: 'Real nurse visit tomorrow',
+          action_taken: 'First aid given',
+        },
+      ],
+      measurements: [
+        // Legacy test measurement that should be ignored
+        {
+          measurement_id: 'MSR-2026-0001',
+          student_id: 'STU-2026-0001',
+          measurement_date: '2026-06-20',
+          height_cm: '142.0',
+          weight_kg: '34.5',
+        },
+        // New nurse measurement tomorrow (MSR-2026-0007+) that should be kept
+        {
+          measurement_id: 'MSR-2026-0007',
+          student_id: 'STU-2026-0001',
+          measurement_date: '2026-10-19',
+          height_cm: '145.0',
+          weight_kg: '36.0',
+        },
+      ],
+      healthProfiles: [
+        // Legacy test health profile that should be ignored
+        {
+          health_record_id: 'HPR-2026-0002',
+          student_id: 'STU-2026-0001',
+          condition_or_note: 'Test note',
+          status: 'Active',
+        },
+        // New nurse health profile tomorrow (HPR-2026-0004+) that should be kept
+        {
+          health_record_id: 'HPR-2026-0004',
+          student_id: 'STU-2026-0001',
+          condition_or_note: 'Real nurse health note',
+          status: 'Active',
+        },
+      ],
+    },
+    currentDb,
+    '2026-10-19T10:00:00Z'
+  );
+
+  assert.equal(synced.students.length, 3);
+  assert.equal(synced.visits.length, 1);
+  assert.equal(synced.visits[0].visit_id, 'VIS-2026-0020');
+  assert.equal(synced.measurements.length, 1);
+  assert.equal(synced.measurements[0].measurement_id, 'MSR-2026-0007');
+  assert.equal(synced.healthProfiles.length, 1);
+  assert.equal(synced.healthProfiles[0].health_record_id, 'HPR-2026-0004');
+});
+
+test('normalizeSheetSyncPayload enriches visit records with student_name, class, and roll_no', () => {
+  const currentDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: sampleStudents,
+      visits: [
+        {
+          visit_id: 'VIS-2026-0025',
+          student_id: 'STU-2026-0001', // Ajinkya Balu Gurav (Roll 01, Sparkle)
+          visit_datetime: '2026-10-18T14:30',
+          reason: 'Headache',
+          action_taken: 'Rest',
+        },
+      ],
+    },
+    currentDb,
+    '2026-10-18T15:00:00Z'
+  );
+
+  assert.equal(synced.visits.length, 1);
+  const v = synced.visits[0];
+  assert.equal(v.visit_id, 'VIS-2026-0025');
+  assert.equal(v.student_name, 'Ajinkya Balu Gurav');
+  assert.equal(v.section, 'Sparkle');
+  assert.equal(v.class, 'Sparkle');
+  assert.equal(v.roll_number, '01');
+  assert.equal(v.roll_no, '01');
+});
+
+test('authenticateUser verifies nurse and admin credentials accurately', async () => {
+  const { authenticateUser } = await import('./auth.ts');
+
+  // Test 1: Valid nurse credentials
+  const nurseUser = authenticateUser('nurse', 'iloveeating');
+  assert.ok(nurseUser);
+  assert.equal(nurseUser?.username, 'nurse');
+  assert.equal(nurseUser?.role, 'nurse');
+  assert.equal(nurseUser?.displayName, 'School Nurse');
+
+  // Test 2: Valid admin credentials
+  const adminUser = authenticateUser('admin', 'sva0pass');
+  assert.ok(adminUser);
+  assert.equal(adminUser?.username, 'admin');
+  assert.equal(adminUser?.role, 'admin');
+  assert.equal(adminUser?.displayName, 'Infirmary Administrator');
+
+  // Test 3: Case-insensitive username and whitespace trimming
+  const mixedCaseNurse = authenticateUser('  NURSE  ', 'iloveeating');
+  assert.ok(mixedCaseNurse);
+  assert.equal(mixedCaseNurse?.username, 'nurse');
+
+  const mixedCaseAdmin = authenticateUser('Admin ', 'sva0pass');
+  assert.ok(mixedCaseAdmin);
+  assert.equal(mixedCaseAdmin?.username, 'admin');
+
+  // Test 4: Wrong passwords rejected
+  assert.equal(authenticateUser('nurse', 'wrongpass'), null);
+  assert.equal(authenticateUser('admin', 'iloveeating'), null);
+
+  // Test 5: Wrong usernames rejected
+  assert.equal(authenticateUser('doctor', 'iloveeating'), null);
+  assert.equal(authenticateUser('', 'sva0pass'), null);
+  assert.equal(authenticateUser('nurse', ''), null);
+});
+
+
