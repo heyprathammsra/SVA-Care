@@ -88,76 +88,155 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
         </div>
       )}
 
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight">
-          Multi-Device &amp; Google Sheets Sync
-        </h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          All school phones and laptops share live data automatically without needing a Google login.
-        </p>
-      </div>
-
-      {/* Live Multi-Device Shared Database Banner */}
-      <div className="bg-teal-50/70 border border-teal-200/80 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-teal-600 animate-pulse" />
-            <span className="text-xs font-bold text-teal-900 uppercase tracking-wider">
-              Live School Sync Active (No Login Needed)
-            </span>
-          </div>
-          <p className="text-xs text-teal-800/90 leading-relaxed">
-            School staff on separate phones or laptops see and update the exact same student and visit records in real time. Your official Google Sheet connection is permanently linked and locked across all school devices.
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-stone-200/80 pb-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight">
+            Google Sheets Backend &amp; App Guide
+          </h1>
+          <p className="text-sm text-zinc-600 mt-1">
+            Simple overview of how your school data stays in sync and how staff can use the infirmary app every day.
           </p>
         </div>
-        <div className="text-xs font-mono font-semibold text-teal-900 bg-white/90 border border-teal-200/70 px-3 py-2 rounded-xl shrink-0 self-start sm:self-center">
-          {db.students.length} students · {db.visits.length} visits
+        <div className="text-xs font-mono tabular-nums text-zinc-600 shrink-0">
+          <span>{db.students.length} students</span>
+          <span aria-hidden="true" className="mx-1.5">·</span>
+          <span>{db.visits.length} visits</span>
+          <span aria-hidden="true" className="mx-1.5">·</span>
+          <span>{db.measurements.length} measurements</span>
         </div>
       </div>
 
-      {/* 1. Live Google Apps Script Connection & CSV Tab Exports */}
-      <section className="bg-white border border-stone-200/80 rounded-2xl p-5 sm:p-7 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
+      {/* 1. Simple Info: How the Backend Works */}
+      <section className="bg-white border border-stone-200/80 rounded-2xl p-5 sm:p-7 space-y-5">
+        <div>
+          <h2 className="text-base font-semibold text-zinc-900 font-display">
+            How the Backend Works (In Simple Terms)
+          </h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Everything runs automatically in the background—staff never need to press a manual upload button or sign in.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 pt-2 border-t border-stone-100">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-zinc-900">
+              01. Instant Phone &amp; Laptop Sync
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              When you save a visit or student update on any phone or computer, it goes to the app server first and appears on every other staff member&apos;s screen within a second.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-zinc-900">
+              02. Automatic Google Sheet Saving
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              At the exact same time, the server forwards that record to your Google Sheet (into the <span className="font-mono text-zinc-800">Visits</span>, <span className="font-mono text-zinc-800">Measurements</span>, <span className="font-mono text-zinc-800">Health Profiles</span>, or <span className="font-mono text-zinc-800">Students</span> tab).
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-zinc-900">
+              03. Reading Edits from Google Sheets
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Every 15 seconds, the app checks your Google Sheet. If you add new students or edit class sections directly in the spreadsheet, those changes automatically show up in the app.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-zinc-900">
+              04. Built-In Phone Backup
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Each phone also keeps a safe copy in its browser memory. If internet is slow when a visit is recorded, the app automatically pushes the missing report to the Google Sheet next time it connects.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. Simple Guide: How to Use This Web App */}
+      <section className="bg-white border border-stone-200/80 rounded-2xl p-5 sm:p-7 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900 font-display">
+              Simple Guide: How to Use This Web App
+            </h2>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Quick 4-step instructions for school nurses, teachers, and office staff.
+            </p>
+          </div>
+          {onBackToHome && (
+            <button
+              type="button"
+              onClick={onBackToHome}
+              className="self-start sm:self-center px-3.5 py-2 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100/80 rounded-xl transition-colors whitespace-nowrap shrink-0"
+            >
+              Open Infirmary Home
+            </button>
+          )}
+        </div>
+
+        <div className="divide-y divide-stone-100 border-t border-stone-100">
+          <div className="py-3.5 flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4">
+            <span className="text-xs font-semibold text-teal-800 sm:w-48 shrink-0">
+              Step 1 · Find a Student
+            </span>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              On the <strong>Infirmary</strong> home screen, type the student&apos;s name, roll number, or section (for example, <em>Sparkle</em> or <em>Grade 5</em>) in the search box. You can also add a new student anytime using the <strong>+ Add Student</strong> button.
+            </p>
+          </div>
+
+          <div className="py-3.5 flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4">
+            <span className="text-xs font-semibold text-teal-800 sm:w-48 shrink-0">
+              Step 2 · Record a Visit
+            </span>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Click <strong>Record Visit</strong> next to any student. Pick the reason for the visit (such as Fever, Headache, or First Aid), enter temperature or vitals if taken, note the medicine/care given, and tap <strong>Save Visit</strong>.
+            </p>
+          </div>
+
+          <div className="py-3.5 flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4">
+            <span className="text-xs font-semibold text-teal-800 sm:w-48 shrink-0">
+              Step 3 · Track Health &amp; Growth
+            </span>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Tap a student&apos;s name to open their <strong>Student Profile</strong>. Here you can view past infirmary visits, log height and weight (BMI is calculated automatically), or record allergies, blood group, and parent contact numbers.
+            </p>
+          </div>
+
+          <div className="py-3.5 pt-3.5 pb-1 flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-4">
+            <span className="text-xs font-semibold text-teal-800 sm:w-48 shrink-0">
+              Step 4 · View &amp; Print Reports
+            </span>
+            <p className="text-xs text-zinc-600 leading-relaxed">
+              Open <strong>Daily Log</strong> at the top of the page to see all visits by date, print a Parent Notification Slip after a visit, print the full infirmary register, or download CSV backups below.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Official School Google Sheet Connection & CSV Tab Exports */}
+      <section className="bg-white border border-stone-200/80 rounded-2xl p-5 sm:p-7 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-zinc-900 font-display">
               Official School Google Sheet Connection
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Permanently linked to Saraswati Vidya Academy&apos;s Google Sheet backend (URL editing is disabled to prevent accidental changes).
+              Permanently linked to {SCHOOL_NAME}&apos;s Google Sheet backend (URL editing is locked so the link cannot be accidentally changed).
             </p>
-          </div>
-        </div>
-
-        {/* Automated Background Sync Live Status Card */}
-        <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-start gap-3">
-            <span className="relative flex h-3 w-3 mt-1 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-600"></span>
-            </span>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider">
-                  Automated Continuous Sync Active
-                </span>
-                <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-full border border-emerald-300/60">
-                  Locked &amp; Always On
-                </span>
-              </div>
-              <p className="text-xs text-emerald-900/90 leading-relaxed">
-                Automatic bidirectional sync is running. All student visits and updates push to Google Sheets instantly upon saving, and edits from the Sheet auto-sync every 15 seconds.
-              </p>
-            </div>
           </div>
           <button
             type="button"
             onClick={handleManualSync}
             disabled={isSyncing}
             title="Test connection or force immediate sync check"
-            className="self-start sm:self-center px-3 py-1.5 text-xs font-medium text-emerald-900 bg-white border border-emerald-200/90 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-1.5 shrink-0 shadow-2xs disabled:opacity-50"
+            className="self-start sm:self-center px-3.5 py-2 text-xs font-medium text-zinc-800 bg-stone-100 hover:bg-stone-200/80 rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Syncing...' : 'Check Connection'}</span>
+            <span>{isSyncing ? 'Checking...' : 'Check Connection Now'}</span>
           </button>
         </div>
 
@@ -192,7 +271,7 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-zinc-900 font-display">
-              Apps Script Backend (`Code.gs`)
+              Apps Script Backend (Code.gs)
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5">
               Open your Google Sheet &rarr; Extensions &rarr; Apps Script, paste this script, run <code>setupSpreadsheet</code> once, and deploy as a Web App.
