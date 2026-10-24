@@ -653,4 +653,105 @@ test('authenticateUser verifies nurse and admin credentials accurately', async (
   assert.equal(authenticateUser('nurse', ''), null);
 });
 
+test('generateVisitsCSV formats headers, columns, student details, and escaping accurately', async () => {
+  const { generateVisitsCSV } = await import('./nurseLogic.ts');
+
+  const testEntries = [
+    {
+      visitNumber: 1,
+      visitTimeFormatted: '10:15 AM',
+      medicineSummary: 'ORS Electrolyte 200 ml (Oral)',
+      visit: {
+        visit_id: 'VIS-2026-0001',
+        student_id: 'STU-2026-0001',
+        visit_datetime: '2026-10-18T10:15',
+        reason: 'Headache, fatigue after sports',
+        observations: 'Afebrile, 98.4°F',
+        action_taken: 'ORS 200 ml given, rested',
+        medicine_status: 'given' as const,
+        medicine_name: 'ORS Electrolyte',
+        dosage: '200',
+        dosage_unit: 'ml',
+        route: 'Oral',
+        administration_time: '10:15 AM',
+        notes: 'Advised hydration',
+        recorded_by: 'School Nurse',
+        created_at: '2026-10-18T10:15:00Z',
+      },
+      student: {
+        student_id: 'STU-2026-0001',
+        full_name: 'Ajinkya Balu Gurav',
+        section: 'Sparkle',
+        roll_number: '01',
+        active_status: 'Active' as const,
+        created_at: '2026-06-15T08:00:00Z',
+        updated_at: '2026-06-15T08:00:00Z',
+      },
+    },
+  ];
+
+  const csv = generateVisitsCSV(testEntries);
+  assert.ok(csv.startsWith('\uFEFF')); // UTF-8 BOM
+  assert.ok(csv.includes('Sr No,Visit ID,Date,Time,Student Name,Roll No,Class'));
+  assert.ok(csv.includes('Ajinkya Balu Gurav'));
+  assert.ok(csv.includes('01'));
+  assert.ok(csv.includes('Sparkle'));
+  assert.ok(csv.includes('"Headache, fatigue after sports"')); // Proper RFC 4180 escaping
+  assert.ok(csv.includes('ORS Electrolyte'));
+});
+
+test('normalizeSheetSyncPayload handles past visits pasted without visit_id or student_id by matching class & roll', async () => {
+  const { normalizeSheetSyncPayload } = await import('./nurseLogic.ts');
+
+  const currentDb = {
+    students: [
+      {
+        student_id: 'STU-2026-0002',
+        full_name: 'Ankita Rangnath Ghige',
+        section: '6 Sparkle',
+        roll_number: '02',
+        active_status: 'Active' as const,
+        created_at: '2026-06-15T08:00:00Z',
+        updated_at: '2026-06-15T08:00:00Z',
+      },
+    ],
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+  };
+
+  // Past visit row as someone might type in Google Sheets:
+  // - No student_id (just student_name, class, roll_no)
+  // - No visit_id (blank)
+  // - Past date (e.g. 2026-08-14)
+  const synced = normalizeSheetSyncPayload(
+    {
+      visits: [
+        {
+          student_name: 'Ankita Rangnath Ghige',
+          class: 'Sparkle',
+          roll_no: '2',
+          visit_datetime: '2026-08-14T11:20',
+          reason: 'Mild stomach cramp',
+          action_taken: 'Warm water and rest',
+        },
+      ],
+    },
+    currentDb,
+    '2026-10-21T10:00:00Z'
+  );
+
+  assert.equal(synced.visits.length, 1);
+  const v = synced.visits[0];
+  assert.ok(v.visit_id.startsWith('VIS-2026-'));
+  assert.equal(v.student_id, 'STU-2026-0002');
+  assert.equal(v.student_name, 'Ankita Rangnath Ghige');
+  assert.equal(v.class, 'Sparkle');
+  assert.equal(v.roll_no, '02');
+  assert.equal(v.visit_datetime, '2026-08-14T11:20');
+  assert.equal(v.reason, 'Mild stomach cramp');
+});
+
+
+
 

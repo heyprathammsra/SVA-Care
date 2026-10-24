@@ -849,8 +849,40 @@ export function normalizeSheetSyncPayload(
   const normalizedRemoteVisits: VisitRecord[] = [];
   const seenRemoteVisitIds = new Set<string>();
   rawVisits.forEach((row) => {
-    const visitId = String(row?.visit_id || '').trim();
-    const studentId = String(row?.student_id || '').trim();
+    let studentId = String(row?.student_id || '').trim();
+    const rawStuName = String(row?.student_name || row?.full_name || row?.name || '').trim();
+    const rawSection = normalizeSectionName(String(row?.section || row?.class || ''));
+    const rawRoll = String(row?.roll_no || row?.roll_number || '').trim();
+    const stuRoll = /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll;
+
+    // If student_id is omitted (e.g. past visits pasted in Google Sheets), look up by section + roll or name
+    if (!studentId && (rawSection || rawStuName)) {
+      const match = finalStudents.find((s) => {
+        if (rawSection && stuRoll) {
+          return (
+            normalizeSectionName(s.section).toLowerCase() === rawSection.toLowerCase() &&
+            s.roll_number.trim().padStart(2, '0') === stuRoll
+          );
+        }
+        if (rawStuName) {
+          return s.full_name.trim().toLowerCase() === rawStuName.toLowerCase();
+        }
+        return false;
+      });
+      if (match) {
+        studentId = match.student_id;
+      }
+    }
+
+    let visitId = String(row?.visit_id || '').trim();
+    if (!visitId && studentId) {
+      visitId = generatePermanentId('VIS', [
+        ...seenRemoteVisitIds,
+        ...PURGED_TEST_VISIT_IDS,
+        ...currentDb.visits.map((v) => v.visit_id),
+      ]);
+    }
+
     if (
       !visitId ||
       !studentId ||
@@ -890,8 +922,7 @@ export function normalizeSheetSyncPayload(
     const stuSection = normalizeSectionName(
       String(row?.section || row?.class || matchedStudent?.section || '')
     );
-    const rawRoll = String(row?.roll_no || row?.roll_number || matchedStudent?.roll_number || '').trim();
-    const stuRoll = /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll;
+    const resolvedRoll = stuRoll || (matchedStudent?.roll_number ? matchedStudent.roll_number.padStart(2, '0') : '');
 
     normalizedRemoteVisits.push({
       visit_id: visitId,
@@ -899,8 +930,8 @@ export function normalizeSheetSyncPayload(
       student_name: stuName,
       section: stuSection,
       class: stuSection,
-      roll_number: stuRoll,
-      roll_no: stuRoll,
+      roll_number: resolvedRoll,
+      roll_no: resolvedRoll,
       visit_datetime: normalizeDatetimeString(
         String(row?.visit_datetime || ''),
         nowIso.slice(0, 16)
@@ -1079,6 +1110,84 @@ export function normalizeSheetSyncPayload(
     measurements: finalMeasurements,
     healthProfiles: finalProfiles,
   };
+}
+
+/**
+ * Generates RFC 4180 compliant CSV string with UTF-8 BOM for Excel/Google Sheets compatibility
+ */
+export function generateVisitsCSV(entries: DailyLogEntry[]): string {
+  const headers = [
+    'Sr No',
+    'Visit ID',
+    'Date',
+    'Time',
+    'Student Name',
+    'Roll No',
+    'Class',
+    'Reason / Complaint',
+    'Clinical Observations',
+    'Action Taken',
+    'Medicine Status',
+    'Medicine Name',
+    'Dosage',
+    'Route',
+    'Administration Time',
+    'Recorded By',
+  ];
+
+  const escapeCSV = (val: string | number | undefined | null) => {
+    const s = String(val ?? '').trim();
+    if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+
+  const rows = entries.map((entry, idx) => {
+    const v = entry.visit;
+    const stu = entry.student;
+    const dt = v.visit_datetime || '';
+    const datePart = dt.length >= 10 ? dt.slice(0, 10) : '';
+    const timePart = formatTimeFromDatetime(dt);
+
+    return [
+      idx + 1,
+      v.visit_id,
+      datePart,
+      timePart,
+      stu.full_name,
+      stu.roll_number,
+      stu.section,
+      v.reason,
+      v.observations,
+      v.action_taken,
+      v.medicine_status === 'given'
+        ? 'Medicine Given'
+        : v.medicine_status === 'none'
+          ? 'No Medicine'
+          : 'Not Recorded',
+      v.medicine_name,
+      v.dosage ? `${v.dosage} ${v.dosage_unit || ''}`.trim() : '',
+      v.route,
+      v.administration_time,
+      v.recorded_by,
+    ].map(escapeCSV).join(',');
+  });
+
+  // Prepend UTF-8 Byte Order Mark (\uFEFF) so Microsoft Excel opens accented Indian names & punctuation cleanly
+  return '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows].join('\r\n');
+}
+
+export function downloadCSVFile(csvContent: string, filename: string): void {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 

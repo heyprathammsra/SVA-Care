@@ -1039,9 +1039,12 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
               </div>
 
               <div>
-                <label htmlFor="visit-datetime" className="block text-xs text-zinc-500 mb-1">
-                  Visit Date &amp; Time *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="visit-datetime" className="block text-xs text-zinc-500">
+                    Visit Date &amp; Time *
+                  </label>
+                  <span className="text-[11px] text-zinc-400">Past dates supported</span>
+                </div>
                 <input
                   id="visit-datetime"
                   type="datetime-local"
