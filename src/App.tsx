@@ -13,6 +13,9 @@ import {
   Cloud,
   HeartPulse,
   LogOut,
+  Bell,
+  Send,
+  Check,
 } from 'lucide-react';
 import {
   generatePermanentId,
@@ -35,6 +38,7 @@ import {
   type VisitRecord,
   type MeasurementRecord,
   type HealthProfileRecord,
+  type WardenDispatchRecord,
   type VisitFormInput,
   type DailyLogEntry,
 } from './utils/nurseLogic';
@@ -53,6 +57,7 @@ import { DailyLogView } from './components/DailyLogView';
 import { SheetsSetupView } from './components/SheetsSetupView';
 import { PrintableReport, type PrintReportConfig } from './components/PrintableReport';
 import { AuthScreen } from './components/AuthScreen';
+import { WardenPortalView } from './components/WardenPortalView';
 import { type AuthUser } from './utils/auth';
 
 type ActiveScreen = 'home' | 'new-visit' | 'students' | 'daily-log' | 'sheets-setup';
@@ -126,7 +131,9 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
     });
   }
 
-  return { students, visits, measurements, healthProfiles };
+  const dispatches = Array.isArray(inputDb.dispatches) ? inputDb.dispatches : [];
+
+  return { students, visits, measurements, healthProfiles, dispatches };
 }
 
 export default function App() {
@@ -182,8 +189,11 @@ export default function App() {
     return 'home';
   });
   const [preselectedStudentIdForVisit, setPreselectedStudentIdForVisit] = useState<string>('');
+  const [preselectedReasonForVisit, setPreselectedReasonForVisit] = useState<string>('');
+  const [preselectedNotesForVisit, setPreselectedNotesForVisit] = useState<string>('');
   const [selectedProfileStudentId, setSelectedProfileStudentId] = useState<string | null>(null);
   const [printReportConfig, setPrintReportConfig] = useState<PrintReportConfig | null>(null);
+  const [showIncomingDispatches, setShowIncomingDispatches] = useState(false);
 
   // Sync hash changes with activeScreen for browser navigation
   useEffect(() => {
@@ -707,9 +717,105 @@ export default function App() {
       });
   };
 
-  const startNewVisitForStudent = (studentId: string = '') => {
+  const startNewVisitForStudent = (
+    studentId: string = '',
+    initialReason: string = '',
+    initialNotes: string = ''
+  ) => {
     setPreselectedStudentIdForVisit(studentId);
+    setPreselectedReasonForVisit(initialReason);
+    setPreselectedNotesForVisit(initialNotes);
     setActiveScreen('new-visit');
+  };
+
+  const handleDispatchStudent = async (
+    student: StudentRecord,
+    reason: string,
+    notes: string
+  ): Promise<void> => {
+    const dispatchId = generatePermanentId(
+      'DSP',
+      (db.dispatches || []).map((d) => d.dispatch_id)
+    );
+    const newDispatch: WardenDispatchRecord = {
+      dispatch_id: dispatchId,
+      student_id: student.student_id,
+      student_name: student.full_name,
+      section: student.section,
+      roll_number: student.roll_number,
+      reason,
+      notes: notes || undefined,
+      dispatched_by: currentUser?.displayName || 'Hostel Warden',
+      dispatched_at: new Date().toISOString(),
+      status: 'in_transit',
+    };
+
+    setDb((prev) => ({
+      ...prev,
+      dispatches: [newDispatch, ...(prev.dispatches || [])],
+    }));
+
+    await fetch('/api/mutate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'dispatchStudent', dispatch: newDispatch, deviceId }),
+    }).catch(() => {});
+  };
+
+  const handleCancelDispatch = async (dispatchId: string): Promise<void> => {
+    setDb((prev) => ({
+      ...prev,
+      dispatches: (prev.dispatches || []).map((d) =>
+        d.dispatch_id === dispatchId ? { ...d, status: 'cancelled' as const } : d
+      ),
+    }));
+
+    await fetch('/api/mutate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'updateDispatchStatus',
+        dispatch_id: dispatchId,
+        status: 'cancelled',
+        deviceId,
+      }),
+    }).catch(() => {});
+  };
+
+  const handleAdmitDispatchedStudent = async (dispatch: WardenDispatchRecord): Promise<void> => {
+    // Mark dispatch as arrived
+    setDb((prev) => ({
+      ...prev,
+      dispatches: (prev.dispatches || []).map((d) =>
+        d.dispatch_id === dispatch.dispatch_id
+          ? {
+              ...d,
+              status: 'arrived' as const,
+              acknowledged_at: new Date().toISOString(),
+            }
+          : d
+      ),
+    }));
+
+    fetch('/api/mutate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'updateDispatchStatus',
+        dispatch_id: dispatch.dispatch_id,
+        status: 'arrived',
+        acknowledged_at: new Date().toISOString(),
+        deviceId,
+      }),
+    }).catch(() => {});
+
+    // Open visit entry form pre-filled with student and warden's reason and notes
+    setShowIncomingDispatches(false);
+    startNewVisitForStudent(
+      dispatch.student_id,
+      dispatch.reason,
+      dispatch.notes ? `Warden Note: ${dispatch.notes}` : ''
+    );
   };
 
   const openStudentProfile = (studentId: string) => {
@@ -738,6 +844,10 @@ export default function App() {
     });
     return map;
   }, [db.healthProfiles]);
+
+  const activeDispatches = useMemo(() => {
+    return (db.dispatches || []).filter((d) => d.status === 'in_transit');
+  }, [db.dispatches]);
 
   const latestMeasByStudentId = useMemo(() => {
     const map = new Map<string, MeasurementRecord>();
@@ -806,6 +916,23 @@ export default function App() {
   // Authentication gate: strictly requires login on every reload or first visit
   if (!currentUser) {
     return <AuthScreen onLoginSuccess={(user) => setCurrentUser(user)} />;
+  }
+
+  // Warden portal view for hostel staff
+  if (currentUser.role === 'warden') {
+    return (
+      <WardenPortalView
+        currentUser={currentUser}
+        students={db.students}
+        visits={db.visits}
+        measurements={db.measurements}
+        healthProfiles={db.healthProfiles}
+        dispatches={db.dispatches || []}
+        onDispatchStudent={handleDispatchStudent}
+        onCancelDispatch={handleCancelDispatch}
+        onLogout={() => setCurrentUser(null)}
+      />
+    );
   }
 
   if (printReportConfig) {
@@ -910,6 +1037,25 @@ export default function App() {
 
         {/* Zone 3: Record Action + Lock Button */}
         <div className="flex items-center gap-2.5 shrink-0">
+          {/* Unobtrusive Warden Alert / Incoming Queue Pill */}
+          <button
+            type="button"
+            onClick={() => setShowIncomingDispatches(true)}
+            className={`h-9 px-3 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs border cursor-pointer ${
+              activeDispatches.length > 0
+                ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                : 'bg-white text-zinc-600 border-stone-200/90 hover:bg-stone-50'
+            }`}
+            title="Incoming passes from hostel warden"
+          >
+            <Bell className={`w-3.5 h-3.5 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-400'}`} />
+            <span>Hostel Passes</span>
+            {activeDispatches.length > 0 && (
+              <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-600 text-white text-[10px] font-bold">
+                {activeDispatches.length}
+              </span>
+            )}
+          </button>
 
           <button
             type="button"
@@ -1024,6 +1170,24 @@ export default function App() {
             </a>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowIncomingDispatches(true)}
+                aria-label="Hostel passes"
+                title="Hostel passes"
+                className={`relative h-8 px-2 rounded-lg border shadow-2xs flex items-center gap-1 text-xs font-medium transition-colors ${
+                  activeDispatches.length > 0
+                    ? 'bg-amber-50 text-amber-900 border-amber-300'
+                    : 'bg-white text-zinc-600 border-stone-200/90'
+                }`}
+              >
+                <Bell className={`w-3.5 h-3.5 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-500'}`} />
+                {activeDispatches.length > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    {activeDispatches.length}
+                  </span>
+                )}
+              </button>
               {activeScreen !== 'home' && (
                 <button
                   type="button"
@@ -1485,11 +1649,17 @@ export default function App() {
             measurements={db.measurements}
             healthProfiles={db.healthProfiles}
             initialStudentId={preselectedStudentIdForVisit}
+            initialReason={preselectedReasonForVisit}
+            initialNotes={preselectedNotesForVisit}
             activeNurseName={currentUser?.displayName || 'School Nurse'}
             onSaveVisit={handleSaveVisit}
             onQuickCreateStudent={handleCreateStudent}
             onOpenStudentProfile={openStudentProfile}
-            onCancel={() => setActiveScreen('home')}
+            onCancel={() => {
+              setPreselectedReasonForVisit('');
+              setPreselectedNotesForVisit('');
+              setActiveScreen('home');
+            }}
             onPrintSingleVisit={(student, visit) =>
               setPrintReportConfig({
                 type: 'single-visit',
@@ -1767,6 +1937,121 @@ export default function App() {
             </button>
           </div>
         </nav>
+      )}
+
+      {/* UNOBTRUSIVE INCOMING HOSTEL PASSES DRAWER / MODAL FOR NURSE */}
+      {showIncomingDispatches && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in"
+          onClick={() => setShowIncomingDispatches(false)}
+        >
+          <div
+            className="bg-white rounded-2xl border border-stone-200/90 shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between bg-stone-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <Bell className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-zinc-900 leading-tight">
+                    Hostel Passes (Incoming Students)
+                  </h3>
+                  <p className="text-xs text-zinc-500">
+                    Dispatched by hostel warden · Tap "Admit" to start visit
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIncomingDispatches(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-stone-100 text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="p-5 overflow-y-auto space-y-3 flex-1">
+              {activeDispatches.length === 0 ? (
+                <div className="py-12 text-center text-zinc-400 flex flex-col items-center">
+                  <Check className="w-8 h-8 mb-2 text-emerald-500" />
+                  <p className="text-xs font-semibold text-zinc-700">No students currently in transit</p>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    When hostel warden Agnel sends a student, their pass will appear here automatically.
+                  </p>
+                </div>
+              ) : (
+                activeDispatches.map((d) => (
+                  <div
+                    key={d.dispatch_id}
+                    className="p-4 rounded-xl border border-amber-200/80 bg-amber-50/50 flex flex-col gap-2.5 shadow-2xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+                          {d.student_name}
+                          <span className="text-xs font-mono font-normal text-zinc-500">
+                            Class {d.section} · Roll {d.roll_number}
+                          </span>
+                        </div>
+                        <div className="text-xs text-zinc-700 mt-1">
+                          <span className="font-semibold text-zinc-900">Chief Complaint:</span> {d.reason}
+                        </div>
+                        {d.notes && (
+                          <div className="text-xs text-zinc-500 mt-0.5 italic">
+                            "{d.notes}"
+                          </div>
+                        )}
+                        <div className="text-[11px] text-zinc-400 font-mono mt-1">
+                          Dispatched by {d.dispatched_by} at{' '}
+                          {new Date(d.dispatched_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleAdmitDispatchedStudent(d)}
+                        className="flex-1 py-2 px-3 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Admit Student (Pre-fill Visit)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCancelDispatch(d.dispatch_id)}
+                        className="px-3 py-2 text-xs font-medium text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-stone-100 bg-stone-50/50 flex items-center justify-between text-xs text-zinc-500">
+              <span>{activeDispatches.length} active pass{activeDispatches.length === 1 ? '' : 'es'}</span>
+              <button
+                type="button"
+                onClick={() => setShowIncomingDispatches(false)}
+                className="font-medium text-zinc-700 hover:text-zinc-900"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

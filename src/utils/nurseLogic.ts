@@ -52,11 +52,28 @@ export interface HealthProfileRecord {
   last_reviewed: string; // YYYY-MM-DD
 }
 
+export type DispatchStatus = 'in_transit' | 'arrived' | 'cancelled';
+
+export interface WardenDispatchRecord {
+  dispatch_id: string;
+  student_id: string;
+  student_name: string;
+  section: string;
+  roll_number: string;
+  reason: string;
+  notes?: string;
+  dispatched_by: string;
+  dispatched_at: string; // ISO datetime
+  status: DispatchStatus;
+  acknowledged_at?: string;
+}
+
 export interface NurseDatabase {
   students: StudentRecord[];
   visits: VisitRecord[];
   measurements: MeasurementRecord[];
   healthProfiles: HealthProfileRecord[];
+  dispatches?: WardenDispatchRecord[];
 }
 
 export interface VisitFormInput {
@@ -87,7 +104,7 @@ export interface DailyLogEntry {
  * Generates a permanent internal ID (never using spreadsheet row numbers).
  */
 export function generatePermanentId(
-  prefix: 'STU' | 'VIS' | 'MSR' | 'HPR',
+  prefix: 'STU' | 'VIS' | 'MSR' | 'HPR' | 'DSP',
   existingIds: string[],
   year: number = 2026
 ): string {

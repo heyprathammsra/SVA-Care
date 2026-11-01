@@ -107,7 +107,9 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
     });
   }
 
-  return { students, visits, measurements, healthProfiles };
+  const dispatches = Array.isArray(db.dispatches) ? db.dispatches : [];
+
+  return { students, visits, measurements, healthProfiles, dispatches };
 }
 
 function loadServerState(): ServerState {
@@ -526,6 +528,42 @@ async function startServer() {
       return res.json({
         status: 'ok',
         sheetSynced,
+        db: serverState.db,
+        updatedAt: serverState.updatedAt,
+      });
+    }
+
+    if (action === 'dispatchStudent' && body.dispatch) {
+      const dispatch = body.dispatch;
+      const current = serverState.db.dispatches || [];
+      const exists = current.some((d) => d.dispatch_id === dispatch.dispatch_id);
+      if (!exists) {
+        serverState.db.dispatches = [dispatch, ...current];
+        saveServerState(serverState);
+        broadcastStateUpdate(deviceId);
+      }
+      return res.json({
+        status: 'ok',
+        db: serverState.db,
+        updatedAt: serverState.updatedAt,
+      });
+    }
+
+    if (action === 'updateDispatchStatus' && body.dispatch_id && body.status) {
+      const current = serverState.db.dispatches || [];
+      serverState.db.dispatches = current.map((d) =>
+        d.dispatch_id === body.dispatch_id
+          ? {
+              ...d,
+              status: body.status,
+              acknowledged_at: body.acknowledged_at || d.acknowledged_at || new Date().toISOString(),
+            }
+          : d
+      );
+      saveServerState(serverState);
+      broadcastStateUpdate(deviceId);
+      return res.json({
+        status: 'ok',
         db: serverState.db,
         updatedAt: serverState.updatedAt,
       });

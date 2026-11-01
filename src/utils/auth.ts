@@ -1,4 +1,4 @@
-export type AuthRole = 'nurse' | 'admin';
+export type AuthRole = 'nurse' | 'admin' | 'warden';
 
 export interface AuthUser {
   username: string;
@@ -30,6 +30,13 @@ export const AUTH_CREDENTIALS: AuthCredential[] = [
     role: 'admin',
     displayName: 'Infirmary Administrator',
     badgeTitle: 'System Admin',
+  },
+  {
+    username: 'agnel',
+    password: 'ilovesleeping',
+    role: 'warden',
+    displayName: 'Agnel (Hostel Warden)',
+    badgeTitle: 'Hostel Warden',
   },
 ];
 

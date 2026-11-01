@@ -634,6 +634,13 @@ test('authenticateUser verifies nurse and admin credentials accurately', async (
   assert.equal(adminUser?.role, 'admin');
   assert.equal(adminUser?.displayName, 'Infirmary Administrator');
 
+  // Test 2b: Valid warden credentials (Agnel / ilovesleeping)
+  const wardenUser = authenticateUser('Agnel', 'ilovesleeping');
+  assert.ok(wardenUser);
+  assert.equal(wardenUser?.username, 'agnel');
+  assert.equal(wardenUser?.role, 'warden');
+  assert.equal(wardenUser?.displayName, 'Agnel (Hostel Warden)');
+
   // Test 3: Case-insensitive username and whitespace trimming
   const mixedCaseNurse = authenticateUser('  NURSE  ', 'iloveeating');
   assert.ok(mixedCaseNurse);

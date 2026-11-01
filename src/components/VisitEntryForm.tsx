@@ -41,6 +41,8 @@ interface VisitEntryFormProps {
   measurements?: MeasurementRecord[];
   healthProfiles: HealthProfileRecord[];
   initialStudentId?: string;
+  initialReason?: string;
+  initialNotes?: string;
   activeNurseName?: string;
   onChangeActiveNurse?: (name: string) => void;
   onSaveVisit: (input: VisitFormInput) => Promise<VisitRecord>;
@@ -155,6 +157,8 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
   measurements = [],
   healthProfiles,
   initialStudentId = '',
+  initialReason = '',
+  initialNotes = '',
   activeNurseName,
   onChangeActiveNurse,
   onSaveVisit,
@@ -172,7 +176,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
   const [newStudentRoll, setNewStudentRoll] = useState('');
 
   const [visitDatetime, setVisitDatetime] = useState(getNowLocalDatetimeString);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState(initialReason);
   const [observations, setObservations] = useState('');
   const [actionTaken, setActionTaken] = useState('');
   const [medicineStatus, setMedicineStatus] = useState<MedicineStatus>('none');
@@ -181,7 +185,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
   const [dosageUnit, setDosageUnit] = useState('ml');
   const [route, setRoute] = useState('Oral');
   const [adminTime, setAdminTime] = useState('');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(initialNotes);
   const [recordedBy, setRecordedBy] = useState(activeNurseName || DEFAULT_STAFF_NAME);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
