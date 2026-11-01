@@ -108,8 +108,39 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
   }
 
   const dispatches = Array.isArray(db.dispatches) ? db.dispatches : [];
+  const users = Array.isArray(db.users) && db.users.length > 0
+    ? db.users
+    : [
+        {
+          username: 'nurse',
+          password: 'iloveeating',
+          role: 'nurse' as const,
+          display_name: 'School Nurse',
+          badge_title: 'Infirmary Nurse',
+          active_status: 'Active' as const,
+          updated_at: '2026-10-21T00:00:00Z',
+        },
+        {
+          username: 'admin',
+          password: 'sva0pass',
+          role: 'admin' as const,
+          display_name: 'Infirmary Administrator',
+          badge_title: 'System Admin',
+          active_status: 'Active' as const,
+          updated_at: '2026-10-21T00:00:00Z',
+        },
+        {
+          username: 'agnel',
+          password: 'ilovesleeping',
+          role: 'warden' as const,
+          display_name: 'Agnel (Hostel Warden)',
+          badge_title: 'Hostel Warden',
+          active_status: 'Active' as const,
+          updated_at: '2026-10-21T00:00:00Z',
+        },
+      ];
 
-  return { students, visits, measurements, healthProfiles, dispatches };
+  return { students, visits, measurements, healthProfiles, dispatches, users };
 }
 
 function loadServerState(): ServerState {
@@ -309,6 +340,7 @@ async function pullFromAppsScript(): Promise<{ ok: boolean; message: string }> {
         Partial<Record<keyof MeasurementRecord, string | number>>
       >,
       healthProfiles: data.healthProfiles as Array<Partial<HealthProfileRecord>>,
+      users: data.users as Array<any>,
     };
 
     serverState.db = normalizeDbSections(

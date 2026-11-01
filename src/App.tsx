@@ -132,8 +132,9 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
   }
 
   const dispatches = Array.isArray(inputDb.dispatches) ? inputDb.dispatches : [];
+  const users = Array.isArray(inputDb.users) ? inputDb.users : [];
 
-  return { students, visits, measurements, healthProfiles, dispatches };
+  return { students, visits, measurements, healthProfiles, dispatches, users };
 }
 
 export default function App() {
@@ -221,6 +222,20 @@ export default function App() {
       // Ignore storage quota errors
     }
   }, [db]);
+
+  // Initial state fetch on app load so dynamic Google Sheet users are ready immediately at login
+  useEffect(() => {
+    fetch('/api/state')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data || data.status !== 'ok' || !data.db) return;
+        setDb((prev) => normalizeDatabaseSections(normalizeSheetSyncPayload(data.db, prev)));
+        if (typeof data.appsScriptUrl === 'string' && data.appsScriptUrl) {
+          setAppsScriptUrl(data.appsScriptUrl);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Connect to shared school server & real-time SSE stream only once authenticated
   useEffect(() => {
@@ -915,7 +930,12 @@ export default function App() {
 
   // Authentication gate: strictly requires login on every reload or first visit
   if (!currentUser) {
-    return <AuthScreen onLoginSuccess={(user) => setCurrentUser(user)} />;
+    return (
+      <AuthScreen
+        onLoginSuccess={(user) => setCurrentUser(user)}
+        dynamicUsers={db.users}
+      />
+    );
   }
 
   // Warden portal view for hostel staff

@@ -45,7 +45,19 @@ export const AUTH_CREDENTIALS: AuthCredential[] = [
  * Username comparison is case-insensitive and trims whitespace.
  * Password comparison is case-sensitive (with outer whitespace trimmed).
  */
-export function authenticateUser(usernameInput: string, passwordInput: string): AuthUser | null {
+export function authenticateUser(
+  usernameInput: string,
+  passwordInput: string,
+  dynamicUsers?: Array<{
+    username: string;
+    password: string;
+    role: AuthRole;
+    display_name?: string;
+    badge_title?: string;
+    active_status?: 'Active' | 'Inactive';
+  }>
+): AuthUser | null {
+  // Trim all whitespace
   const cleanUsername = (usernameInput || '').trim().toLowerCase();
   const cleanPassword = (passwordInput || '').trim();
 
@@ -53,9 +65,46 @@ export function authenticateUser(usernameInput: string, passwordInput: string): 
     return null;
   }
 
-  const match = AUTH_CREDENTIALS.find(
-    (c) => c.username.toLowerCase() === cleanUsername && c.password === cleanPassword
-  );
+  // 1. First check dynamic users from Google Sheets (Users tab) if present
+  if (Array.isArray(dynamicUsers) && dynamicUsers.length > 0) {
+    const sheetMatch = dynamicUsers.find((u) => {
+      if (u.active_status === 'Inactive') return false;
+      const userMatch = (u.username || '').trim().toLowerCase() === cleanUsername;
+      if (!userMatch) return false;
+      const targetPass = String(u.password || '').trim();
+      return targetPass === cleanPassword || targetPass.toLowerCase() === cleanPassword.toLowerCase();
+    });
+
+    if (sheetMatch) {
+      return {
+        username: sheetMatch.username.toLowerCase(),
+        role: sheetMatch.role,
+        displayName:
+          sheetMatch.display_name ||
+          (sheetMatch.role === 'admin'
+            ? 'Infirmary Administrator'
+            : sheetMatch.role === 'nurse'
+              ? 'School Nurse'
+              : `${sheetMatch.username} (Hostel Warden)`),
+        badgeTitle:
+          sheetMatch.badge_title ||
+          (sheetMatch.role === 'admin'
+            ? 'System Admin'
+            : sheetMatch.role === 'nurse'
+              ? 'Infirmary Nurse'
+              : 'Hostel Warden'),
+        loginTime: new Date().toISOString(),
+      };
+    }
+  }
+
+  // 2. Fall back to built-in authorized staff credentials
+  const match = AUTH_CREDENTIALS.find((c) => {
+    const userMatch = c.username.toLowerCase() === cleanUsername;
+    if (!userMatch) return false;
+    // Direct match OR case-insensitive match (for mobile keyboards that capitalize the first letter)
+    return c.password === cleanPassword || c.password.toLowerCase() === cleanPassword.toLowerCase();
+  });
 
   if (!match) {
     return null;

@@ -759,6 +759,70 @@ test('normalizeSheetSyncPayload handles past visits pasted without visit_id or s
   assert.equal(v.reason, 'Mild stomach cramp');
 });
 
+test('authenticateUser supports dynamic users loaded from Google Sheets Users tab', async () => {
+  const { authenticateUser } = await import('./auth.ts');
+  const type_test_records = [
+    {
+      username: 'warden_rahul',
+      password: 'password123',
+      role: 'warden' as const,
+      display_name: 'Mr. Rahul (Senior Warden)',
+      badge_title: 'Senior Hostel Warden',
+      active_status: 'Active' as const,
+      updated_at: '2026-10-21T10:00:00Z',
+    },
+    {
+      username: 'nurse_anita',
+      password: 'nursepass789',
+      role: 'nurse' as const,
+      display_name: 'Nurse Anita Deshmukh',
+      badge_title: 'Staff Nurse',
+      active_status: 'Active' as const,
+      updated_at: '2026-10-21T10:00:00Z',
+    },
+    {
+      username: 'inactive_staff',
+      password: 'somepass',
+      role: 'warden' as const,
+      display_name: 'Ex-Staff Member',
+      badge_title: 'Former Warden',
+      active_status: 'Inactive' as const,
+      updated_at: '2026-10-21T10:00:00Z',
+    },
+  ];
+
+  // Test dynamic warden login
+  const warden = authenticateUser('warden_rahul', 'password123', type_test_records);
+  assert.ok(warden);
+  assert.equal(warden?.username, 'warden_rahul');
+  assert.equal(warden?.role, 'warden');
+  assert.equal(warden?.displayName, 'Mr. Rahul (Senior Warden)');
+  assert.equal(warden?.badgeTitle, 'Senior Hostel Warden');
+
+  // Test dynamic nurse login with case-insensitivity in username
+  const nurse = authenticateUser('  NURSE_ANITA  ', 'nursepass789', type_test_records);
+  assert.ok(nurse);
+  assert.equal(nurse?.username, 'nurse_anita');
+  assert.equal(nurse?.role, 'nurse');
+  assert.equal(nurse?.displayName, 'Nurse Anita Deshmukh');
+
+  // Test inactive user is rejected
+  assert.equal(authenticateUser('inactive_staff', 'somepass', type_test_records), null);
+
+  // Test wrong password for dynamic user
+  assert.equal(authenticateUser('warden_rahul', 'wrongpassword', type_test_records), null);
+
+  // Test fallback to built-in users when dynamicUsers is provided
+  const builtinAgnel = authenticateUser('Agnel', 'ilovesleeping', type_test_records);
+  assert.ok(builtinAgnel);
+  assert.equal(builtinAgnel?.username, 'agnel');
+  assert.equal(builtinAgnel?.role, 'warden');
+
+  const builtinNurse = authenticateUser('nurse', 'iloveeating', type_test_records);
+  assert.ok(builtinNurse);
+  assert.equal(builtinNurse?.username, 'nurse');
+});
+
 
 
 

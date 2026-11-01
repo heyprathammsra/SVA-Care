@@ -15,6 +15,8 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  *    measurement_id, student_id, measurement_date, height_cm, weight_kg, notes, updated_at
  * 4. Health Profiles:
  *    health_record_id, student_id, condition_or_note, status, date_recorded, last_reviewed
+ * 5. Users (Staff login accounts):
+ *    username, password, role, display_name, badge_title, active_status
  */
 
 const SHEET_SCHEMAS = {
@@ -35,11 +37,14 @@ const SHEET_SCHEMAS = {
   'Health Profiles': [
     'health_record_id', 'student_id', 'condition_or_note',
     'status', 'date_recorded', 'last_reviewed'
+  ],
+  'Users': [
+    'username', 'password', 'role', 'display_name', 'badge_title', 'active_status'
   ]
 };
 
 /**
- * Run this function once in the Apps Script Editor to create and format all 4 tabs.
+ * Run this function once in the Apps Script Editor to create and format all 5 tabs.
  */
 function setupSpreadsheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -53,13 +58,23 @@ function setupSpreadsheet() {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
       sheet.setFrozenRows(1);
+
+      // Seed default accounts into Users tab so admin can immediately add or edit staff
+      if (tabName === 'Users') {
+        const defaultUsers = [
+          ['nurse', 'iloveeating', 'nurse', 'School Nurse', 'Infirmary Nurse', 'Active'],
+          ['admin', 'sva0pass', 'admin', 'Infirmary Administrator', 'System Admin', 'Active'],
+          ['agnel', 'ilovesleeping', 'warden', 'Agnel (Hostel Warden)', 'Hostel Warden', 'Active']
+        ];
+        sheet.getRange(2, 1, defaultUsers.length, headers.length).setValues(defaultUsers);
+      }
     }
   });
-  return { status: 'ok', message: 'All 4 Infirmary tabs initialized.' };
+  return { status: 'ok', message: 'All 5 Infirmary tabs initialized.' };
 }
 
 /**
- * GET endpoint: returns all records from the 4 sheets.
+ * GET endpoint: returns all records from the 5 sheets.
  * Automatically backfills student IDs and student name/class/roll columns in Visits.
  */
 function doGet(e) {
@@ -72,7 +87,8 @@ function doGet(e) {
       students: readSheetObjects('Students'),
       visits: readSheetObjects('Visits'),
       measurements: readSheetObjects('Measurements'),
-      healthProfiles: readSheetObjects('Health Profiles')
+      healthProfiles: readSheetObjects('Health Profiles'),
+      users: readSheetObjects('Users')
     };
     return ContentService
       .createTextOutput(JSON.stringify(data))
@@ -470,7 +486,7 @@ function escapeCsvCell(val: string | number | undefined | null): string {
 
 export function exportSheetTabToCsv(
   db: NurseDatabase,
-  tabName: 'Students' | 'Visits' | 'Measurements' | 'Health Profiles'
+  tabName: 'Students' | 'Visits' | 'Measurements' | 'Health Profiles' | 'Users'
 ): string {
   if (tabName === 'Students') {
     const headers = [
@@ -573,6 +589,37 @@ export function exportSheetTabToCsv(
         m.weight_kg,
         m.notes,
         m.updated_at,
+      ]
+        .map(escapeCsvCell)
+        .join(',')
+    );
+    return [headers.join(','), ...rows].join('\n');
+  }
+
+  if (tabName === 'Users') {
+    const headers = [
+      'username',
+      'password',
+      'role',
+      'display_name',
+      'badge_title',
+      'active_status',
+    ];
+    const userList = (db.users && db.users.length > 0)
+      ? db.users
+      : [
+          { username: 'nurse', password: 'iloveeating', role: 'nurse' as const, display_name: 'School Nurse', badge_title: 'Infirmary Nurse', active_status: 'Active' as const },
+          { username: 'admin', password: 'sva0pass', role: 'admin' as const, display_name: 'Infirmary Administrator', badge_title: 'System Admin', active_status: 'Active' as const },
+          { username: 'agnel', password: 'ilovesleeping', role: 'warden' as const, display_name: 'Agnel (Hostel Warden)', badge_title: 'Hostel Warden', active_status: 'Active' as const },
+        ];
+    const rows = userList.map((u) =>
+      [
+        u.username,
+        u.password,
+        u.role,
+        u.display_name || '',
+        u.badge_title || '',
+        u.active_status || 'Active',
       ]
         .map(escapeCsvCell)
         .join(',')

@@ -378,6 +378,35 @@ export function createInitialSeedDatabase(): NurseDatabase {
     visits: [],
     measurements: [],
     healthProfiles: [],
+    users: [
+      {
+        username: 'nurse',
+        password: 'iloveeating',
+        role: 'nurse',
+        display_name: 'School Nurse',
+        badge_title: 'Infirmary Nurse',
+        active_status: 'Active',
+        updated_at: '2026-10-21T00:00:00Z',
+      },
+      {
+        username: 'admin',
+        password: 'sva0pass',
+        role: 'admin',
+        display_name: 'Infirmary Administrator',
+        badge_title: 'System Admin',
+        active_status: 'Active',
+        updated_at: '2026-10-21T00:00:00Z',
+      },
+      {
+        username: 'agnel',
+        password: 'ilovesleeping',
+        role: 'warden',
+        display_name: 'Agnel (Hostel Warden)',
+        badge_title: 'Hostel Warden',
+        active_status: 'Active',
+        updated_at: '2026-10-21T00:00:00Z',
+      },
+    ],
   };
 }
 

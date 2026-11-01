@@ -5,9 +5,17 @@ import { SCHOOL_NAME, SCHOOL_LOGO_URL, SCHOOL_LOGO_FALLBACK_URL } from '../utils
 
 interface AuthScreenProps {
   onLoginSuccess: (user: AuthUser) => void;
+  dynamicUsers?: Array<{
+    username: string;
+    password: string;
+    role: any;
+    display_name?: string;
+    badge_title?: string;
+    active_status?: 'Active' | 'Inactive';
+  }>;
 }
 
-export function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
+export function AuthScreen({ onLoginSuccess, dynamicUsers }: AuthScreenProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -20,7 +28,7 @@ export function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
     setIsSubmitting(true);
 
     setTimeout(() => {
-      const user = authenticateUser(username, password);
+      const user = authenticateUser(username, password, dynamicUsers);
       if (user) {
         onLoginSuccess(user);
       } else {

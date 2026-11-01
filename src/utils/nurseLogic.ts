@@ -68,12 +68,22 @@ export interface WardenDispatchRecord {
   acknowledged_at?: string;
 }
 
+export interface AppUserRecord {
+  username: string;
+  password: string;
+  role: 'nurse' | 'admin' | 'warden';
+  display_name?: string;
+  badge_title?: string;
+  active_status?: 'Active' | 'Inactive';
+}
+
 export interface NurseDatabase {
   students: StudentRecord[];
   visits: VisitRecord[];
   measurements: MeasurementRecord[];
   healthProfiles: HealthProfileRecord[];
   dispatches?: WardenDispatchRecord[];
+  users?: AppUserRecord[];
 }
 
 export interface VisitFormInput {
@@ -769,6 +779,7 @@ export function normalizeSheetSyncPayload(
     visits?: Array<Partial<VisitRecord> & Record<string, any>>;
     measurements?: Array<Partial<Record<keyof MeasurementRecord, string | number>> & Record<string, any>>;
     healthProfiles?: Array<Partial<HealthProfileRecord> & Record<string, any>>;
+    users?: Array<Partial<AppUserRecord> & Record<string, any>>;
   },
   currentDb: NurseDatabase,
   nowIso: string = new Date().toISOString()
@@ -1121,11 +1132,48 @@ export function normalizeSheetSyncPayload(
     finalProfiles = [...localOnlyH, ...normalizedRemoteProfiles];
   }
 
+  // Normalize & deduplicate Users from Google Sheets (Users tab)
+  const rawUsers = Array.isArray(payload.users) ? payload.users : [];
+  const normalizedRemoteUsers: AppUserRecord[] = [];
+  const seenUsernames = new Set<string>();
+
+  rawUsers.forEach((row: any) => {
+    const rawUsername = String(row?.username || '').trim();
+    const rawPass = String(row?.password || '').trim();
+    if (!rawUsername || !rawPass) return;
+    const lowerUser = rawUsername.toLowerCase();
+    if (seenUsernames.has(lowerUser)) return;
+    seenUsernames.add(lowerUser);
+
+    const rawRole = String(row?.role || row?.account_type || row?.type || 'warden').trim().toLowerCase();
+    const role: 'nurse' | 'admin' | 'warden' =
+      rawRole === 'admin' ? 'admin' : rawRole === 'nurse' ? 'nurse' : 'warden';
+
+    const displayName = String(row?.display_name || row?.full_name || row?.name || '').trim() ||
+      (role === 'admin' ? 'Infirmary Administrator' : role === 'nurse' ? 'School Nurse' : `${rawUsername} (Hostel Warden)`);
+
+    const badgeTitle = String(row?.badge_title || row?.title || '').trim() ||
+      (role === 'admin' ? 'System Admin' : role === 'nurse' ? 'Infirmary Nurse' : 'Hostel Warden');
+
+    normalizedRemoteUsers.push({
+      username: lowerUser,
+      password: rawPass,
+      role,
+      display_name: displayName,
+      badge_title: badgeTitle,
+      active_status: String(row?.active_status || 'Active').toLowerCase() === 'inactive' ? 'Inactive' : 'Active',
+    });
+  });
+
+  const finalUsers = normalizedRemoteUsers.length > 0 ? normalizedRemoteUsers : (currentDb.users || []);
+
   return {
     students: finalStudents,
     visits: finalVisits,
     measurements: finalMeasurements,
     healthProfiles: finalProfiles,
+    dispatches: currentDb.dispatches,
+    users: finalUsers,
   };
 }
 

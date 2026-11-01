@@ -50,7 +50,7 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
   };
 
   const handleDownloadTabCsv = (
-    tab: 'Students' | 'Visits' | 'Measurements' | 'Health Profiles'
+    tab: 'Students' | 'Visits' | 'Measurements' | 'Health Profiles' | 'Users'
   ) => {
     const csvContent = exportSheetTabToCsv(db, tab);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -251,7 +251,7 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
             Download Spreadsheet Tabs (CSV)
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            {(['Students', 'Visits', 'Measurements', 'Health Profiles'] as const).map((tab) => (
+            {(['Students', 'Visits', 'Measurements', 'Health Profiles', 'Users'] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
