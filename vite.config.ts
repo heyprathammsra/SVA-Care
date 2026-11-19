@@ -11,6 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: null,
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'sva-logo.png'],
         manifest: {
           id: '/',
@@ -43,8 +44,17 @@ export default defineConfig(() => {
             },
           ],
         },
+        workbox: {
+          navigateFallbackDenylist: [/^\/api\//],
+          runtimeCaching: [
+            {
+              urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+              handler: 'NetworkOnly',
+            },
+          ],
+        },
         devOptions: {
-          enabled: true,
+          enabled: false,
           type: 'module',
         },
       }),

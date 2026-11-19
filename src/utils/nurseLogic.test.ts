@@ -617,47 +617,53 @@ test('normalizeSheetSyncPayload enriches visit records with student_name, class,
   assert.equal(v.roll_no, '01');
 });
 
-test('authenticateUser verifies nurse and admin credentials accurately', async () => {
+test('authenticateServerUser verifies nurse, admin, and warden credentials securely while client auth has no hardcoded secrets', async () => {
+  const { authenticateServerUser } = await import('../../serverAuth.ts');
   const { authenticateUser } = await import('./auth.ts');
 
-  // Test 1: Valid nurse credentials
-  const nurseUser = authenticateUser('nurse', 'iloveeating');
+  // Client-side authenticateUser must never accept hardcoded passwords without dynamicUsers
+  assert.equal(authenticateUser('admin', 'sva0pass'), null);
+  assert.equal(authenticateUser('nurse', 'iloveeating'), null);
+  assert.equal(authenticateUser('agnel', 'ilovesleeping'), null);
+
+  // Test 1: Valid nurse credentials on server
+  const nurseUser = authenticateServerUser('nurse', 'iloveeating');
   assert.ok(nurseUser);
   assert.equal(nurseUser?.username, 'nurse');
   assert.equal(nurseUser?.role, 'nurse');
   assert.equal(nurseUser?.displayName, 'School Nurse');
 
-  // Test 2: Valid admin credentials
-  const adminUser = authenticateUser('admin', 'sva0pass');
+  // Test 2: Valid admin credentials on server
+  const adminUser = authenticateServerUser('admin', 'sva0pass');
   assert.ok(adminUser);
   assert.equal(adminUser?.username, 'admin');
   assert.equal(adminUser?.role, 'admin');
   assert.equal(adminUser?.displayName, 'Infirmary Administrator');
 
-  // Test 2b: Valid warden credentials (Agnel / ilovesleeping)
-  const wardenUser = authenticateUser('Agnel', 'ilovesleeping');
+  // Test 2b: Valid warden credentials on server (Agnel / ilovesleeping)
+  const wardenUser = authenticateServerUser('Agnel', 'ilovesleeping');
   assert.ok(wardenUser);
   assert.equal(wardenUser?.username, 'agnel');
   assert.equal(wardenUser?.role, 'warden');
   assert.equal(wardenUser?.displayName, 'Agnel (Hostel Warden)');
 
   // Test 3: Case-insensitive username and whitespace trimming
-  const mixedCaseNurse = authenticateUser('  NURSE  ', 'iloveeating');
+  const mixedCaseNurse = authenticateServerUser('  NURSE  ', 'iloveeating');
   assert.ok(mixedCaseNurse);
   assert.equal(mixedCaseNurse?.username, 'nurse');
 
-  const mixedCaseAdmin = authenticateUser('Admin ', 'sva0pass');
+  const mixedCaseAdmin = authenticateServerUser('Admin ', 'sva0pass');
   assert.ok(mixedCaseAdmin);
   assert.equal(mixedCaseAdmin?.username, 'admin');
 
   // Test 4: Wrong passwords rejected
-  assert.equal(authenticateUser('nurse', 'wrongpass'), null);
-  assert.equal(authenticateUser('admin', 'iloveeating'), null);
+  assert.equal(authenticateServerUser('nurse', 'wrongpass'), null);
+  assert.equal(authenticateServerUser('admin', 'iloveeating'), null);
 
   // Test 5: Wrong usernames rejected
-  assert.equal(authenticateUser('doctor', 'iloveeating'), null);
-  assert.equal(authenticateUser('', 'sva0pass'), null);
-  assert.equal(authenticateUser('nurse', ''), null);
+  assert.equal(authenticateServerUser('doctor', 'iloveeating'), null);
+  assert.equal(authenticateServerUser('', 'sva0pass'), null);
+  assert.equal(authenticateServerUser('nurse', ''), null);
 });
 
 test('generateVisitsCSV formats headers, columns, student details, and escaping accurately', async () => {
@@ -759,9 +765,10 @@ test('normalizeSheetSyncPayload handles past visits pasted without visit_id or s
   assert.equal(v.reason, 'Mild stomach cramp');
 });
 
-test('authenticateUser supports dynamic users loaded from Google Sheets Users tab', async () => {
-  const { authenticateUser } = await import('./auth.ts');
+test('authenticateServerUser supports dynamic users loaded from Google Sheets Users tab', async () => {
+  const { authenticateServerUser, SERVER_DEFAULT_USERS } = await import('../../serverAuth.ts');
   const type_test_records = [
+    ...SERVER_DEFAULT_USERS,
     {
       username: 'warden_rahul',
       password: 'password123',
@@ -792,7 +799,7 @@ test('authenticateUser supports dynamic users loaded from Google Sheets Users ta
   ];
 
   // Test dynamic warden login
-  const warden = authenticateUser('warden_rahul', 'password123', type_test_records);
+  const warden = authenticateServerUser('warden_rahul', 'password123', type_test_records);
   assert.ok(warden);
   assert.equal(warden?.username, 'warden_rahul');
   assert.equal(warden?.role, 'warden');
@@ -800,29 +807,428 @@ test('authenticateUser supports dynamic users loaded from Google Sheets Users ta
   assert.equal(warden?.badgeTitle, 'Senior Hostel Warden');
 
   // Test dynamic nurse login with case-insensitivity in username
-  const nurse = authenticateUser('  NURSE_ANITA  ', 'nursepass789', type_test_records);
+  const nurse = authenticateServerUser('  NURSE_ANITA  ', 'nursepass789', type_test_records);
   assert.ok(nurse);
   assert.equal(nurse?.username, 'nurse_anita');
   assert.equal(nurse?.role, 'nurse');
   assert.equal(nurse?.displayName, 'Nurse Anita Deshmukh');
 
   // Test inactive user is rejected
-  assert.equal(authenticateUser('inactive_staff', 'somepass', type_test_records), null);
+  assert.equal(authenticateServerUser('inactive_staff', 'somepass', type_test_records), null);
 
   // Test wrong password for dynamic user
-  assert.equal(authenticateUser('warden_rahul', 'wrongpassword', type_test_records), null);
+  assert.equal(authenticateServerUser('warden_rahul', 'wrongpassword', type_test_records), null);
 
-  // Test fallback to built-in users when dynamicUsers is provided
-  const builtinAgnel = authenticateUser('Agnel', 'ilovesleeping', type_test_records);
+  // Test built-in users merged into server user list
+  const builtinAgnel = authenticateServerUser('Agnel', 'ilovesleeping', type_test_records);
   assert.ok(builtinAgnel);
   assert.equal(builtinAgnel?.username, 'agnel');
   assert.equal(builtinAgnel?.role, 'warden');
 
-  const builtinNurse = authenticateUser('nurse', 'iloveeating', type_test_records);
+  const builtinNurse = authenticateServerUser('nurse', 'iloveeating', type_test_records);
   assert.ok(builtinNurse);
   assert.equal(builtinNurse?.username, 'nurse');
 });
 
+test('WardenDispatchRecord supports Principal and Vice Principal authority', async () => {
+  const { generatePermanentId } = await import('./nurseLogic.ts');
+
+  const existingDispatches = [
+    {
+      dispatch_id: 'DSP-2026-0001',
+      student_id: 'STU-2026-0001',
+      student_name: 'Ajinkya Balu Gurav',
+      section: 'Sparkle',
+      roll_number: '01',
+      reason: 'Fever / Chills',
+      notes: 'Permitted to visit nurse room during 4th period',
+      dispatched_by: "Principal's Office",
+      dispatched_at: '2026-10-21T10:30:00Z',
+      status: 'in_transit' as const,
+    },
+    {
+      dispatch_id: 'DSP-2026-0002',
+      student_id: 'STU-2026-0002',
+      student_name: 'Ankita Rangnath Ghige',
+      section: 'Sparkle',
+      roll_number: '02',
+      reason: 'Headache',
+      notes: 'Emergency permission granted by Vice Principal',
+      dispatched_by: "Vice Principal's Desk",
+      dispatched_at: '2026-10-21T11:15:00Z',
+      status: 'in_transit' as const,
+    },
+  ];
+
+  // Verify next dispatch ID generation
+  const nextId = generatePermanentId('DSP', existingDispatches.map((d) => d.dispatch_id));
+  assert.equal(nextId, 'DSP-2026-0003');
+
+  // Verify both Principal and Vice Principal dispatched records
+  assert.equal(existingDispatches[0].dispatched_by, "Principal's Office");
+  assert.equal(existingDispatches[1].dispatched_by, "Vice Principal's Desk");
+  assert.equal(existingDispatches[0].status, 'in_transit');
+});
+
+test('sanitizeStateForRole strips staff passwords and Apps Script URL for nurse and warden', async () => {
+  const { sanitizeStateForRole, SERVER_DEFAULT_USERS } = await import('../../serverAuth.ts');
+
+  const fullState = {
+    db: {
+      students: sampleStudents,
+      classes: ['Sparkle'],
+      visits: [],
+      measurements: [],
+      healthProfiles: [],
+      dispatches: [],
+      users: SERVER_DEFAULT_USERS,
+    },
+    appsScriptUrl: 'https://script.google.com/macros/s/SECRET_DEPLOYMENT_ID/exec',
+    autoSyncEnabled: true,
+    updatedAt: '2026-10-21T12:00:00Z',
+  };
+
+  const nurseView = sanitizeStateForRole(fullState, 'nurse', fullState.appsScriptUrl);
+  assert.equal(nurseView.db.users?.length, 0);
+  assert.equal(nurseView.appsScriptUrl, undefined);
+  assert.equal(nurseView.db.students.length, 3);
+
+  const wardenView = sanitizeStateForRole(fullState, 'warden', fullState.appsScriptUrl);
+  assert.equal(wardenView.db.users?.length, 0);
+  assert.equal(wardenView.appsScriptUrl, undefined);
+
+  const adminView = sanitizeStateForRole(fullState, 'admin', fullState.appsScriptUrl);
+  assert.equal(adminView.db.users?.length, SERVER_DEFAULT_USERS.length);
+  // Even Admin responses MUST redact raw passwords/hashes over HTTP
+  assert.ok(adminView.db.users?.every((u) => u.password === ''));
+  assert.equal(adminView.appsScriptUrl, fullState.appsScriptUrl);
+  assert.equal(adminView.isCustomAppsScriptUrl, false);
+});
+
+test('isMutationAllowedForRole strictly enforces server-side RBAC boundaries', async () => {
+  const { isMutationAllowedForRole } = await import('../../serverAuth.ts');
+
+  // Warden can send students & update pass status, nothing else
+  assert.equal(isMutationAllowedForRole('dispatchStudent', 'warden'), true);
+  assert.equal(isMutationAllowedForRole('updateDispatchStatus', 'warden'), true);
+  assert.equal(isMutationAllowedForRole('recordVisit', 'warden'), false);
+  assert.equal(isMutationAllowedForRole('upsertUser', 'warden'), false);
+  assert.equal(isMutationAllowedForRole('deleteClass', 'warden'), false);
+
+  // Nurse can record clinical data, but cannot edit staff, classes, or wipe roster
+  assert.equal(isMutationAllowedForRole('recordVisit', 'nurse'), true);
+  assert.equal(isMutationAllowedForRole('addMeasurement', 'nurse'), true);
+  assert.equal(isMutationAllowedForRole('bulkImportStudents', 'nurse', { replaceAll: false }), true);
+  assert.equal(isMutationAllowedForRole('bulkImportStudents', 'nurse', { replaceAll: true }), false);
+  assert.equal(isMutationAllowedForRole('upsertUser', 'nurse'), false);
+  assert.equal(isMutationAllowedForRole('deleteUser', 'nurse'), false);
+  assert.equal(isMutationAllowedForRole('updateStudent', 'nurse'), false);
+
+  // Admin can perform all valid actions, but unknown actions are still denied
+  assert.equal(isMutationAllowedForRole('upsertUser', 'admin'), true);
+  assert.equal(isMutationAllowedForRole('deleteUser', 'admin'), true);
+  assert.equal(isMutationAllowedForRole('bulkImportStudents', 'admin', { replaceAll: true }), true);
+  assert.equal(isMutationAllowedForRole('dropDatabase', 'admin'), false);
+});
+
+test('login rate limiter locks out after 5 failed attempts and clears on success', async () => {
+  const { checkLoginRateLimit, recordFailedLogin, clearLoginFailures } = await import(
+    '../../serverAuth.ts'
+  );
+  const key = 'test-unit-ip:198.51.100.42';
+  const baseNow = 1_700_000_000_000;
+
+  clearLoginFailures(key);
+  for (let i = 0; i < 4; i++) {
+    recordFailedLogin(key, baseNow + i * 1000);
+    assert.equal(checkLoginRateLimit(key, baseNow + i * 1000).allowed, true);
+  }
+
+  // 5th failure triggers lockout
+  recordFailedLogin(key, baseNow + 5000);
+  const locked = checkLoginRateLimit(key, baseNow + 6000);
+  assert.equal(locked.allowed, false);
+  assert.ok(locked.retryAfterSeconds > 0);
+
+  clearLoginFailures(key);
+  assert.equal(checkLoginRateLimit(key, baseNow + 7000).allowed, true);
+});
+
+test('hasForbiddenPrototypeKeys detects prototype pollution payloads', async () => {
+  const { hasForbiddenPrototypeKeys } = await import('../../serverAuth.ts');
+
+  assert.equal(hasForbiddenPrototypeKeys({ action: 'recordVisit', payload: { reason: 'Fever' } }), false);
+  const malicious = JSON.parse('{"payload":{"__proto__":{"isAdmin":true}}}');
+  assert.equal(hasForbiddenPrototypeKeys(malicious), true);
+  assert.equal(hasForbiddenPrototypeKeys({ nested: { constructor: {} } }), true);
+});
+
+test('CSV exports neutralize Excel/Sheets formula injection payloads', async () => {
+  const { generateVisitsCSV } = await import('./nurseLogic.ts');
+  const { exportSheetTabToCsv } = await import('./appsScriptTemplate.ts');
+
+  const csv = generateVisitsCSV([
+    {
+      visitNumber: 1,
+      visitTimeFormatted: '09:00 AM',
+      medicineSummary: 'No medicine given',
+      visit: {
+        visit_id: 'VIS-2026-0099',
+        student_id: 'STU-2026-0001',
+        visit_datetime: '2026-10-21T09:00',
+        reason: '=HYPERLINK("http://evil.example","Click")',
+        observations: '+cmd|\' /C calc\'!A0',
+        action_taken: '@SUM(1+1)',
+        medicine_status: 'none',
+        medicine_name: '',
+        dosage: '',
+        dosage_unit: '',
+        route: '',
+        administration_time: '',
+        notes: '',
+        recorded_by: '-2+3',
+        created_at: '2026-10-21T09:00:00Z',
+      },
+      student: sampleStudents[0],
+    },
+  ]);
+
+  assert.ok(csv.includes("'=HYPERLINK"));
+  assert.ok(csv.includes("'+cmd"));
+  assert.ok(csv.includes("'@SUM"));
+  assert.ok(csv.includes("'-2+3"));
+
+  const studentsCsv = exportSheetTabToCsv(
+    {
+      students: [{ ...sampleStudents[0], full_name: '=1+1' }],
+      visits: [],
+      measurements: [],
+      healthProfiles: [],
+    },
+    'Students'
+  );
+  assert.ok(studentsCsv.includes("'=1+1"));
+});
+
+test('scrypt password hashing uses unique salts, verifies accurately, and flags legacy plaintext for upgrade', async () => {
+  const { hashPassword, isPasswordHash, verifyPassword } = await import('../../serverCrypto.ts');
+
+  const h1 = hashPassword('MyStr0ng!SchoolPass');
+  const h2 = hashPassword('MyStr0ng!SchoolPass');
+
+  assert.equal(isPasswordHash(h1), true);
+  assert.notEqual(h1, h2); // Unique random 128-bit salt every time
+  assert.ok(!h1.includes('MyStr0ng!SchoolPass'));
+
+  assert.deepEqual(verifyPassword('MyStr0ng!SchoolPass', h1), { valid: true, needsRehash: false });
+  assert.deepEqual(verifyPassword('WrongPassword', h1), { valid: false, needsRehash: false });
+
+  // Legacy plaintext still verifies once and flags needsRehash: true
+  assert.deepEqual(verifyPassword('legacy123', 'legacy123'), { valid: true, needsRehash: true });
+  assert.deepEqual(verifyPassword('wrong', 'legacy123'), { valid: false, needsRehash: false });
+});
+
+test('AES-256-GCM field encryption uses random IVs, authenticates AAD, detects tampering, and keeps legacy plaintext readable', async () => {
+  const crypto = await import('crypto');
+  const { encryptField, decryptField, isEncryptedField } = await import('../../serverCrypto.ts');
+
+  const testKey = crypto.randomBytes(32);
+  const secretNote = 'Severe peanut allergy — carries EpiPen in backpack';
+
+  const c1 = encryptField(secretNote, 'health:HPR-2026-0001', testKey);
+  const c2 = encryptField(secretNote, 'health:HPR-2026-0001', testKey);
+
+  assert.equal(isEncryptedField(c1), true);
+  assert.notEqual(c1, c2); // Unique random 96-bit IV per encryption
+  assert.ok(!c1.includes('peanut'));
+  assert.equal(decryptField(c1, 'health:HPR-2026-0001', testKey), secretNote);
+
+  // Copy-pasting an encrypted cell to a different record ID (AAD mismatch) MUST fail authentication
+  const swapped = decryptField(c1, 'health:HPR-2026-9999', testKey);
+  assert.notEqual(swapped, secretNote);
+  assert.ok(swapped.includes('Encrypted record'));
+
+  // Tampering with ciphertext MUST fail GCM tag authentication
+  const tampered = c1.slice(0, -2) + (c1.endsWith('AA') ? 'BB' : 'AA');
+  assert.notEqual(decryptField(tampered, 'health:HPR-2026-0001', testKey), secretNote);
+
+  // Legacy unencrypted plaintext reads back transparently without data loss
+  assert.equal(decryptField('Mild headache', 'visit:VIS-2026-0001', testKey), 'Mild headache');
+});
+
+test('clinical records and local disk state envelope round-trip cleanly through AES-256-GCM', async () => {
+  const {
+    encryptVisitForStorage,
+    decryptVisitFromStorage,
+    encryptStateFileEnvelope,
+    decryptStateFileEnvelope,
+    isEncryptedField,
+  } = await import('../../serverCrypto.ts');
+
+  const visit: VisitRecord = {
+    visit_id: 'VIS-2026-0777',
+    student_id: 'STU-2026-0001',
+    visit_datetime: '2026-10-21T10:00',
+    reason: 'High fever 101.4F',
+    observations: 'Flushed, chills',
+    action_taken: 'Cold compress and Paracetamol',
+    medicine_status: 'given',
+    medicine_name: 'Paracetamol 500mg',
+    dosage: '1',
+    dosage_unit: 'tablet',
+    route: 'Oral',
+    administration_time: '10:05 AM',
+    notes: 'Parent informed by phone',
+    recorded_by: 'School Nurse',
+    created_at: '2026-10-21T10:00:00Z',
+  };
+
+  const encrypted = encryptVisitForStorage(visit);
+  assert.equal(isEncryptedField(encrypted.reason), true);
+  assert.equal(isEncryptedField(encrypted.observations), true);
+  assert.equal(isEncryptedField(encrypted.medicine_name), true);
+  assert.ok(!encrypted.reason.includes('fever'));
+
+  const decrypted = decryptVisitFromStorage(encrypted);
+  assert.equal(decrypted.reason, visit.reason);
+  assert.equal(decrypted.observations, visit.observations);
+  assert.equal(decrypted.action_taken, visit.action_taken);
+  assert.equal(decrypted.medicine_name, visit.medicine_name);
+  assert.equal(decrypted.notes, visit.notes);
+
+  const rawJson = JSON.stringify({ secret: 'top-secret-student-state' });
+  const envelope = encryptStateFileEnvelope(rawJson);
+  assert.ok(!envelope.includes('top-secret-student-state'));
+  assert.equal(decryptStateFileEnvelope(envelope), rawJson);
+});
+
+test('session User-Agent binding blocks stolen token replay and control-char guard rejects null bytes', async () => {
+  const {
+    createSession,
+    getSessionByToken,
+    revokeSession,
+    hasDangerousControlChars,
+    isValidStaffUsername,
+  } = await import('../../serverAuth.ts');
+
+  const { token } = createSession(
+    {
+      username: 'admin',
+      role: 'admin',
+      displayName: 'Admin',
+      badgeTitle: 'Admin',
+      loginTime: new Date().toISOString(),
+    },
+    'Mozilla/5.0 SchoolBrowser/1.0'
+  );
+
+  assert.ok(getSessionByToken(token, 'Mozilla/5.0 SchoolBrowser/1.0'));
+  assert.equal(getSessionByToken(token, 'curl/8.0 AttackerBot'), null);
+  revokeSession(token);
+
+  assert.equal(hasDangerousControlChars({ note: 'Normal text\nwith newline' }), false);
+  assert.equal(hasDangerousControlChars({ note: 'Injected\x00nullbyte' }), true);
+  assert.equal(isValidStaffUsername('warden_rahul-2'), true);
+  assert.equal(isValidStaffUsername('<script>alert(1)</script>'), false);
+});
+
+test('generateEncryptedExcelWorkbook produces AES password-protected formatted workbooks without Users tab', async () => {
+  const { generateEncryptedExcelWorkbook, ALLOWED_EXCEL_TABS, getExcelExportPassword } =
+    await import('../../serverExcel.ts');
+  const ExcelJS = (await import('exceljs')).default;
+  const officeCryptoMod = await import('officecrypto-tool');
+  const officeCrypto = (officeCryptoMod.default || officeCryptoMod) as unknown as {
+    isEncrypted: (buf: Buffer) => boolean;
+    decrypt: (buf: Buffer, opts: { password: string }) => Promise<Buffer>;
+  };
+
+  // Users tab must never be allowed
+  assert.equal(ALLOWED_EXCEL_TABS.has('Users' as never), false);
+
+  const testDb: NurseDatabase = {
+    students: [
+      ...sampleStudents,
+      {
+        student_id: 'STU-2026-0099',
+        full_name: '=HYPERLINK("http://evil.example","Bad")',
+        section: 'Sparkle',
+        roll_number: '99',
+        active_status: 'Active',
+        created_at: '2026-10-21T08:00:00Z',
+        updated_at: '2026-10-21T08:00:00Z',
+      },
+    ],
+    visits: [
+      {
+        visit_id: 'VIS-2026-0101',
+        student_id: 'STU-2026-0001',
+        visit_datetime: '2026-10-21T09:30',
+        reason: 'Mild headache',
+        observations: 'Temp 98.4F',
+        action_taken: 'Hydration & rest',
+        medicine_status: 'none',
+        medicine_name: 'None (No medicine given)',
+        dosage: '',
+        dosage_unit: '',
+        route: '',
+        administration_time: '',
+        notes: 'Returned to class',
+        recorded_by: 'School Nurse',
+        created_at: '2026-10-21T09:30:00Z',
+      },
+    ],
+    measurements: [
+      {
+        measurement_id: 'MSR-2026-0010',
+        student_id: 'STU-2026-0001',
+        measurement_date: '2026-10-20',
+        height_cm: 150,
+        weight_kg: 45,
+        notes: 'Normal growth',
+        updated_at: '2026-10-20T09:00:00Z',
+      },
+    ],
+    healthProfiles: [
+      {
+        health_record_id: 'HPR-2026-0010',
+        student_id: 'STU-2026-0001',
+        condition_or_note: 'Dust allergy',
+        status: 'Active',
+        date_recorded: '2026-07-01',
+        last_reviewed: '2026-10-20',
+      },
+    ],
+  };
+
+  const { buffer, filename } = await generateEncryptedExcelWorkbook(testDb, 'All');
+  assert.ok(filename.endsWith('.xlsx'));
+  assert.equal(officeCrypto.isEncrypted(buffer), true);
+
+  // Wrong password must fail
+  let wrongFailed = false;
+  try {
+    await officeCrypto.decrypt(buffer, { password: 'WrongPassword123' });
+  } catch {
+    wrongFailed = true;
+  }
+  assert.equal(wrongFailed, true);
+
+  // Correct password decrypts cleanly to all 4 neatly formatted sheets (never Users)
+  const decrypted = await officeCrypto.decrypt(buffer, { password: getExcelExportPassword() });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(decrypted as unknown as Parameters<typeof wb.xlsx.load>[0]);
+  const sheetNames = wb.worksheets.map((ws) => ws.name);
+  assert.deepEqual(sheetNames, ['Students', 'Visits', 'Measurements', 'Health Profiles']);
+  assert.ok(!sheetNames.includes('Users'));
+
+  // Verify formula neutralization in Students sheet
+  const studentsSheet = wb.getWorksheet('Students')!;
+  const cellValues: string[] = [];
+  studentsSheet.eachRow((row) => {
+    row.eachCell((cell) => cellValues.push(String(cell.value ?? '')));
+  });
+  assert.ok(cellValues.some((v) => v.startsWith("'=HYPERLINK")));
+});
 
 
 

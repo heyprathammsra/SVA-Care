@@ -6,8 +6,6 @@ export const SCHOOL_LOGO_FALLBACK_URL = 'https://saraswatividya.academy/img/logo
 export const SCHOOL_TIMEZONE = 'Asia/Kolkata';
 export const DEFAULT_STAFF_NAME = 'Infirmary In-Charge';
 export const DEFAULT_NURSE_NAME = DEFAULT_STAFF_NAME; // Backward compatibility alias
-export const DEFAULT_APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbxpB8pHEpmaZwnp6Zgzksl5xpFRi55EdE_srVOC7STWHcwiWp-lN-t4R1Zt207diPaLqQ/exec';
 
 
 export function getTodayLocalDateString(): string {
@@ -407,6 +405,7 @@ export function createInitialSeedDatabase(): NurseDatabase {
         updated_at: '2026-10-21T00:00:00Z',
       },
     ],
+    classes: [...SCHOOL_CLASSES],
   };
 }
 

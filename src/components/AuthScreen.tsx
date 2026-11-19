@@ -1,41 +1,97 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, User, Lock } from 'lucide-react';
-import { authenticateUser, type AuthUser } from '../utils/auth';
+import type { AuthUser } from '../utils/auth';
+import type { NurseDatabase } from '../utils/nurseLogic';
 import { SCHOOL_NAME, SCHOOL_LOGO_URL, SCHOOL_LOGO_FALLBACK_URL } from '../utils/seedData';
 
-interface AuthScreenProps {
-  onLoginSuccess: (user: AuthUser) => void;
-  dynamicUsers?: Array<{
-    username: string;
-    password: string;
-    role: any;
-    display_name?: string;
-    badge_title?: string;
-    active_status?: 'Active' | 'Inactive';
-  }>;
+export interface LoginSuccessPayload {
+  user: AuthUser;
+  token: string;
+  db?: Partial<NurseDatabase>;
+  appsScriptUrl?: string;
+  isCustomAppsScriptUrl?: boolean;
+  autoSyncEnabled?: boolean;
+  updatedAt?: string;
+  lastSheetsSyncAt?: string;
+  lastSheetsSyncMessage?: string;
 }
 
-export function AuthScreen({ onLoginSuccess, dynamicUsers }: AuthScreenProps) {
+interface AuthScreenProps {
+  onLoginSuccess: (payload: LoginSuccessPayload) => void;
+}
+
+export function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const usernameInputRef = React.useRef<HTMLInputElement>(null);
+  const passwordInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setErrorMessage(null);
+
+    // Read live DOM values as fallback so browser autofill never submits an empty/stale state value
+    const resolvedUsername = (usernameInputRef.current?.value ?? username).trim();
+    const resolvedPassword = passwordInputRef.current?.value ?? password;
+    if (!resolvedUsername || !resolvedPassword) {
+      setErrorMessage('Please enter both username and password.');
+      return;
+    }
+
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const user = authenticateUser(username, password, dynamicUsers);
-      if (user) {
-        onLoginSuccess(user);
-      } else {
-        setErrorMessage('Invalid username or password');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: resolvedUsername,
+          password: resolvedPassword,
+        }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const data = isJson ? ((await res.json()) as Record<string, unknown>) : null;
+
+      if (!res.ok || !data || data.status !== 'ok' || !data.user || typeof data.token !== 'string') {
+        if (data && typeof data.message === 'string' && data.message) {
+          setErrorMessage(data.message);
+        } else if (!isJson || res.status === 404 || res.status === 405) {
+          setErrorMessage(
+            `Login backend (/api/auth/login) is unavailable on this host (HTTP ${res.status}). Make sure the Node.js server is running.`
+          );
+        } else if (res.status >= 500) {
+          setErrorMessage(`School server error (HTTP ${res.status}). Please try again in a moment.`);
+        } else {
+          setErrorMessage('Incorrect username or password. Please try again.');
+        }
         setIsSubmitting(false);
+        return;
       }
-    }, 150);
+
+      onLoginSuccess({
+        user: data.user as AuthUser,
+        token: data.token,
+        db: data.db as Partial<NurseDatabase> | undefined,
+        appsScriptUrl: typeof data.appsScriptUrl === 'string' ? data.appsScriptUrl : undefined,
+        isCustomAppsScriptUrl:
+          typeof data.isCustomAppsScriptUrl === 'boolean' ? data.isCustomAppsScriptUrl : undefined,
+        autoSyncEnabled:
+          typeof data.autoSyncEnabled === 'boolean' ? data.autoSyncEnabled : undefined,
+        updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
+        lastSheetsSyncAt:
+          typeof data.lastSheetsSyncAt === 'string' ? data.lastSheetsSyncAt : undefined,
+        lastSheetsSyncMessage:
+          typeof data.lastSheetsSyncMessage === 'string' ? data.lastSheetsSyncMessage : undefined,
+      });
+    } catch {
+      setErrorMessage('Unable to reach the school server right now. Please try again.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -62,7 +118,10 @@ export function AuthScreen({ onLoginSuccess, dynamicUsers }: AuthScreenProps) {
         {/* Minimalist Card */}
         <div className="w-full mt-6 bg-white border border-stone-200/90 rounded-2xl p-6 sm:p-7 shadow-[0_4px_20px_rgba(0,0,0,0.04)]">
           {errorMessage && (
-            <div className="mb-4 py-2 px-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium text-center animate-in fade-in duration-150">
+            <div
+              role="alert"
+              className="mb-4 py-2 px-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium text-center"
+            >
               {errorMessage}
             </div>
           )}
@@ -74,7 +133,9 @@ export function AuthScreen({ onLoginSuccess, dynamicUsers }: AuthScreenProps) {
                 <User className="w-4 h-4" />
               </div>
               <input
+                ref={usernameInputRef}
                 id="auth-username"
+                name="username"
                 type="text"
                 autoFocus
                 required
@@ -92,7 +153,9 @@ export function AuthScreen({ onLoginSuccess, dynamicUsers }: AuthScreenProps) {
                 <Lock className="w-4 h-4" />
               </div>
               <input
+                ref={passwordInputRef}
                 id="auth-password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
                 required
                 autoComplete="current-password"
@@ -117,7 +180,7 @@ export function AuthScreen({ onLoginSuccess, dynamicUsers }: AuthScreenProps) {
               disabled={isSubmitting}
               className="w-full mt-2 py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] text-white text-sm font-semibold rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? 'Logging in...' : 'Log In'}
+              {isSubmitting ? 'Verifying...' : 'Log In'}
             </button>
           </form>
         </div>

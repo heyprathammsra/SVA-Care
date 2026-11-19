@@ -75,6 +75,7 @@ export interface AppUserRecord {
   display_name?: string;
   badge_title?: string;
   active_status?: 'Active' | 'Inactive';
+  updated_at?: string;
 }
 
 export interface NurseDatabase {
@@ -84,6 +85,7 @@ export interface NurseDatabase {
   healthProfiles: HealthProfileRecord[];
   dispatches?: WardenDispatchRecord[];
   users?: AppUserRecord[];
+  classes?: string[];
 }
 
 export interface VisitFormInput {
@@ -278,13 +280,13 @@ export function validateVisitInput(input: VisitFormInput): {
     errors.visit_datetime = 'Visit date and time are required.';
   }
   if (!input.reason || !input.reason.trim()) {
-    errors.reason = 'Reason for visit or reported problem is required.';
+    errors.reason = 'Reason for visit or health concern is required.';
   }
   if (!input.action_taken || !input.action_taken.trim()) {
-    errors.action_taken = 'Action taken or care resolution is required.';
+    errors.action_taken = 'Care provided or action taken is required.';
   }
   if (input.medicine_status === 'given' && !input.medicine_name.trim()) {
-    errors.medicine_name = 'Enter the medicine name administered, or select "No medicine given".';
+    errors.medicine_name = 'Please enter the medication name, or select "None Given".';
   }
 
   return {
@@ -463,9 +465,9 @@ export function getDailyVisitLog(
   return matching.map((visit, index) => {
     const student: StudentRecord = studentMap.get(visit.student_id) ?? {
       student_id: visit.student_id,
-      full_name: 'Unknown Student',
-      section: 'Unassigned',
-      roll_number: '-',
+      full_name: visit.student_name || 'Student Record Not Found',
+      section: visit.section || visit.class || 'Unassigned',
+      roll_number: visit.roll_number || visit.roll_no || '-',
       active_status: 'Active',
       created_at: visit.created_at,
       updated_at: visit.created_at,
@@ -766,6 +768,73 @@ export function normalizeSectionName(rawSection: string): string {
 }
 
 /**
+ * Sanitizes an admin-entered class section name so grade numbers/prefixes are never used.
+ * Returns empty string if no valid section name remains.
+ */
+export function sanitizeClassSectionName(rawSection: string): string {
+  const trimmed = (rawSection || '').trim();
+  if (!trimmed) return '';
+  const withoutPrefix = trimmed
+    .replace(/^(?:(?:class|grade|std|standard)\s*)?(?:\d+\s*[-–]?\s*)?/i, '')
+    .replace(/\b(?:grade|class|std|standard)\s*\d+\b/gi, '')
+    .replace(/\d+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!withoutPrefix) return '';
+  const lower = withoutPrefix.toLowerCase();
+  if (KNOWN_SCHOOL_SECTIONS.includes(lower)) {
+    return `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
+  }
+  return withoutPrefix
+    .split(' ')
+    .map((word) => (word ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : ''))
+    .join(' ');
+}
+
+/**
+ * Returns deduplicated list of all class section names (no grade numbers), preserving canonical order.
+ */
+export function getAllClassSections(
+  students: StudentRecord[],
+  explicitClasses?: string[]
+): string[] {
+  const seen = new Set<string>();
+  const collected: string[] = [];
+
+  const addName = (raw: string) => {
+    const clean = normalizeSectionName(raw);
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      collected.push(clean);
+    }
+  };
+
+  if (Array.isArray(explicitClasses)) {
+    explicitClasses.forEach(addName);
+  }
+  students.forEach((s) => {
+    if (s.section) addName(s.section);
+  });
+
+  if (collected.length === 0) {
+    KNOWN_SCHOOL_SECTIONS.forEach((sec) =>
+      collected.push(`${sec.charAt(0).toUpperCase()}${sec.slice(1)}`)
+    );
+  }
+
+  return collected.sort((a, b) => {
+    const idxA = KNOWN_SCHOOL_SECTIONS.indexOf(a.toLowerCase());
+    const idxB = KNOWN_SCHOOL_SECTIONS.indexOf(b.toLowerCase());
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+
+/**
  * Normalizes and merges raw JSON arrays returned by the Google Apps Script doGet endpoint
  * with the current local database, ensuring:
  * 1) Pasted student names in Google Sheets without student_id get matched or assigned permanent IDs.
@@ -780,6 +849,7 @@ export function normalizeSheetSyncPayload(
     measurements?: Array<Partial<Record<keyof MeasurementRecord, string | number>> & Record<string, any>>;
     healthProfiles?: Array<Partial<HealthProfileRecord> & Record<string, any>>;
     users?: Array<Partial<AppUserRecord> & Record<string, any>>;
+    classes?: string[];
   },
   currentDb: NurseDatabase,
   nowIso: string = new Date().toISOString()
@@ -1166,6 +1236,10 @@ export function normalizeSheetSyncPayload(
   });
 
   const finalUsers = normalizedRemoteUsers.length > 0 ? normalizedRemoteUsers : (currentDb.users || []);
+  const mergedClasses = getAllClassSections(finalStudents, [
+    ...(Array.isArray(currentDb.classes) ? currentDb.classes : []),
+    ...(Array.isArray(payload.classes) ? payload.classes : []),
+  ]);
 
   return {
     students: finalStudents,
@@ -1174,6 +1248,7 @@ export function normalizeSheetSyncPayload(
     healthProfiles: finalProfiles,
     dispatches: currentDb.dispatches,
     users: finalUsers,
+    classes: mergedClasses,
   };
 }
 
@@ -1189,9 +1264,9 @@ export function generateVisitsCSV(entries: DailyLogEntry[]): string {
     'Student Name',
     'Roll No',
     'Class',
-    'Reason / Complaint',
-    'Clinical Observations',
-    'Action Taken',
+    'Reason / Health Concern',
+    'Observations',
+    'Care Provided',
     'Medicine Status',
     'Medicine Name',
     'Dosage',
@@ -1201,7 +1276,10 @@ export function generateVisitsCSV(entries: DailyLogEntry[]): string {
   ];
 
   const escapeCSV = (val: string | number | undefined | null) => {
-    const s = String(val ?? '').trim();
+    let s = String(val ?? '').trim();
+    if (/^[=+\-@\t\r]/.test(s)) {
+      s = `'${s}`;
+    }
     if (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) {
       return `"${s.replace(/"/g, '""')}"`;
     }

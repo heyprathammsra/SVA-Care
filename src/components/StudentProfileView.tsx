@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import {
   Search,
   Printer,
@@ -11,6 +11,8 @@ import {
   Ruler,
   Clock,
   UserCheck,
+  Send,
+  Pencil,
 } from 'lucide-react';
 import {
   searchStudents,
@@ -20,21 +22,28 @@ import {
   extractDatePart,
   formatTimeFromDatetime,
   parseStudentImportText,
+  getAllClassSections,
+  sanitizeClassSectionName,
   type StudentRecord,
   type VisitRecord,
   type MeasurementRecord,
   type HealthProfileRecord,
 } from '../utils/nurseLogic';
-import { SCHOOL_CLASSES, getTodayLocalDateString, DEFAULT_STAFF_NAME } from '../utils/seedData';
+import { getTodayLocalDateString, DEFAULT_STAFF_NAME } from '../utils/seedData';
+import { CustomSelect } from './CustomSelect';
+import { ModalDialog } from './ModalDialog';
 
 interface StudentProfileViewProps {
   students: StudentRecord[];
+  availableClasses?: string[];
+  isAdmin?: boolean;
   visits: VisitRecord[];
   measurements: MeasurementRecord[];
   healthProfiles: HealthProfileRecord[];
   selectedStudentId: string | null;
   onSelectStudentId: (studentId: string | null) => void;
   onStartVisitForStudent: (studentId: string) => void;
+  onIssuePassForStudent?: (studentId: string) => void;
   onAddMeasurement: (input: {
     student_id: string;
     measurement_date: string;
@@ -49,6 +58,7 @@ interface StudentProfileViewProps {
     status: 'Active' | 'Monitoring' | 'Resolved';
   }) => Promise<void>;
   onCreateStudent: (fullName: string, section: string, rollNumber: string) => StudentRecord;
+  onUpdateStudent?: (student: StudentRecord) => Promise<{ ok: boolean; message: string }>;
   onBulkImportStudents: (
     rows: Array<{ rollNumber: string; fullName: string; section: string }>,
     replaceAll: boolean
@@ -65,15 +75,19 @@ type ProfileSectionTab = 'all' | 'visit-history' | 'overview' | 'medical-conditi
 
 export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   students,
+  availableClasses,
+  isAdmin = false,
   visits,
   measurements,
   healthProfiles,
   selectedStudentId,
   onSelectStudentId,
   onStartVisitForStudent,
+  onIssuePassForStudent,
   onAddMeasurement,
   onSaveHealthNote,
   onCreateStudent,
+  onUpdateStudent,
   onBulkImportStudents,
   onPrintSingleVisit,
   onPrintStudentHistory,
@@ -114,28 +128,30 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   const [conditionInput, setConditionInput] = useState('');
   const [conditionStatus, setConditionStatus] = useState<'Active' | 'Monitoring' | 'Resolved'>('Active');
 
+  // Admin inline student edit modal state
+  const [showEditStudentModal, setShowEditStudentModal] = useState(false);
+  const [editStuName, setEditStuName] = useState('');
+  const [editStuSection, setEditStuSection] = useState('');
+  const [editStuRoll, setEditStuRoll] = useState('');
+  const [editStuStatus, setEditStuStatus] = useState<'Active' | 'Inactive'>('Active');
+  const [editStuSaving, setEditStuSaving] = useState(false);
+
   const [selectedSectionFilter, setSelectedSectionFilter] = useState<string>('All');
 
-  const availableSections = useMemo(() => {
-    const seen = new Set<string>();
-    const list: string[] = [];
-    for (const s of students) {
-      const sec = s.section.trim();
-      if (sec && !seen.has(sec.toLowerCase())) {
-        seen.add(sec.toLowerCase());
-        list.push(sec);
-      }
-    }
-    return list.length > 0 ? list : SCHOOL_CLASSES;
-  }, [students]);
+  const availableSections = useMemo(
+    () => getAllClassSections(students, availableClasses),
+    [students, availableClasses]
+  );
+
+  const deferredDirectorySearch = useDeferredValue(directorySearch);
 
   const filteredDirectory = useMemo(() => {
-    let list = searchStudents(students, directorySearch);
+    let list = searchStudents(students, deferredDirectorySearch);
     if (selectedSectionFilter !== 'All') {
       list = list.filter((s) => s.section.trim().toLowerCase() === selectedSectionFilter.trim().toLowerCase());
     }
     return list;
-  }, [students, directorySearch, selectedSectionFilter]);
+  }, [students, deferredDirectorySearch, selectedSectionFilter]);
 
   // Pre-compute visit counts, latest measurements, health conditions, and section counts for O(1) directory rendering
   const visitCountByStudent = useMemo(() => {
@@ -226,16 +242,47 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
 
   const handleCreateStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudentName.trim() || !newStudentSection.trim() || !newStudentRoll.trim()) return;
+    const cleanSection = sanitizeClassSectionName(newStudentSection) || newStudentSection.trim();
+    if (!newStudentName.trim() || !cleanSection || !newStudentRoll.trim()) return;
     const created = onCreateStudent(
       newStudentName.trim(),
-      newStudentSection.trim(),
+      cleanSection,
       newStudentRoll.trim().padStart(2, '0')
     );
     setNewStudentName('');
     setNewStudentRoll('');
     setShowAddStudentForm(false);
     onSelectStudentId(created.student_id);
+  };
+
+  const openEditSelectedStudent = (stu: StudentRecord) => {
+    setEditStuName(stu.full_name);
+    setEditStuSection(stu.section);
+    setEditStuRoll(stu.roll_number);
+    setEditStuStatus(stu.active_status === 'Inactive' ? 'Inactive' : 'Active');
+    setShowEditStudentModal(true);
+  };
+
+  const handleSaveEditSelectedStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent || !onUpdateStudent) return;
+    const cleanName = editStuName.trim();
+    const cleanSection = sanitizeClassSectionName(editStuSection) || editStuSection.trim();
+    const cleanRoll = editStuRoll.trim();
+    if (!cleanName || !cleanSection || !cleanRoll) return;
+    setEditStuSaving(true);
+    try {
+      await onUpdateStudent({
+        ...selectedStudent,
+        full_name: cleanName,
+        section: cleanSection,
+        roll_number: /^\d+$/.test(cleanRoll) ? cleanRoll.padStart(2, '0') : cleanRoll,
+        active_status: editStuStatus,
+      });
+      setShowEditStudentModal(false);
+    } finally {
+      setEditStuSaving(false);
+    }
   };
 
   const handleBulkImportSubmit = (e: React.FormEvent) => {
@@ -309,6 +356,16 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
           </button>
 
           <div className="flex items-center gap-2">
+            {isAdmin && onUpdateStudent && (
+              <button
+                type="button"
+                onClick={() => openEditSelectedStudent(selectedStudent)}
+                className="h-9 px-3 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Edit Student</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -320,6 +377,17 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               <Printer className="w-3.5 h-3.5" />
               <span>Print Complete History</span>
             </button>
+            {onIssuePassForStudent && (
+              <button
+                type="button"
+                onClick={() => onIssuePassForStudent(selectedStudent.student_id)}
+                className="h-9 px-3 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs cursor-pointer"
+                title="Issue infirmary visit pass (Principal / Vice Principal / Warden)"
+              >
+                <Send className="w-3.5 h-3.5 text-amber-700" />
+                <span>Issue Infirmary Pass</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => onStartVisitForStudent(selectedStudent.student_id)}
@@ -387,7 +455,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
           </div>
 
           {/* Mobile-only Action Buttons */}
-          <div className="sm:hidden pt-1">
+          <div className="sm:hidden pt-1 flex flex-col gap-2">
             <button
               type="button"
               onClick={() => {
@@ -399,6 +467,16 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               <Printer className="w-3.5 h-3.5 text-zinc-500" />
               <span>Print Complete History &amp; Slip</span>
             </button>
+            {onIssuePassForStudent && (
+              <button
+                type="button"
+                onClick={() => onIssuePassForStudent(selectedStudent.student_id)}
+                className="w-full h-10 px-3 text-xs font-semibold text-amber-900 bg-amber-50 active:bg-amber-100 border border-amber-300 rounded-xl flex items-center justify-center gap-1.5 shadow-2xs"
+              >
+                <Send className="w-3.5 h-3.5 text-amber-700" />
+                <span>Issue Infirmary Pass</span>
+              </button>
+            )}
           </div>
 
           {/* Section Filter Tabs (Single-line horizontal scroller on mobile) */}
@@ -409,7 +487,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
           >
             {(
               [
-                { id: 'all', label: 'Complete Dossier' },
+                { id: 'all', label: 'Complete Profile' },
                 { id: 'visit-history', label: `Visit History (${allStudentVisitsCount})` },
                 { id: 'overview', label: 'Overview' },
                 { id: 'medical-conditions', label: `Medical Conditions (${studentConditions.length})` },
@@ -672,19 +750,21 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                         className="w-full h-9 px-3 text-xs bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900"
                       />
                       <div className="flex items-center gap-2">
-                        <select
+                        <CustomSelect
                           id="condition-status-select"
-                          aria-label="Condition status"
+                          ariaLabel="Condition status"
+                          size="sm"
                           value={conditionStatus}
-                          onChange={(e) =>
-                            setConditionStatus(e.target.value as 'Active' | 'Monitoring' | 'Resolved')
+                          onChange={(val) =>
+                            setConditionStatus(val as 'Active' | 'Monitoring' | 'Resolved')
                           }
-                          className="h-8 px-2.5 text-xs bg-white border border-stone-200 rounded-lg flex-1"
-                        >
-                          <option value="Active">Active</option>
-                          <option value="Monitoring">Monitoring</option>
-                          <option value="Resolved">Resolved</option>
-                        </select>
+                          options={[
+                            { value: 'Active', label: 'Active' },
+                            { value: 'Monitoring', label: 'Monitoring' },
+                            { value: 'Resolved', label: 'Resolved' },
+                          ]}
+                          className="flex-1"
+                        />
                         <button
                           type="submit"
                           className="px-3.5 h-8 text-xs font-semibold text-white bg-zinc-900 rounded-lg hover:bg-zinc-800 whitespace-nowrap"
@@ -804,59 +884,28 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
         </div>
 
         {/* Individual Visit Modal */}
-        {inspectedVisit && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="inspect-visit-title"
-            className="fixed inset-0 z-50 bg-zinc-900/30 backdrop-blur-[1px] flex items-center justify-center p-4"
-          >
-            <div className="bg-white border border-stone-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
-              <div className="flex items-start justify-between gap-4 pb-3 border-b border-stone-100">
-                <div>
-                  <h3 id="inspect-visit-title" className="text-base font-semibold text-zinc-900 font-display">
-                    Visit Details
-                  </h3>
-                  <p className="text-xs font-mono text-zinc-500">
-                    {extractDatePart(inspectedVisit.visit_datetime)} · {formatTimeFromDatetime(inspectedVisit.visit_datetime)}
-                  </p>
-                </div>
+        <ModalDialog
+          open={Boolean(inspectedVisit)}
+          onClose={() => setInspectedVisit(null)}
+          title="Visit Details"
+          titleId="inspect-visit-title"
+          subtitle={
+            inspectedVisit
+              ? `${extractDatePart(inspectedVisit.visit_datetime)} · ${formatTimeFromDatetime(inspectedVisit.visit_datetime)}`
+              : undefined
+          }
+          icon={<Clock className="w-4 h-4 text-teal-700" />}
+          maxWidthClass="max-w-md"
+          footer={
+            inspectedVisit ? (
+              <>
                 <button
                   type="button"
                   onClick={() => setInspectedVisit(null)}
-                  aria-label="Close visit details"
-                  className="p-1 text-zinc-400 hover:text-zinc-700"
+                  className="h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200/90 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  Close
                 </button>
-              </div>
-
-              <dl className="space-y-3 text-xs">
-                <div>
-                  <dt className="text-zinc-400">Reason</dt>
-                  <dd className="font-medium text-sm text-zinc-900 mt-0.5">{inspectedVisit.reason}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-400">Observations</dt>
-                  <dd className="text-zinc-800 mt-0.5">{inspectedVisit.observations || 'None recorded'}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-400">Action Taken</dt>
-                  <dd className="text-zinc-800 mt-0.5">{inspectedVisit.action_taken}</dd>
-                </div>
-                <div>
-                  <dt className="text-zinc-400">Medicine</dt>
-                  <dd className="font-medium text-zinc-900 mt-0.5">{formatMedicineDisplay(inspectedVisit)}</dd>
-                </div>
-                {inspectedVisit.notes && (
-                  <div>
-                    <dt className="text-zinc-400">Notes</dt>
-                    <dd className="text-zinc-800 mt-0.5">{inspectedVisit.notes}</dd>
-                  </div>
-                )}
-              </dl>
-
-              <div className="pt-3 border-t border-stone-100 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -864,21 +913,147 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                     setInspectedVisit(null);
                     onPrintSingleVisit(selectedStudent, v);
                   }}
-                  className="px-3.5 py-2 text-xs font-medium text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 flex items-center gap-1.5"
+                  className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   Print Slip
                 </button>
+              </>
+            ) : undefined
+          }
+        >
+          {inspectedVisit && (
+            <dl className="divide-y divide-stone-100 text-xs">
+              <div className="pb-3">
+                <dt className="text-[11px] font-medium text-zinc-400">Reason for Visit</dt>
+                <dd className="font-semibold text-sm text-zinc-900 mt-1">{inspectedVisit.reason}</dd>
+              </div>
+              <div className="py-3">
+                <dt className="text-[11px] font-medium text-zinc-400">Observations</dt>
+                <dd className="text-zinc-800 mt-1 leading-relaxed">{inspectedVisit.observations || 'None recorded'}</dd>
+              </div>
+              <div className="py-3">
+                <dt className="text-[11px] font-medium text-zinc-400">Action Taken</dt>
+                <dd className="text-zinc-800 mt-1 leading-relaxed">{inspectedVisit.action_taken}</dd>
+              </div>
+              <div className="py-3">
+                <dt className="text-[11px] font-medium text-zinc-400">Medicine</dt>
+                <dd className="font-medium text-zinc-900 mt-1">{formatMedicineDisplay(inspectedVisit)}</dd>
+              </div>
+              {inspectedVisit.notes && (
+                <div className="pt-3">
+                  <dt className="text-[11px] font-medium text-zinc-400">Notes</dt>
+                  <dd className="text-zinc-800 mt-1 leading-relaxed">{inspectedVisit.notes}</dd>
+                </div>
+              )}
+            </dl>
+          )}
+        </ModalDialog>
+
+        {/* Admin Edit Student Modal */}
+        <ModalDialog
+          open={Boolean(isAdmin && onUpdateStudent && showEditStudentModal)}
+          onClose={() => setShowEditStudentModal(false)}
+          title="Edit Student Information"
+          titleId="profile-edit-student-title"
+          subtitle={selectedStudent.student_id}
+          icon={<Pencil className="w-4 h-4 text-teal-700" />}
+          maxWidthClass="max-w-md"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setShowEditStudentModal(false)}
+                className="h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200/90 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="profile-edit-student-form"
+                disabled={editStuSaving}
+                className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl disabled:opacity-60 shadow-xs transition-colors cursor-pointer"
+              >
+                {editStuSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </>
+          }
+        >
+          <form
+            id="profile-edit-student-form"
+            onSubmit={handleSaveEditSelectedStudent}
+            className="space-y-3.5"
+          >
+            <div>
+              <label htmlFor="profile-edit-name" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                Full Name *
+              </label>
+              <input
+                id="profile-edit-name"
+                type="text"
+                value={editStuName}
+                onChange={(e) => setEditStuName(e.target.value)}
+                className="w-full h-10 px-3 text-sm bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="profile-edit-section" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                  Class (Section Name) *
+                </label>
+                <CustomSelect
+                  id="profile-edit-section"
+                  ariaLabel="Class section name"
+                  variant="subtle"
+                  value={editStuSection}
+                  onChange={setEditStuSection}
+                  options={[
+                    ...(!availableSections.includes(editStuSection) && editStuSection
+                      ? [{ value: editStuSection, label: editStuSection }]
+                      : []),
+                    ...availableSections.map((sec) => ({ value: sec, label: sec })),
+                  ]}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label htmlFor="profile-edit-roll" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                  Roll Number *
+                </label>
+                <input
+                  id="profile-edit-roll"
+                  type="text"
+                  value={editStuRoll}
+                  onChange={(e) => setEditStuRoll(e.target.value)}
+                  className="w-full h-10 px-3 text-sm font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
+                />
               </div>
             </div>
-          </div>
-        )}
+            <div>
+              <label htmlFor="profile-edit-status" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                Enrollment Status
+              </label>
+              <CustomSelect
+                id="profile-edit-status"
+                ariaLabel="Enrollment status"
+                variant="subtle"
+                value={editStuStatus}
+                onChange={(val) => setEditStuStatus(val as 'Active' | 'Inactive')}
+                options={[
+                  { value: 'Active', label: 'Active' },
+                  { value: 'Inactive', label: 'Inactive' },
+                ]}
+                className="w-full"
+              />
+            </div>
+          </form>
+        </ModalDialog>
       </div>
     );
   }
 
   // ============================================================================
-  // DIRECTORY VIEW (30 STUDENTS IN 6 SPARKLE)
+  // DIRECTORY VIEW (ALL CLASS SECTIONS)
   // ============================================================================
   return (
     <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
@@ -891,7 +1066,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
             School Student Roster ({students.length})
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 mt-1">
-            Tap any student row to open their complete health dossier or log a visit.
+            Tap any student row to open their health profile or log a visit.
           </p>
         </div>
 
@@ -988,7 +1163,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               rows={5}
               value={bulkRawText}
               onChange={(e) => setBulkRawText(e.target.value)}
-              placeholder={`01 Ajinkya Balu Gurav\n02 Ankita Rangnath Ghige\n03 Anushka Balasaheb Jalhare`}
+              placeholder={`01 Aarav Sharma\n02 Diya Patel\n03 Rohan Deshmukh`}
               className="w-full p-3 text-xs font-mono bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none"
             />
           </div>
@@ -1160,7 +1335,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                   key={stu.student_id}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Open health dossier for ${stu.full_name}, Roll ${stu.roll_number}`}
+                  aria-label={`Open health profile for ${stu.full_name}, Roll ${stu.roll_number}`}
                   onClick={() => onSelectStudentId(stu.student_id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -1168,7 +1343,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                       onSelectStudentId(stu.student_id);
                     }
                   }}
-                  className="group px-3.5 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-stone-50/90 active:bg-stone-100/70 transition-colors cursor-pointer select-none focus:outline-none focus-visible:bg-stone-50"
+                  className="list-row-opt group px-3.5 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-stone-50/90 active:bg-stone-100/70 transition-colors cursor-pointer select-none focus:outline-none focus-visible:bg-stone-50"
                 >
                   <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 flex-1 overflow-hidden">
                     <span className="w-8 h-8 rounded-lg bg-stone-100 text-zinc-700 group-hover:bg-teal-50 group-hover:text-teal-800 font-mono tabular-nums text-xs font-semibold flex items-center justify-center shrink-0 transition-colors">

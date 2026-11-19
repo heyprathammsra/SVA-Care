@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import {
   Search,
   Send,
@@ -22,6 +22,7 @@ import {
   formatMedicineDisplay,
   formatTimeFromDatetime,
   extractDatePart,
+  getAllClassSections,
   type StudentRecord,
   type VisitRecord,
   type MeasurementRecord,
@@ -30,10 +31,12 @@ import {
 } from '../utils/nurseLogic';
 import { type AuthUser } from '../utils/auth';
 import { SCHOOL_NAME, SCHOOL_LOGO_URL, SCHOOL_LOGO_FALLBACK_URL } from '../utils/seedData';
+import { CustomSelect } from './CustomSelect';
 
 interface WardenPortalViewProps {
   currentUser: AuthUser;
   students: StudentRecord[];
+  availableClasses?: string[];
   visits: VisitRecord[];
   measurements: MeasurementRecord[];
   healthProfiles: HealthProfileRecord[];
@@ -58,6 +61,7 @@ const COMMON_REASONS = [
 export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
   currentUser,
   students,
+  availableClasses,
   visits,
   measurements,
   healthProfiles,
@@ -76,22 +80,24 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'send' | 'active' | 'history'>('send');
 
-  const availableSections = useMemo(() => {
-    const seen = new Set<string>();
-    const list: string[] = [];
-    for (const s of students) {
-      const sec = s.section.trim();
-      if (sec && !seen.has(sec.toLowerCase())) {
-        seen.add(sec.toLowerCase());
-        list.push(sec);
-      }
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  const availableSections = useMemo(
+    () => getAllClassSections(students, availableClasses),
+    [students, availableClasses]
+  );
+
+  const alertStudentIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of healthProfiles) {
+      set.add(h.student_id);
     }
-    return list;
-  }, [students]);
+    return set;
+  }, [healthProfiles]);
 
   const filteredStudents = useMemo(() => {
-    return searchStudents(students, searchQuery, sectionFilter);
-  }, [students, searchQuery, sectionFilter]);
+    return searchStudents(students, deferredSearchQuery, sectionFilter);
+  }, [students, deferredSearchQuery, sectionFilter]);
 
   // Medical profile data for selected student
   const studentVisits = useMemo(() => {
@@ -128,7 +134,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
     setIsSubmitting(true);
     try {
       await onDispatchStudent(selectedStudent, finalReason, dispatchNotes.trim());
-      setSuccessToast(`Dispatched ${selectedStudent.full_name} to Infirmary. Nurse has been notified.`);
+      setSuccessToast(`Sent ${selectedStudent.full_name} to Infirmary. Nurse has been notified.`);
       setCustomReason('');
       setDispatchNotes('');
       setSelectedStudent(null);
@@ -142,7 +148,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
   return (
     <div className="min-h-screen bg-[#FBFAF8] text-zinc-900 flex flex-col font-sans selection:bg-teal-100 selection:text-teal-900">
       {/* Header matching exact nurse top-bar style with NO outline badge */}
-      <header className="sticky top-0 z-30 bg-[#FBFAF8]/95 backdrop-blur-md border-b border-stone-200/80 px-4 py-2.5 sm:px-8 shadow-xs">
+      <header className="sticky top-0 z-30 chrome-sticky bg-[#FBFAF8]/98 border-b border-stone-200/80 px-4 py-2.5 sm:px-8 shadow-2xs">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <img
@@ -167,7 +173,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                 </span>
               </div>
               <h1 className="text-sm sm:text-base font-bold font-display text-zinc-900 leading-tight truncate">
-                Student Infirmary Pass Dispatcher
+                Student Infirmary Pass Desk
               </h1>
             </div>
           </div>
@@ -223,7 +229,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                   : 'text-zinc-600 hover:text-zinc-900 hover:bg-stone-100'
               }`}
             >
-              <span>Students in Transit</span>
+              <span>Students on the Way</span>
               {activeDispatches.length > 0 && (
                 <span className="w-5 h-5 flex items-center justify-center rounded-full bg-amber-500 text-white text-[11px] font-bold">
                   {activeDispatches.length}
@@ -238,7 +244,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                   : 'text-zinc-600 hover:text-zinc-900 hover:bg-stone-100'
               }`}
             >
-              Recent Dispatch Log
+              Recent Pass Log
             </button>
           </div>
 
@@ -276,19 +282,18 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
 
               {/* Class Filter Bar matching Nurse UI */}
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                <select
-                  aria-label="Filter by class section"
+                <CustomSelect
+                  ariaLabel="Filter by class section"
                   value={sectionFilter}
-                  onChange={(e) => setSectionFilter(e.target.value)}
-                  className="h-8 px-2.5 text-xs font-medium text-zinc-800 bg-stone-50/80 border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900 shrink-0"
-                >
-                  <option value="ALL">All Classes ({students.length})</option>
-                  {availableSections.map((sec) => (
-                    <option key={sec} value={sec}>
-                      {sec}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSectionFilter}
+                  size="sm"
+                  menuMinWidth={170}
+                  className="shrink-0 min-w-[132px]"
+                  options={[
+                    { value: 'ALL', label: `All Classes (${students.length})` },
+                    ...availableSections.map((sec) => ({ value: sec, label: sec })),
+                  ]}
+                />
 
                 <div className="flex items-center gap-1 shrink-0">
                   <button
@@ -320,7 +325,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
               </div>
 
               {/* Student List */}
-              <div className="max-h-[380px] overflow-y-auto space-y-1.5 pr-1 divide-y divide-stone-100">
+              <div className="max-h-[380px] overflow-y-auto smooth-scroll-list space-y-1.5 pr-1 divide-y divide-stone-100">
                 {filteredStudents.length === 0 ? (
                   <div className="py-8 text-center text-xs text-zinc-400">
                     No matching students found
@@ -328,13 +333,13 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                 ) : (
                   filteredStudents.map((s) => {
                     const isSelected = selectedStudent?.student_id === s.student_id;
-                    const hasAlerts = healthProfiles.some((h) => h.student_id === s.student_id);
+                    const hasAlerts = alertStudentIds.has(s.student_id);
                     return (
                       <button
                         key={s.student_id}
                         type="button"
                         onClick={() => setSelectedStudent(s)}
-                        className={`w-full text-left p-3 rounded-xl transition-all flex items-center justify-between cursor-pointer ${
+                        className={`list-row-opt w-full text-left p-3 rounded-xl transition-colors flex items-center justify-between cursor-pointer ${
                           isSelected
                             ? 'bg-teal-50/80 border border-teal-300/80 shadow-xs'
                             : 'hover:bg-stone-50 border border-transparent'
@@ -467,7 +472,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                         2. Send to Nurse Infirmary
                       </h2>
                       <p className="text-xs text-zinc-500 mt-0.5">
-                        Nurse will be notified discreetly that student is in transit with your pass
+                        Nurse will be notified discreetly that the student is on the way with your pass
                       </p>
                     </div>
 
@@ -476,17 +481,14 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                       <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
                         Visit Reason / Chief Complaint
                       </label>
-                      <select
+                      <CustomSelect
+                        ariaLabel="Visit reason"
                         value={dispatchReason}
-                        onChange={(e) => setDispatchReason(e.target.value)}
-                        className="w-full px-3 py-2 bg-stone-50/80 text-zinc-900 text-xs sm:text-sm rounded-xl border border-stone-200 focus:border-zinc-900 outline-none"
-                      >
-                        {COMMON_REASONS.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setDispatchReason}
+                        variant="subtle"
+                        className="w-full"
+                        options={COMMON_REASONS.map((r) => ({ value: r, label: r }))}
+                      />
                     </div>
 
                     {/* Custom note or specific details */}
@@ -505,7 +507,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
 
                     <div>
                       <label className="block text-xs font-semibold text-zinc-700 mb-1.5">
-                        Escort / Transit Note (Optional)
+                        Escort / Accompaniment Note (Optional)
                       </label>
                       <input
                         type="text"
@@ -524,7 +526,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                         className="flex-1 py-2.5 px-4 bg-teal-800 hover:bg-teal-900 active:scale-[0.99] text-white text-xs sm:text-sm font-semibold rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                       >
                         <Send className="w-4 h-4" />
-                        {isSubmitting ? 'Dispatching...' : `Dispatch ${selectedStudent.full_name} to Infirmary`}
+                        {isSubmitting ? 'Sending...' : `Send ${selectedStudent.full_name} to Infirmary`}
                       </button>
                       <button
                         type="button"
@@ -541,7 +543,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                   <User className="w-10 h-10 mb-3 text-stone-300" />
                   <h3 className="text-sm font-semibold text-zinc-700">No Student Selected</h3>
                   <p className="text-xs text-zinc-400 max-w-xs mt-1">
-                    Select a student from the left panel to review their complete medical dossier and issue an infirmary transit pass.
+                    Select a student from the left panel to review their complete medical dossier and issue an infirmary pass.
                   </p>
                 </div>
               )}
@@ -555,7 +557,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-base font-bold text-zinc-900">
-                  Students Currently in Transit to Infirmary
+                  Students Currently on the Way to Infirmary
                 </h2>
                 <p className="text-xs text-zinc-500">
                   These passes are live on the Nurse screen. Once the nurse admits the student, status updates to Arrived.
@@ -569,7 +571,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
             {activeDispatches.length === 0 ? (
               <div className="py-12 text-center text-zinc-400">
                 <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-stone-300" />
-                <p className="text-xs">No students currently in transit.</p>
+                <p className="text-xs">No students currently on the way.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -585,7 +587,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                           Class {d.section} · Roll {d.roll_number}
                         </span>
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white animate-pulse">
-                          In Transit
+                          On the Way
                         </span>
                       </div>
                       <div className="text-xs text-zinc-700 mt-1">
@@ -621,12 +623,12 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
           <div className="bg-white border border-stone-200/90 rounded-2xl p-6 shadow-xs">
             <h2 className="text-base font-bold text-zinc-900 mb-1">Recent Pass History</h2>
             <p className="text-xs text-zinc-500 mb-4">
-              All students who were dispatched and either arrived at the infirmary or had their passes cancelled.
+              All students who were sent to the infirmary and either arrived or had their passes cancelled.
             </p>
 
             {pastDispatches.length === 0 ? (
               <div className="py-12 text-center text-zinc-400 text-xs">
-                No past dispatch records logged yet.
+                No past pass records logged yet.
               </div>
             ) : (
               <div className="divide-y divide-stone-100">
@@ -641,7 +643,7 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                       </div>
                       <div className="text-xs text-zinc-600 mt-0.5">{d.reason}</div>
                       <div className="text-[11px] text-zinc-400 font-mono mt-0.5">
-                        Dispatched {new Date(d.dispatched_at).toLocaleDateString()} at{' '}
+                        Sent {new Date(d.dispatched_at).toLocaleDateString()} at{' '}
                         {new Date(d.dispatched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>

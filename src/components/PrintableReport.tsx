@@ -12,10 +12,6 @@ import {
   Smartphone,
   FileText,
   AlertCircle,
-  Clock,
-  User,
-  ShieldCheck,
-  Pill,
 } from 'lucide-react';
 import {
   formatMedicineDisplay,
@@ -216,17 +212,25 @@ export const PrintableReport: React.FC<PrintableReportProps> = ({ config, onClos
   // Copy Plain Text Summary
   const handleCopySummary = () => {
     const text = generateTextSummary(config, staffName, todayIso);
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setNotification({
-        message: 'Summary copied to clipboard! Ready to paste in WhatsApp or Email.',
-        type: 'success',
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true);
+        setNotification({
+          message: 'Summary copied to clipboard! Ready to paste in WhatsApp or Email.',
+          type: 'success',
+        });
+        setTimeout(() => {
+          setCopied(false);
+          setNotification(null);
+        }, 3500);
+      })
+      .catch(() => {
+        setNotification({
+          message: 'Clipboard access is restricted in this browser view. Use "Download A4" to save a copy.',
+          type: 'warn',
+        });
       });
-      setTimeout(() => {
-        setCopied(false);
-        setNotification(null);
-      }, 3500);
-    });
   };
 
   return (
@@ -591,7 +595,7 @@ export const PrintableReport: React.FC<PrintableReportProps> = ({ config, onClos
 
                     {config.healthProfiles.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-zinc-200 text-xs">
-                        <span className="text-zinc-500 font-medium">Medical Profile / Alerts: </span>
+                        <span className="text-zinc-500 font-medium">Medical Profile / Care Notes: </span>
                         <span className="text-zinc-800 font-semibold">
                           {config.healthProfiles.map((h) => `${h.condition_or_note} (${h.status})`).join('; ')}
                         </span>
@@ -681,7 +685,7 @@ export const PrintableReport: React.FC<PrintableReportProps> = ({ config, onClos
                     </div>
 
                     <div className="p-3">
-                      <span className="text-zinc-500 block text-[11px] mb-0.5">Reason for Visit / Reported Issue</span>
+                      <span className="text-zinc-500 block text-[11px] mb-0.5">Reason for Visit / Health Concern</span>
                       <p className="font-bold text-zinc-900 text-sm">{config.visit.reason}</p>
                     </div>
 
@@ -1008,7 +1012,7 @@ function generateStandaloneHtml(
 
     const alertsHtml =
       config.healthProfiles.length > 0
-        ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e4e4e7; font-size: 11px;"><span style="color: #71717a;">Medical Profile / Alerts: </span><strong>${escapeHtml(
+        ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e4e4e7; font-size: 11px;"><span style="color: #71717a;">Medical Profile / Care Notes: </span><strong>${escapeHtml(
             config.healthProfiles.map((h) => `${h.condition_or_note} (${h.status})`).join('; ')
           )}</strong></div>`
         : '';
@@ -1023,7 +1027,7 @@ function generateStandaloneHtml(
           <div><span style="color: #71717a; display: block;">Student Name</span><strong>${escapeHtml(config.student.full_name)}</strong></div>
           <div><span style="color: #71717a; display: block;">Permanent ID</span><span style="font-family: monospace;">${config.student.student_id}</span></div>
           <div><span style="color: #71717a; display: block;">Section &amp; Roll</span><span style="font-family: monospace;">${escapeHtml(config.student.section)} · #${escapeHtml(config.student.roll_number)}</span></div>
-          <div><span style="color: #71717a; display: block;">Latest Anthropometry</span><span style="font-family: monospace;">${config.latestMeasurement ? `${config.latestMeasurement.height_cm} cm / ${config.latestMeasurement.weight_kg} kg` : 'Not recorded'}</span></div>
+          <div><span style="color: #71717a; display: block;">Latest Height / Weight</span><span style="font-family: monospace;">${config.latestMeasurement ? `${config.latestMeasurement.height_cm} cm / ${config.latestMeasurement.weight_kg} kg` : 'Not recorded'}</span></div>
         </div>
         ${alertsHtml}
       </div>

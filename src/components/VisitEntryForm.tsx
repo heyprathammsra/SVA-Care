@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import {
   Search,
   Check,
@@ -22,6 +22,7 @@ import {
   getStudentMeasurements,
   extractDatePart,
   formatTimeFromDatetime,
+  getAllClassSections,
   type StudentRecord,
   type VisitRecord,
   type MeasurementRecord,
@@ -30,13 +31,14 @@ import {
   type MedicineStatus,
 } from '../utils/nurseLogic';
 import {
-  SCHOOL_CLASSES,
   getNowLocalDatetimeString,
   DEFAULT_STAFF_NAME,
 } from '../utils/seedData';
+import { CustomSelect } from './CustomSelect';
 
 interface VisitEntryFormProps {
   students: StudentRecord[];
+  availableClasses?: string[];
   visits: VisitRecord[];
   measurements?: MeasurementRecord[];
   healthProfiles: HealthProfileRecord[];
@@ -84,7 +86,7 @@ const CLINICAL_TEMPLATES: ClinicalTemplate[] = [
   {
     id: 'abrasion',
     label: 'Playground Scrape',
-    reason: 'Superficial knee/elbow abrasion during recess',
+    reason: 'Minor knee/elbow scrape during recess',
     observations: 'Minor skin scrape; cleaned, no active bleeding, vitals normal.',
     actionTaken: 'Cleaned wound with normal saline and antiseptic solution; applied sterile gauze dressing.',
     medicineStatus: 'none',
@@ -153,6 +155,7 @@ const MEDICINE_PRESETS = [
 
 export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
   students,
+  availableClasses,
   visits,
   measurements = [],
   healthProfiles,
@@ -209,18 +212,10 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
     return set;
   }, [healthProfiles]);
 
-  const availableSections = useMemo(() => {
-    const seen = new Set<string>();
-    const list: string[] = [];
-    for (const s of students) {
-      const sec = s.section.trim();
-      if (sec && !seen.has(sec.toLowerCase())) {
-        seen.add(sec.toLowerCase());
-        list.push(sec);
-      }
-    }
-    return list.length > 0 ? list : SCHOOL_CLASSES;
-  }, [students]);
+  const availableSections = useMemo(
+    () => getAllClassSections(students, availableClasses),
+    [students, availableClasses]
+  );
 
   const selectedStudent = useMemo(
     () => (selectedStudentId ? studentById.get(selectedStudentId) || null : null),
@@ -242,9 +237,11 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
     [measurements, selectedStudentId]
   );
 
+  const deferredStudentSearch = useDeferredValue(studentSearch);
+
   const filteredStudents = useMemo(
-    () => searchStudents(students, studentSearch, pickerSectionFilter),
-    [students, studentSearch, pickerSectionFilter]
+    () => searchStudents(students, deferredStudentSearch, pickerSectionFilter),
+    [students, deferredStudentSearch, pickerSectionFilter]
   );
 
   // Genuine clinical priority list: students who actually have a recorded health note OR recent visit
@@ -384,8 +381,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
 
     if (isDuplicateVisitSubmission(visits, formInput)) {
       setErrors({
-        submit:
-          'This exact visit was already recorded moments ago. Duplicate submission prevented.',
+        submit: 'This visit was already recorded moments ago.',
       });
       return;
     }
@@ -567,7 +563,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                     <div className="p-2.5 bg-amber-50/90 border border-amber-200/80 rounded-xl text-xs text-amber-950 flex items-start gap-2">
                       <HeartPulse className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                       <div className="min-w-0 flex-1">
-                        <span className="font-semibold">Health Alert: </span>
+                        <span className="font-semibold">Health Note: </span>
                         <span>{selectedStudentConditions[0].condition_or_note}</span>
                       </div>
                     </div>
@@ -582,7 +578,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                         onClick={() => onOpenStudentProfile(selectedStudent.student_id)}
                         className="text-teal-700 font-semibold whitespace-nowrap"
                       >
-                        Dossier →
+                        Profile →
                       </button>
                     </div>
                   )}
@@ -622,19 +618,18 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                         placeholder="Full name"
                         className="sm:col-span-2 h-9 px-3 text-xs bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900"
                       />
-                      <select
+                      <CustomSelect
                         id="quick-student-section"
-                        aria-label="New student section"
+                        ariaLabel="New student section"
+                        size="sm"
                         value={newStudentSection}
-                        onChange={(e) => setNewStudentSection(e.target.value)}
-                        className="h-9 px-2.5 text-xs bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900"
-                      >
-                        {availableSections.map((sec) => (
-                          <option key={sec} value={sec}>
-                            {sec}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setNewStudentSection}
+                        options={availableSections.map((sec) => ({
+                          value: sec,
+                          label: sec,
+                        }))}
+                        className="w-full"
+                      />
                       <div className="flex gap-2">
                         <input
                           id="quick-student-roll"
@@ -719,7 +714,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                   <p className="text-xs text-red-600">{errors.student_id}</p>
                 )}
 
-                <div className="max-h-56 overflow-y-auto divide-y divide-stone-100 border border-stone-200/70 rounded-xl bg-white">
+                <div className="max-h-56 overflow-y-auto smooth-scroll-list divide-y divide-stone-100 border border-stone-200/70 rounded-xl bg-white">
                   {filteredStudents.length === 0 ? (
                     <div className="py-6 px-4 text-center text-xs text-zinc-500">
                       No matching student found.
@@ -732,7 +727,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                           key={stu.student_id}
                           type="button"
                           onClick={() => handleSelectStudent(stu)}
-                          className="w-full px-3.5 py-2.5 text-left hover:bg-stone-50 active:bg-stone-100 transition-colors flex items-center justify-between gap-3 text-xs"
+                          className="list-row-opt w-full px-3.5 py-2.5 text-left hover:bg-stone-50 active:bg-stone-100 transition-colors flex items-center justify-between gap-3 text-xs"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <span className="w-6 h-6 rounded-md bg-stone-100 text-zinc-700 font-mono text-[11px] font-semibold flex items-center justify-center shrink-0">
@@ -793,7 +788,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
           <div className="space-y-4 pt-1">
             <div>
               <label htmlFor="visit-reason" className="block text-xs font-semibold text-zinc-800 mb-1.5">
-                Reason for Visit / Reported Problem *
+                Reason for Visit / Health Concern *
               </label>
               <input
                 id="visit-reason"
@@ -828,7 +823,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
 
             <div>
               <label htmlFor="visit-action" className="block text-xs font-semibold text-zinc-800 mb-1.5">
-                Action Taken or Resolution *
+                Care Provided / Action Taken *
               </label>
               <input
                 id="visit-action"
@@ -979,34 +974,40 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                       <label htmlFor="medicine-unit" className="block text-xs text-zinc-600 mb-1">
                         Unit
                       </label>
-                      <select
+                      <CustomSelect
                         id="medicine-unit"
+                        ariaLabel="Medicine dosage unit"
+                        size="sm"
                         value={dosageUnit}
-                        onChange={(e) => setDosageUnit(e.target.value)}
-                        className="w-full h-9 px-2.5 text-xs bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900"
-                      >
-                        <option value="ml">ml</option>
-                        <option value="mg">mg</option>
-                        <option value="tablet">tablet(s)</option>
-                        <option value="drops">drops</option>
-                        <option value="application">topical</option>
-                      </select>
+                        onChange={setDosageUnit}
+                        options={[
+                          { value: 'ml', label: 'ml' },
+                          { value: 'mg', label: 'mg' },
+                          { value: 'tablet', label: 'tablet(s)' },
+                          { value: 'drops', label: 'drops' },
+                          { value: 'application', label: 'topical' },
+                        ]}
+                        className="w-full"
+                      />
                     </div>
                     <div className="col-span-1 sm:col-span-3">
                       <label htmlFor="medicine-route" className="block text-xs text-zinc-600 mb-1">
                         Route
                       </label>
-                      <select
+                      <CustomSelect
                         id="medicine-route"
+                        ariaLabel="Medicine administration route"
+                        size="sm"
                         value={route}
-                        onChange={(e) => setRoute(e.target.value)}
-                        className="w-full h-9 px-2.5 text-xs bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900"
-                      >
-                        <option value="Oral">Oral</option>
-                        <option value="Topical / Cutaneous">Topical / Cutaneous</option>
-                        <option value="Inhalation">Inhalation</option>
-                        <option value="Ophthalmic (Eye Drops)">Eye Drops</option>
-                      </select>
+                        onChange={setRoute}
+                        options={[
+                          { value: 'Oral', label: 'Oral' },
+                          { value: 'Topical / Cutaneous', label: 'Topical / Cutaneous' },
+                          { value: 'Inhalation', label: 'Inhalation' },
+                          { value: 'Ophthalmic (Eye Drops)', label: 'Eye Drops' },
+                        ]}
+                        className="w-full"
+                      />
                     </div>
                     <div className="col-span-1 sm:col-span-3">
                       <label htmlFor="medicine-time" className="block text-xs text-zinc-600 mb-1">
@@ -1107,7 +1108,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
           </div>
 
           {/* MOBILE STICKY SAVE BAR (MOBILE ONLY - DOCKED AT BOTTOM) */}
-          <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200/90 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] flex items-center gap-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+          <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 chrome-sticky bg-white/98 border-t border-stone-200/90 px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] flex items-center gap-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
             <button
               type="button"
               onClick={resetFormForNextVisit}
@@ -1126,14 +1127,14 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
           </div>
         </form>
 
-        {/* RIGHT COLUMN (5 COLS): LIVE PATIENT CLINICAL CONTEXT SIDEBAR */}
+        {/* RIGHT COLUMN (5 COLS): STUDENT HEALTH CONTEXT SIDEBAR */}
         <aside className="lg:col-span-5 space-y-5">
           {selectedStudent ? (
             <div className="bg-white border border-stone-200/80 rounded-2xl p-5 sm:p-6 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
               <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-stone-100">
                 <div>
                   <span className="text-[11px] font-semibold text-teal-700">
-                    Patient Clinical Context
+                    Student Health Context
                   </span>
                   <h3 className="text-base font-semibold text-zinc-900 font-display">
                     {selectedStudent.full_name}
@@ -1144,7 +1145,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                   onClick={() => onOpenStudentProfile(selectedStudent.student_id)}
                   className="px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-stone-100 hover:bg-stone-200/70 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
                 >
-                  Full Dossier
+                  Full Profile
                   <ArrowRight className="w-3 h-3" />
                 </button>
               </div>
@@ -1157,7 +1158,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                 </div>
                 {selectedStudentConditions.length === 0 ? (
                   <p className="text-xs text-zinc-500 bg-stone-50/80 px-3 py-2 rounded-xl border border-stone-200/50">
-                    No pre-existing conditions or drug allergies recorded on file.
+                    No pre-existing conditions or medication allergies recorded on file.
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -1176,11 +1177,11 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                 )}
               </div>
 
-              {/* 2. Latest Height & Weight (For Pediatric Medication Dosing) */}
+              {/* 2. Latest Height & Weight */}
               <div className="space-y-2 pt-3 border-t border-stone-100">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
                   <Ruler className="w-3.5 h-3.5 text-teal-700" />
-                  <span>Anthropometry (Dosing Reference)</span>
+                  <span>Height &amp; Weight (Care Reference)</span>
                 </div>
                 {selectedStudentLatestMeas ? (
                   <div className="p-3 bg-stone-50/80 border border-stone-200/60 rounded-xl flex items-center justify-between text-xs">
@@ -1231,13 +1232,13 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
             <div className="hidden lg:block bg-white border border-stone-200/80 rounded-2xl p-6 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-4">
               <div>
                 <span className="text-[11px] font-semibold text-teal-700">
-                  Clinical Watchlist
+                  Care &amp; Visit Overview
                 </span>
                 <h3 className="text-base font-semibold text-zinc-900 font-display mt-0.5">
-                  Students with Health Alerts &amp; Recent Visits
+                  Students with Health Notes &amp; Recent Visits
                 </h3>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Select a student with an active medical condition or recent infirmary visit to load their chart immediately.
+                  Select a student with an active health note or recent infirmary visit to load their profile right away.
                 </p>
               </div>
 

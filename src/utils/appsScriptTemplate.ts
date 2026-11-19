@@ -8,16 +8,31 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * 1. Students:
  *    student_id, full_name, section, roll_number, active_status, created_at, updated_at
  * 2. Visits:
- *    visit_id, student_id, visit_datetime, reason, observations, action_taken,
- *    medicine_name, dosage, dosage_unit, route, administration_time,
- *    notes, recorded_by, created_at
+ *    visit_id, student_id, student_name, class, roll_no, visit_datetime, reason,
+ *    observations, action_taken, medicine_name, dosage, dosage_unit, route,
+ *    administration_time, notes, recorded_by, created_at
  * 3. Measurements:
  *    measurement_id, student_id, measurement_date, height_cm, weight_kg, notes, updated_at
  * 4. Health Profiles:
  *    health_record_id, student_id, condition_or_note, status, date_recorded, last_reviewed
- * 5. Users (Staff login accounts):
+ * 5. Users (Staff login accounts — Admin only):
  *    username, password, role, display_name, badge_title, active_status
+ *
+ * Notes:
+ * - Classes use section names ONLY (e.g. Sparkle, Twinkle, Topaz, Sapphire) without grade numbers.
+ * - Supports Admin user management (upsertUser, deleteUser), student edits (updateStudent),
+ *   class renames (renameClass), and full database backup pushes (syncFullDatabase).
+ * - SECURITY: Set API_SECRET below to a long random string and set the same APPS_SCRIPT_SECRET
+ *   in your web server environment so nobody can access this sheet URL directly.
  */
+
+// Optional shared secret (recommended when deployed online). Leave '' only during initial setup.
+const API_SECRET = '';
+
+function isAuthorizedRequest(providedSecret) {
+  if (!API_SECRET) return true;
+  return String(providedSecret || '') === String(API_SECRET);
+}
 
 const SHEET_SCHEMAS = {
   'Students': [
@@ -59,12 +74,12 @@ function setupSpreadsheet() {
       sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
       sheet.setFrozenRows(1);
 
-      // Seed default accounts into Users tab so admin can immediately add or edit staff
+      // Seed placeholder starter accounts into Users tab — change passwords immediately after setup
       if (tabName === 'Users') {
         const defaultUsers = [
-          ['nurse', 'iloveeating', 'nurse', 'School Nurse', 'Infirmary Nurse', 'Active'],
-          ['admin', 'sva0pass', 'admin', 'Infirmary Administrator', 'System Admin', 'Active'],
-          ['agnel', 'ilovesleeping', 'warden', 'Agnel (Hostel Warden)', 'Hostel Warden', 'Active']
+          ['admin', 'CHANGE_ADMIN_PASSWORD', 'admin', 'Infirmary Administrator', 'System Admin', 'Active'],
+          ['nurse', 'CHANGE_NURSE_PASSWORD', 'nurse', 'School Nurse', 'Infirmary Nurse', 'Active'],
+          ['warden', 'CHANGE_WARDEN_PASSWORD', 'warden', 'Hostel Warden', 'Hostel Warden', 'Active']
         ];
         sheet.getRange(2, 1, defaultUsers.length, headers.length).setValues(defaultUsers);
       }
@@ -79,6 +94,10 @@ function setupSpreadsheet() {
  */
 function doGet(e) {
   try {
+    const providedSecret = e && e.parameter ? e.parameter.secret : '';
+    if (!isAuthorizedRequest(providedSecret)) {
+      return jsonError('Unauthorized request.');
+    }
     setupSpreadsheet();
     ensureStudentIdsInSheet();
     ensureVisitColumnsInSheet();
@@ -141,11 +160,12 @@ function ensureStudentIdsInSheet() {
     }
     if (secIdx !== -1) {
       const rawSec = String(values[r][secIdx] || '').trim();
-      if (!rawSec) {
+      const cleanedSec = sanitizeSectionNameOnly(rawSec);
+      if (!cleanedSec) {
         values[r][secIdx] = 'Sparkle';
         modified = true;
-      } else if (/^6\s+/i.test(rawSec)) {
-        values[r][secIdx] = rawSec.replace(/^6\s+/i, '').trim();
+      } else if (cleanedSec !== rawSec) {
+        values[r][secIdx] = cleanedSec;
         modified = true;
       }
     }
@@ -170,6 +190,27 @@ function ensureStudentIdsInSheet() {
   if (modified) {
     range.setValues(values);
   }
+}
+
+/**
+ * Normalizes class section names so grade numbers are never stored (section name only).
+ */
+function sanitizeSectionNameOnly(raw) {
+  let cleaned = String(raw || '').trim();
+  if (!cleaned) return '';
+  cleaned = cleaned
+    .replace(/\b(?:class|grade|std|standard)\b/gi, ' ')
+    .replace(/\b\d+(?:st|nd|rd|th)?\b/gi, ' ')
+    .replace(/[•·\-_/|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  return cleaned
+    .split(' ')
+    .map(function(part) {
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(' ');
 }
 
 /**
@@ -270,7 +311,7 @@ function lookupStudentInfo(studentId) {
 
 /**
  * POST endpoint: handles createVisit, addMeasurement, addHealthProfile, createStudent,
- * syncStudentsBatch, and syncFullDatabase.
+ * updateStudent, renameClass, upsertUser, deleteUser, syncStudentsBatch, and syncFullDatabase.
  * Uses LockService to safely handle simultaneous submissions without overwriting rows.
  */
 function doPost(e) {
@@ -281,6 +322,9 @@ function doPost(e) {
     ensureVisitColumnsInSheet();
 
     const payload = JSON.parse(e.postData.contents || '{}');
+    if (!isAuthorizedRequest(payload.secret)) {
+      return jsonError('Unauthorized request.');
+    }
     const action = payload.action;
 
     if (action === 'createVisit') {
@@ -334,8 +378,171 @@ function doPost(e) {
       if (!s || !s.student_id || !s.full_name || !s.section || !s.roll_number) {
         return jsonError('Missing required student fields.');
       }
+      s.section = sanitizeSectionNameOnly(s.section) || String(s.section).trim();
       appendRowBySchema('Students', s);
       return jsonSuccess({ student_id: s.student_id });
+    }
+
+    if (action === 'updateStudent') {
+      const s = payload.student;
+      if (!s || !s.student_id) {
+        return jsonError('Missing student_id for update.');
+      }
+      const cleanSection = sanitizeSectionNameOnly(s.section) || String(s.section || '').trim();
+      s.section = cleanSection;
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheetByName('Students');
+      let updatedExisting = false;
+      if (sheet && sheet.getLastRow() >= 2) {
+        const range = sheet.getDataRange();
+        const values = range.getValues();
+        const headers = values[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+        const idIdx = headers.indexOf('student_id');
+        for (let r = 1; r < values.length; r++) {
+          if (String(values[r][idIdx] || '').trim() === String(s.student_id).trim()) {
+            const setIfExists = function(colName, val) {
+              const idx = headers.indexOf(colName);
+              if (idx !== -1 && val !== undefined) values[r][idx] = val;
+            };
+            setIfExists('full_name', s.full_name);
+            setIfExists('section', cleanSection);
+            setIfExists('roll_number', s.roll_number);
+            setIfExists('active_status', s.active_status || 'Active');
+            setIfExists('updated_at', s.updated_at || new Date().toISOString());
+            range.setValues(values);
+            updatedExisting = true;
+            break;
+          }
+        }
+      }
+      if (!updatedExisting) {
+        appendRowBySchema('Students', s);
+      }
+
+      // Also sync student_name, class/section, and roll_no in Visits tab
+      const visitsSheet = ss.getSheetByName('Visits');
+      if (visitsSheet && visitsSheet.getLastRow() >= 2) {
+        const vRange = visitsSheet.getDataRange();
+        const vValues = vRange.getValues();
+        const vHeaders = vValues[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+        const vStuIdIdx = vHeaders.indexOf('student_id');
+        const vNameIdx = vHeaders.indexOf('student_name') !== -1 ? vHeaders.indexOf('student_name') : vHeaders.indexOf('full_name');
+        const vClassIdx = vHeaders.indexOf('class') !== -1 ? vHeaders.indexOf('class') : vHeaders.indexOf('section');
+        const vRollIdx = vHeaders.indexOf('roll_no') !== -1 ? vHeaders.indexOf('roll_no') : vHeaders.indexOf('roll_number');
+        if (vStuIdIdx !== -1) {
+          let visitsModified = false;
+          for (let r = 1; r < vValues.length; r++) {
+            if (String(vValues[r][vStuIdIdx] || '').trim() === String(s.student_id).trim()) {
+              if (vNameIdx !== -1 && s.full_name) { vValues[r][vNameIdx] = s.full_name; visitsModified = true; }
+              if (vClassIdx !== -1 && cleanSection) { vValues[r][vClassIdx] = cleanSection; visitsModified = true; }
+              if (vRollIdx !== -1 && s.roll_number) { vValues[r][vRollIdx] = s.roll_number; visitsModified = true; }
+            }
+          }
+          if (visitsModified) vRange.setValues(vValues);
+        }
+      }
+
+      return jsonSuccess({ student_id: s.student_id, updated: updatedExisting, created: !updatedExisting });
+    }
+
+    if (action === 'renameClass') {
+      const oldName = String(payload.oldName || '').trim().toLowerCase();
+      const newName = sanitizeSectionNameOnly(payload.newName) || String(payload.newName || '').trim();
+      if (!oldName || !newName) {
+        return jsonError('Missing class names for rename.');
+      }
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheetByName('Students');
+      if (sheet && sheet.getLastRow() >= 2) {
+        const range = sheet.getDataRange();
+        const values = range.getValues();
+        const headers = values[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+        const secIdx = headers.indexOf('section');
+        if (secIdx !== -1) {
+          let changed = false;
+          for (let r = 1; r < values.length; r++) {
+            if (String(values[r][secIdx] || '').trim().toLowerCase() === oldName) {
+              values[r][secIdx] = newName;
+              changed = true;
+            }
+          }
+          if (changed) range.setValues(values);
+        }
+      }
+
+      // Also update Visits sheet class/section column
+      const visitsSheet = ss.getSheetByName('Visits');
+      if (visitsSheet && visitsSheet.getLastRow() >= 2) {
+        const vRange = visitsSheet.getDataRange();
+        const vValues = vRange.getValues();
+        const vHeaders = vValues[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+        const vClassIdx = vHeaders.indexOf('class') !== -1 ? vHeaders.indexOf('class') : vHeaders.indexOf('section');
+        if (vClassIdx !== -1) {
+          let vChanged = false;
+          for (let r = 1; r < vValues.length; r++) {
+            if (String(vValues[r][vClassIdx] || '').trim().toLowerCase() === oldName) {
+              vValues[r][vClassIdx] = newName;
+              vChanged = true;
+            }
+          }
+          if (vChanged) vRange.setValues(vValues);
+        }
+      }
+
+      return jsonSuccess({ renamed: true, newName: newName });
+    }
+
+    if (action === 'upsertUser') {
+      const u = payload.user;
+      if (!u || !u.username || !u.password) {
+        return jsonError('Missing username or password.');
+      }
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheetByName('Users');
+      if (sheet && sheet.getLastRow() >= 2) {
+        const range = sheet.getDataRange();
+        const values = range.getValues();
+        const headers = values[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+        const userIdx = headers.indexOf('username');
+        for (let r = 1; r < values.length; r++) {
+          if (String(values[r][userIdx] || '').trim().toLowerCase() === String(u.username).trim().toLowerCase()) {
+            const setIfExists = function(colName, val) {
+              const idx = headers.indexOf(colName);
+              if (idx !== -1 && val !== undefined) values[r][idx] = val;
+            };
+            setIfExists('password', u.password);
+            setIfExists('role', u.role || 'warden');
+            setIfExists('display_name', u.display_name || '');
+            setIfExists('badge_title', u.badge_title || '');
+            setIfExists('active_status', u.active_status || 'Active');
+            range.setValues(values);
+            return jsonSuccess({ username: u.username, updated: true });
+          }
+        }
+      }
+      appendRowBySchema('Users', u);
+      return jsonSuccess({ username: u.username, created: true });
+    }
+
+    if (action === 'deleteUser') {
+      const targetUsername = String(payload.username || '').trim().toLowerCase();
+      if (!targetUsername) {
+        return jsonError('Missing username for deletion.');
+      }
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sheet = ss.getSheetByName('Users');
+      if (sheet && sheet.getLastRow() >= 2) {
+        const values = sheet.getDataRange().getValues();
+        const headers = values[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+        const userIdx = headers.indexOf('username');
+        for (let r = values.length - 1; r >= 1; r--) {
+          if (String(values[r][userIdx] || '').trim().toLowerCase() === targetUsername) {
+            sheet.deleteRow(r + 1);
+            return jsonSuccess({ username: targetUsername, deleted: true });
+          }
+        }
+      }
+      return jsonSuccess({ username: targetUsername, deleted: false });
     }
 
     if (action === 'syncStudentsBatch') {
@@ -361,11 +568,15 @@ function doPost(e) {
       const addedProfiles = Array.isArray(db.healthProfiles)
         ? batchAppendUniqueRows('Health Profiles', 'health_record_id', db.healthProfiles)
         : 0;
+      const addedUsers = Array.isArray(db.users)
+        ? batchAppendUniqueRows('Users', 'username', db.users)
+        : 0;
       return jsonSuccess({
         addedStudents: addedStudents,
         addedVisits: addedVisits,
         addedMeasurements: addedMeasurements,
-        addedProfiles: addedProfiles
+        addedProfiles: addedProfiles,
+        addedUsers: addedUsers
       });
     }
 
@@ -477,8 +688,12 @@ function jsonError(msg) {
 `;
 
 function escapeCsvCell(val: string | number | undefined | null): string {
-  const str = val === undefined || val === null ? '' : String(val);
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+  let str = val === undefined || val === null ? '' : String(val);
+  // Neutralize CSV / Excel formula injection (cells starting with =, +, -, @, tab, or CR)
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
@@ -486,7 +701,7 @@ function escapeCsvCell(val: string | number | undefined | null): string {
 
 export function exportSheetTabToCsv(
   db: NurseDatabase,
-  tabName: 'Students' | 'Visits' | 'Measurements' | 'Health Profiles' | 'Users'
+  tabName: 'Students' | 'Visits' | 'Measurements' | 'Health Profiles'
 ): string {
   if (tabName === 'Students') {
     const headers = [
@@ -589,37 +804,6 @@ export function exportSheetTabToCsv(
         m.weight_kg,
         m.notes,
         m.updated_at,
-      ]
-        .map(escapeCsvCell)
-        .join(',')
-    );
-    return [headers.join(','), ...rows].join('\n');
-  }
-
-  if (tabName === 'Users') {
-    const headers = [
-      'username',
-      'password',
-      'role',
-      'display_name',
-      'badge_title',
-      'active_status',
-    ];
-    const userList = (db.users && db.users.length > 0)
-      ? db.users
-      : [
-          { username: 'nurse', password: 'iloveeating', role: 'nurse' as const, display_name: 'School Nurse', badge_title: 'Infirmary Nurse', active_status: 'Active' as const },
-          { username: 'admin', password: 'sva0pass', role: 'admin' as const, display_name: 'Infirmary Administrator', badge_title: 'System Admin', active_status: 'Active' as const },
-          { username: 'agnel', password: 'ilovesleeping', role: 'warden' as const, display_name: 'Agnel (Hostel Warden)', badge_title: 'Hostel Warden', active_status: 'Active' as const },
-        ];
-    const rows = userList.map((u) =>
-      [
-        u.username,
-        u.password,
-        u.role,
-        u.display_name || '',
-        u.badge_title || '',
-        u.active_status || 'Active',
       ]
         .map(escapeCsvCell)
         .join(',')

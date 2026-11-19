@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from 'react';
 import {
   Search,
   Plus,
@@ -10,12 +10,14 @@ import {
   Home,
   Users,
   ClipboardList,
-  Cloud,
   HeartPulse,
   LogOut,
   Bell,
   Send,
   Check,
+  Download,
+  ShieldCheck,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   generatePermanentId,
@@ -25,8 +27,9 @@ import {
   extractDatePart,
   getDailyVisitLog,
   getStudentMeasurements,
-  normalizeSheetSyncPayload,
   normalizeSectionName,
+  sanitizeClassSectionName,
+  getAllClassSections,
   normalizeDatetimeString,
   normalizeDateOnlyString,
   normalizeTimeOnlyString,
@@ -39,32 +42,64 @@ import {
   type MeasurementRecord,
   type HealthProfileRecord,
   type WardenDispatchRecord,
+  type AppUserRecord,
   type VisitFormInput,
   type DailyLogEntry,
 } from './utils/nurseLogic';
 import {
-  createInitialSeedDatabase,
   getTodayLocalDateString,
   SCHOOL_NAME,
   SCHOOL_LOGO_URL,
   SCHOOL_LOGO_FALLBACK_URL,
   DEFAULT_STAFF_NAME,
-  DEFAULT_APPS_SCRIPT_URL,
 } from './utils/seedData';
 import { VisitEntryForm } from './components/VisitEntryForm';
 import { StudentProfileView } from './components/StudentProfileView';
 import { DailyLogView } from './components/DailyLogView';
-import { SheetsSetupView } from './components/SheetsSetupView';
+import {
+  SheetsSetupView,
+  type SheetsActionResult,
+  type DownloadableExcelTab,
+} from './components/SheetsSetupView';
+import { AdminPanelView, type AdminActionResult } from './components/AdminPanelView';
 import { PrintableReport, type PrintReportConfig } from './components/PrintableReport';
-import { AuthScreen } from './components/AuthScreen';
+import { AuthScreen, type LoginSuccessPayload } from './components/AuthScreen';
 import { WardenPortalView } from './components/WardenPortalView';
+import { CustomSelect } from './components/CustomSelect';
+import { ModalDialog } from './components/ModalDialog';
 import { type AuthUser } from './utils/auth';
 
-type ActiveScreen = 'home' | 'new-visit' | 'students' | 'daily-log' | 'sheets-setup';
+type ActiveScreen = 'home' | 'new-visit' | 'students' | 'daily-log' | 'sheets-setup' | 'admin-panel';
 type RosterFilterMode = 'all' | 'visited-today' | 'health-notes';
 
-const STORAGE_KEY = 'sva_infirmary_db_v7';
-const APPS_SCRIPT_URL_KEY = 'sva_infirmary_apps_script_url_v1';
+const EMPTY_DB: NurseDatabase = {
+  students: [],
+  classes: [],
+  visits: [],
+  measurements: [],
+  healthProfiles: [],
+  dispatches: [],
+  users: [],
+};
+
+const LEGACY_STORAGE_KEYS = [
+  'sva_infirmary_db_v7',
+  'sva_infirmary_db_v6',
+  'sva_infirmary_db_v5',
+  'sva_nurse_room_db_v5',
+  'sva_nurse_room_db_v4',
+  'sva_infirmary_apps_script_url_v1',
+];
+
+function scrubLegacyLocalStorage(): void {
+  try {
+    for (const key of LEGACY_STORAGE_KEYS) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+}
 
 function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
   const seenStudentSlots = new Set<string>();
@@ -133,62 +168,38 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
 
   const dispatches = Array.isArray(inputDb.dispatches) ? inputDb.dispatches : [];
   const users = Array.isArray(inputDb.users) ? inputDb.users : [];
+  const classes = getAllClassSections(students, inputDb.classes);
 
-  return { students, visits, measurements, healthProfiles, dispatches, users };
+  return { students, classes, visits, measurements, healthProfiles, dispatches, users };
 }
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const authTokenRef = useRef<string | null>(null);
+  const lastServerUpdatedAtRef = useRef<string>('');
+  const lastSheetsSyncRef = useRef<{ at: string; formatted: string } | null>(null);
+  const activeScreenRef = useRef<ActiveScreen>('home');
   const [deviceId] = useState<string>(() => `dev-${Math.random().toString(36).slice(2, 10)}`);
 
-  const [db, setDb] = useState<NurseDatabase>(() => {
-    const seedDb = normalizeDatabaseSections(createInitialSeedDatabase());
-    try {
-      // Remove legacy storage keys that may contain test records or ghost entries
-      localStorage.removeItem('sva_infirmary_db_v6');
-      localStorage.removeItem('sva_infirmary_db_v5');
-      localStorage.removeItem('sva_nurse_room_db_v5');
-      localStorage.removeItem('sva_nurse_room_db_v4');
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = normalizeDatabaseSections(JSON.parse(saved) as NurseDatabase);
-        if (
-          parsed &&
-          Array.isArray(parsed.students) &&
-          parsed.students.length > 0 &&
-          Array.isArray(parsed.visits)
-        ) {
-          return parsed;
-        }
-      }
-    } catch {
-      // Fallback to seed database
-    }
-    return seedDb;
-  });
+  // Memory-only database populated strictly AFTER server authentication (zero PHI/passwords in localStorage)
+  const [db, setDb] = useState<NurseDatabase>(EMPTY_DB);
 
-  const [appsScriptUrl, setAppsScriptUrl] = useState<string>(DEFAULT_APPS_SCRIPT_URL);
+  const [appsScriptUrl, setAppsScriptUrl] = useState<string>('');
+  const [isCustomAppsScriptUrl, setIsCustomAppsScriptUrl] = useState<boolean>(false);
 
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => {
-    try {
-      const saved =
-        localStorage.getItem('sva_infirmary_auto_sync_v1') ||
-        localStorage.getItem('sva_nurse_auto_sync_v1');
-      return saved ? saved === 'true' : true;
-    } catch {
-      return true;
-    }
-  });
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(true);
 
-  const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>(() => {
     const hash = window.location.hash.replace('#', '');
     if (hash === 'students') return 'students';
     if (hash === 'daily-log') return 'daily-log';
-    if (hash === 'sheets-setup') return 'sheets-setup';
+    if (hash === 'downloads' || hash === 'sheets-setup') return 'sheets-setup';
+    if (hash === 'admin' || hash === 'admin-panel') return 'admin-panel';
     if (hash === 'new-visit' || hash === 'record') return 'new-visit';
     return 'home';
   });
+  const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const [preselectedStudentIdForVisit, setPreselectedStudentIdForVisit] = useState<string>('');
   const [preselectedReasonForVisit, setPreselectedReasonForVisit] = useState<string>('');
   const [preselectedNotesForVisit, setPreselectedNotesForVisit] = useState<string>('');
@@ -202,7 +213,8 @@ export default function App() {
       const hash = window.location.hash.replace('#', '');
       if (hash === 'students') setActiveScreen('students');
       else if (hash === 'daily-log') setActiveScreen('daily-log');
-      else if (hash === 'sheets-setup') setActiveScreen('sheets-setup');
+      else if (hash === 'downloads' || hash === 'sheets-setup') setActiveScreen('sheets-setup');
+      else if (hash === 'admin' || hash === 'admin-panel') setActiveScreen('admin-panel');
       else if (hash === 'new-visit' || hash === 'record') setActiveScreen('new-visit');
       else if (hash === 'home' || !hash) setActiveScreen('home');
     };
@@ -211,291 +223,349 @@ export default function App() {
   }, []);
 
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
+  const deferredHomeSearchQuery = useDeferredValue(homeSearchQuery);
   const [homeSectionFilter, setHomeSectionFilter] = useState<string>('ALL');
   const [rosterFilter, setRosterFilter] = useState<RosterFilterMode>('all');
   const [mobileHomeTab, setMobileHomeTab] = useState<'roster' | 'visits'>('roster');
 
+  // Scrub any legacy browser localStorage caches immediately on mount
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, [db]);
-
-  // Initial state fetch on app load so dynamic Google Sheet users are ready immediately at login
-  useEffect(() => {
-    fetch('/api/state')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data || data.status !== 'ok' || !data.db) return;
-        setDb((prev) => normalizeDatabaseSections(normalizeSheetSyncPayload(data.db, prev)));
-        if (typeof data.appsScriptUrl === 'string' && data.appsScriptUrl) {
-          setAppsScriptUrl(data.appsScriptUrl);
-        }
-      })
-      .catch(() => {});
+    scrubLegacyLocalStorage();
   }, []);
 
-  // Connect to shared school server & real-time SSE stream only once authenticated
+  // Scroll cleanly to top when changing top-level screen & show latest automated sync timestamp on Sheets screen
   useEffect(() => {
-    if (!currentUser) return;
-    let isMounted = true;
-    fetch('/api/state')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!isMounted || !data || data.status !== 'ok') return;
-        if (data.db) {
-          const serverDb = normalizeDatabaseSections(data.db);
-          const serverVisitIds = new Set(serverDb.visits.map((v) => v.visit_id));
-          const serverMeasIds = new Set(serverDb.measurements.map((m) => m.measurement_id));
-          const serverProfileIds = new Set(
-            serverDb.healthProfiles.map((h) => h.health_record_id)
-          );
-
-          // Reconcile any local phone visits/measurements/profiles not yet on server or Google Sheet
-          setDb((prev) => {
-            const localUnsyncedVisits = prev.visits.filter(
-              (v) => v.visit_id && !serverVisitIds.has(v.visit_id)
-            );
-            for (const visit of localUnsyncedVisits) {
-              fetch('/api/mutate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'recordVisit', visit, deviceId }),
-              }).catch(() => {});
-            }
-
-            const localUnsyncedMeas = prev.measurements.filter(
-              (m) => m.measurement_id && !serverMeasIds.has(m.measurement_id)
-            );
-            for (const measurement of localUnsyncedMeas) {
-              fetch('/api/mutate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'addMeasurement', measurement, deviceId }),
-              }).catch(() => {});
-            }
-
-            const localUnsyncedProfiles = prev.healthProfiles.filter(
-              (h) => h.health_record_id && !serverProfileIds.has(h.health_record_id)
-            );
-            for (const healthProfile of localUnsyncedProfiles) {
-              fetch('/api/mutate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'addHealthProfile', healthProfile, deviceId }),
-              }).catch(() => {});
-            }
-
-            return normalizeDatabaseSections(normalizeSheetSyncPayload(serverDb, prev));
-          });
-        }
-        if (typeof data.appsScriptUrl === 'string' && data.appsScriptUrl) {
-          setAppsScriptUrl(data.appsScriptUrl);
-        }
-        if (typeof data.autoSyncEnabled === 'boolean') {
-          setAutoSyncEnabled(data.autoSyncEnabled);
-        }
-      })
-      .catch(() => {});
-
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource('/api/stream');
-      es.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg && msg.type === 'state-update' && msg.sourceDeviceId !== deviceId && msg.db) {
-            setDb((prev) =>
-              normalizeDatabaseSections(normalizeSheetSyncPayload(msg.db, prev))
-            );
-            if (typeof msg.appsScriptUrl === 'string') {
-              setAppsScriptUrl(msg.appsScriptUrl);
-            }
-          }
-        } catch {
-          // Ignore malformed event
-        }
-      };
-    } catch {
-      // Fallback if EventSource unavailable
+    activeScreenRef.current = activeScreen;
+    if (activeScreen === 'sheets-setup' && lastSheetsSyncRef.current) {
+      setSyncStatusMessage(lastSheetsSyncRef.current.formatted);
     }
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [activeScreen]);
+
+  const handleLogout = useCallback(() => {
+    const token = authTokenRef.current;
+    authTokenRef.current = null;
+    lastServerUpdatedAtRef.current = '';
+    lastSheetsSyncRef.current = null;
+    setAuthToken(null);
+    setCurrentUser(null);
+    setDb(EMPTY_DB);
+    setAppsScriptUrl('');
+    setIsCustomAppsScriptUrl(false);
+    setSyncStatusMessage(null);
+    setShowIncomingDispatches(false);
+    setPrintReportConfig(null);
+    scrubLegacyLocalStorage();
+    if (token) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
+  }, []);
+
+  const authFetch = useCallback(
+    async (url: string, options: RequestInit = {}): Promise<Response> => {
+      const token = authTokenRef.current;
+      const headers = new Headers(options.headers || {});
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
+      }
+      const res = await fetch(url, { ...options, headers });
+      if (res.status === 401 && authTokenRef.current) {
+        handleLogout();
+      }
+      return res;
+    },
+    [handleLogout]
+  );
+
+  const safeFetchJson = useCallback(
+    async (url: string, options?: RequestInit): Promise<Record<string, unknown> | null> => {
+      try {
+        const res = await authFetch(url, options);
+        if (!res.ok) return null;
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) return null;
+        const parsed = await res.json();
+        return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+      } catch {
+        return null;
+      }
+    },
+    [authFetch]
+  );
+
+  const applyServerStateIfChanged = useCallback(
+    (data: Record<string, unknown>, forceUpdate: boolean = false) => {
+      const incomingUpdatedAt = typeof data.updatedAt === 'string' ? data.updatedAt : '';
+      if (typeof data.appsScriptUrl === 'string') {
+        setAppsScriptUrl(data.appsScriptUrl);
+      }
+      if (typeof data.isCustomAppsScriptUrl === 'boolean') {
+        setIsCustomAppsScriptUrl(data.isCustomAppsScriptUrl);
+      }
+      if (typeof data.autoSyncEnabled === 'boolean') {
+        setAutoSyncEnabled(data.autoSyncEnabled);
+      }
+      if (
+        typeof data.lastSheetsSyncAt === 'string' &&
+        typeof data.lastSheetsSyncMessage === 'string' &&
+        data.lastSheetsSyncAt !== lastSheetsSyncRef.current?.at
+      ) {
+        const syncedDate = new Date(data.lastSheetsSyncAt);
+        const timeStr = Number.isNaN(syncedDate.getTime())
+          ? ''
+          : syncedDate.toLocaleTimeString([], {
+              hour: 'numeric',
+              minute: '2-digit',
+              second: '2-digit',
+            });
+        const formatted = timeStr
+          ? `${data.lastSheetsSyncMessage} (${timeStr})`
+          : data.lastSheetsSyncMessage;
+        lastSheetsSyncRef.current = { at: data.lastSheetsSyncAt, formatted };
+        if (activeScreenRef.current === 'sheets-setup') {
+          setSyncStatusMessage(formatted);
+        }
+      }
+      if (
+        !forceUpdate &&
+        incomingUpdatedAt &&
+        incomingUpdatedAt === lastServerUpdatedAtRef.current
+      ) {
+        // Nothing changed on server — skip React re-render to keep scrolling completely smooth
+        return;
+      }
+      if (incomingUpdatedAt) {
+        lastServerUpdatedAtRef.current = incomingUpdatedAt;
+      }
+      if (data.db) {
+        setDb(normalizeDatabaseSections(data.db as NurseDatabase));
+      }
+    },
+    []
+  );
+
+  // Connect to authenticated real-time SSE stream via single-use ticket (session token never in URL)
+  useEffect(() => {
+    if (!currentUser || !authToken) return;
+    let isMounted = true;
+    let es: EventSource | null = null;
+
+    const openSecureStream = async () => {
+      const ticketData = await safeFetchJson('/api/auth/stream-ticket', { method: 'POST' });
+      if (!isMounted || !ticketData || typeof ticketData.ticket !== 'string') return;
+      try {
+        es = new EventSource(`/api/stream?ticket=${encodeURIComponent(ticketData.ticket)}`);
+        es.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data) as Record<string, unknown>;
+            if (msg && msg.type === 'state-update' && msg.sourceDeviceId !== deviceId && msg.db) {
+              applyServerStateIfChanged(msg, true);
+            }
+          } catch {
+            // Ignore malformed event
+          }
+        };
+        es.onerror = () => {
+          // Close cleanly on proxy disconnect; periodic /api/state polling keeps data fresh without error spam
+          es?.close();
+          es = null;
+        };
+      } catch {
+        // Fallback if EventSource unavailable
+      }
+    };
+
+    void openSecureStream();
 
     return () => {
       isMounted = false;
       es?.close();
     };
-  }, [deviceId, currentUser]);
+  }, [deviceId, currentUser, authToken, safeFetchJson, applyServerStateIfChanged]);
 
-  const syncWithSheetUrl = async (targetUrl: string, silent: boolean = false) => {
-    if (!targetUrl) return;
-    try {
-      const serverRes = await fetch('/api/sheets-sync', { method: 'POST' }).catch(() => null);
-      if (serverRes && serverRes.ok) {
-        const sData = await serverRes.json();
-        if (sData && sData.db) {
-          setDb((prev) =>
-            normalizeDatabaseSections(normalizeSheetSyncPayload(sData.db, prev))
-          );
-        }
-        if (sData && sData.status === 'ok') {
-          setSyncStatusMessage(`${sData.message} (${new Date().toLocaleTimeString()})`);
-          return;
-        }
-      }
-
-      const res = await fetch(targetUrl, { method: 'GET' });
-      const data = await res.json();
-      if (data && data.status === 'ok') {
-        const nowIso = new Date().toISOString();
-        const remoteVisitIds = new Set(
-          (Array.isArray(data.visits) ? data.visits : []).map((v: Partial<VisitRecord>) =>
-            String(v?.visit_id || '').trim()
-          )
-        );
-        const unsyncedVisits = db.visits.filter(
-          (v) => v.visit_id && !remoteVisitIds.has(v.visit_id)
-        );
-        for (const visit of unsyncedVisits) {
-          fetch(targetUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'createVisit', visit }),
-          }).catch(() => {});
-        }
-
-        let updatedStudentCount = db.students.length;
-        setDb((prev) => {
-          const merged = normalizeDatabaseSections(
-            normalizeSheetSyncPayload(data, prev, nowIso)
-          );
-          updatedStudentCount = merged.students.length;
-          return merged;
-        });
-
-        setSyncStatusMessage(
-          `Synced with Google Sheets (${updatedStudentCount} students) at ${new Date().toLocaleTimeString()}.`
-        );
-      } else if (!silent) {
-        setSyncStatusMessage(`Sheets returned: ${data?.message || 'Unexpected response'}`);
-      }
-    } catch (err) {
-      if (!silent) {
-        setSyncStatusMessage(
-          `Unable to reach Apps Script URL (${err instanceof Error ? err.message : 'Network error'}). Shared school database remains active.`
-        );
-      }
-    }
-  };
-
-  // Smart auto-sync on tab visibility focus and 15s background check when active (only when authenticated)
-  useEffect(() => {
-    if (!currentUser || !autoSyncEnabled) return;
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetch('/api/state')
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => {
-            if (d && d.db) {
-              setDb((prev) =>
-                normalizeDatabaseSections(normalizeSheetSyncPayload(d.db, prev))
-              );
-            }
-          })
-          .catch(() => {});
-        if (appsScriptUrl) {
-          syncWithSheetUrl(appsScriptUrl, true);
-        }
-      }
-    };
-
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && appsScriptUrl) {
-        syncWithSheetUrl(appsScriptUrl, true);
-      }
-    }, 15000);
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appsScriptUrl, autoSyncEnabled, currentUser]);
-
-  const handleToggleAutoSync = (enabled: boolean) => {
-    setAutoSyncEnabled(enabled);
-    try {
-      localStorage.setItem('sva_infirmary_auto_sync_v1', String(enabled));
-    } catch {
-      // Ignore
-    }
-    fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ autoSyncEnabled: enabled, deviceId }),
-    }).catch(() => {});
-  };
-
-  const handleSaveAppsScriptUrl = (url: string) => {
-    setAppsScriptUrl(url);
-    try {
-      localStorage.setItem(APPS_SCRIPT_URL_KEY, url);
-    } catch {
-      // Ignore
-    }
-    fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appsScriptUrl: url, triggerSync: Boolean(url), deviceId }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d && d.db) {
-          setDb((prev) =>
-            normalizeDatabaseSections(normalizeSheetSyncPayload(d.db, prev))
-          );
-        }
-      })
-      .catch(() => {});
-
-    if (url) {
-      setSyncStatusMessage('Automated sync activated: syncing with Google Sheets...');
-      handlePushToSheets().then(() => syncWithSheetUrl(url, true));
+  const handleManualSheetsSync = async (): Promise<void> => {
+    const sData = await safeFetchJson('/api/sheets-sync', { method: 'POST' });
+    const timeStr = new Date().toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    if (sData && sData.db) {
+      applyServerStateIfChanged(sData, true);
+      const msg =
+        typeof sData.message === 'string' && sData.message
+          ? sData.message
+          : 'Synced with Google Sheets.';
+      setSyncStatusMessage(`${msg} (${timeStr})`);
     } else {
-      setSyncStatusMessage('Cleared Google Sheet URL. School device sync remains active.');
-    }
-  };
-
-  const handleSyncFromSheets = async () => {
-    await syncWithSheetUrl(appsScriptUrl);
-  };
-
-  const handlePushToSheets = async () => {
-    if (!appsScriptUrl) return;
-    try {
-      setSyncStatusMessage('Syncing all school records with Google Sheets...');
-      const serverPush = await fetch('/api/sheets-push', { method: 'POST' }).catch(() => null);
-      if (serverPush && serverPush.ok) {
-        const sRes = await serverPush.json();
-        if (sRes && sRes.db) {
-          setDb((prev) =>
-            normalizeDatabaseSections(normalizeSheetSyncPayload(sRes.db, prev))
-          );
-        }
-        setSyncStatusMessage(`${sRes.message} (${new Date().toLocaleTimeString()})`);
-        return;
-      }
-
-      await syncWithSheetUrl(appsScriptUrl);
-    } catch (err) {
       setSyncStatusMessage(
-        `Unable to sync with Google Sheets (${err instanceof Error ? err.message : 'Network error'}).`
+        `Unable to reach Google Sheets right now. Local school records are active. (${timeStr})`
       );
     }
   };
+
+  const handleUpdateAppsScriptUrl = async (
+    newUrl: string,
+    options?: { resetDefault?: boolean; pushBackup?: boolean }
+  ): Promise<SheetsActionResult> => {
+    const timeStr = new Date().toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    try {
+      const res = await authFetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appsScriptUrl: options?.resetDefault ? undefined : newUrl,
+          resetDefaultUrl: Boolean(options?.resetDefault),
+          pushBackup: Boolean(options?.pushBackup),
+          triggerSync: true,
+          deviceId,
+        }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      const data = contentType.includes('application/json')
+        ? ((await res.json()) as Record<string, unknown>)
+        : null;
+
+      if (!res.ok || !data || data.status !== 'ok') {
+        const errMsg =
+          (data && typeof data.message === 'string' && data.message) ||
+          'Unable to save Apps Script link. Please verify the URL and try again.';
+        return { ok: false, message: errMsg };
+      }
+
+      applyServerStateIfChanged(data, true);
+      const msg =
+        typeof data.message === 'string' && data.message
+          ? data.message
+          : 'Apps Script Web App link updated and synced.';
+      setSyncStatusMessage(`${msg} (${timeStr})`);
+      return { ok: true, message: msg };
+    } catch {
+      return {
+        ok: false,
+        message: 'Could not reach the server to update the Apps Script link. Please try again.',
+      };
+    }
+  };
+
+  const handlePushFullBackup = async (): Promise<SheetsActionResult> => {
+    const timeStr = new Date().toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    try {
+      const res = await authFetch('/api/sheets-push', { method: 'POST' });
+      const contentType = res.headers.get('content-type') || '';
+      const data = contentType.includes('application/json')
+        ? ((await res.json()) as Record<string, unknown>)
+        : null;
+
+      if (!res.ok || !data) {
+        const errMsg =
+          (data && typeof data.message === 'string' && data.message) ||
+          'Unable to push backup to Google Sheets right now.';
+        setSyncStatusMessage(`${errMsg} (${timeStr})`);
+        return { ok: false, message: errMsg };
+      }
+
+      applyServerStateIfChanged(data, true);
+      const msg =
+        typeof data.message === 'string' && data.message
+          ? data.message
+          : 'Full school backup pushed to Google Sheets.';
+      setSyncStatusMessage(`${msg} (${timeStr})`);
+      return { ok: data.status === 'ok', message: msg };
+    } catch {
+      const errMsg = 'Could not reach the server to push the backup.';
+      setSyncStatusMessage(`${errMsg} (${timeStr})`);
+      return { ok: false, message: errMsg };
+    }
+  };
+
+  const handleDownloadExcelSheet = async (
+    tab: DownloadableExcelTab
+  ): Promise<SheetsActionResult> => {
+    try {
+      const res = await authFetch('/api/export/excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tab }),
+      });
+
+      if (!res.ok) {
+        const ct = res.headers.get('content-type') || '';
+        const errData = ct.includes('application/json')
+          ? ((await res.json()) as Record<string, unknown>)
+          : null;
+        return {
+          ok: false,
+          message:
+            (errData && typeof errData.message === 'string' && errData.message) ||
+            'Unable to generate the encrypted Excel workbook right now.',
+        };
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/i);
+      const todayStamp = new Date().toISOString().slice(0, 10);
+      const filename =
+        match?.[1] ||
+        (tab === 'All'
+          ? `SVA_Infirmary_All_Sheets_${todayStamp}.xlsx`
+          : `SVA_${tab.replace(/\s+/g, '_')}_${todayStamp}.xlsx`);
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      return {
+        ok: true,
+        message: `Downloaded password-protected workbook: ${filename}`,
+      };
+    } catch {
+      return {
+        ok: false,
+        message: 'Network error while downloading the protected Excel file. Please try again.',
+      };
+    }
+  };
+
+  // Automated 10-second background sync when visible (skips full list re-renders when server data is unchanged)
+  useEffect(() => {
+    if (!currentUser || !authToken || !autoSyncEnabled) return;
+
+    const refreshIfChanged = () => {
+      if (document.visibilityState !== 'visible') return;
+      void safeFetchJson('/api/state').then((d) => {
+        if (d && d.status === 'ok') {
+          applyServerStateIfChanged(d, false);
+        }
+      });
+    };
+
+    const intervalId = window.setInterval(refreshIfChanged, 10000);
+    document.addEventListener('visibilitychange', refreshIfChanged);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshIfChanged);
+      window.clearInterval(intervalId);
+    };
+  }, [autoSyncEnabled, currentUser, authToken, safeFetchJson, applyServerStateIfChanged]);
 
   const handleSaveVisit = async (input: VisitFormInput): Promise<VisitRecord> => {
     const visitId = generatePermanentId('VIS', [
@@ -545,33 +615,11 @@ export default function App() {
     }));
 
     // Sync to shared school server (which forwards action: 'createVisit' to Google Sheets & broadcasts to all phones)
-    fetch('/api/mutate', {
+    authFetch('/api/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'recordVisit', visit: newVisit, deviceId }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((resData) => {
-        if (!resData || resData.sheetSynced === false) {
-          // Direct browser fallback to Google Apps Script if server couldn't reach it
-          if (appsScriptUrl) {
-            fetch(appsScriptUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({ action: 'createVisit', visit: newVisit }),
-            }).catch(() => {});
-          }
-        }
-      })
-      .catch(() => {
-        if (appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'createVisit', visit: newVisit }),
-          }).catch(() => {});
-        }
-      });
+    }).catch(() => {});
 
     return newVisit;
   };
@@ -579,19 +627,22 @@ export default function App() {
   const handleCreateStudent = (
     fullName: string,
     section: string,
-    rollNumber: string
+    rollNumber: string,
+    activeStatus: 'Active' | 'Inactive' = 'Active'
   ): StudentRecord => {
     const studentId = generatePermanentId(
       'STU',
       db.students.map((s) => s.student_id)
     );
     const nowIso = new Date().toISOString();
+    const cleanSection = sanitizeClassSectionName(section) || normalizeSectionName(section);
+    const rawRoll = String(rollNumber || '').trim();
     const newStudent: StudentRecord = {
       student_id: studentId,
-      full_name: fullName,
-      section: normalizeSectionName(section),
-      roll_number: rollNumber,
-      active_status: 'Active',
+      full_name: fullName.trim(),
+      section: cleanSection,
+      roll_number: /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll,
+      active_status: activeStatus,
       created_at: nowIso,
       updated_at: nowIso,
     };
@@ -599,34 +650,142 @@ export default function App() {
     setDb((prev) => ({
       ...prev,
       students: [...prev.students, newStudent],
+      classes: getAllClassSections([...prev.students, newStudent], [
+        ...(prev.classes || []),
+        cleanSection,
+      ]),
     }));
 
-    fetch('/api/mutate', {
+    authFetch('/api/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'createStudent', student: newStudent, deviceId }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((resData) => {
-        if ((!resData || resData.sheetSynced === false) && appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'createStudent', student: newStudent }),
-          }).catch(() => {});
-        }
-      })
-      .catch(() => {
-        if (appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'createStudent', student: newStudent }),
-          }).catch(() => {});
-        }
-      });
+    }).catch(() => {});
 
     return newStudent;
+  };
+
+  const postAdminMutation = async (
+    payload: Record<string, unknown>,
+    successMessage: string
+  ): Promise<AdminActionResult> => {
+    try {
+      const res = await authFetch('/api/mutate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, deviceId }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      const data = contentType.includes('application/json')
+        ? ((await res.json()) as Record<string, unknown>)
+        : null;
+      if (!res.ok || !data || data.status !== 'ok') {
+        return {
+          ok: false,
+          message:
+            (data && typeof data.message === 'string' && data.message) ||
+            'Unable to save changes to the school server.',
+        };
+      }
+      if (data.db) {
+        setDb(normalizeDatabaseSections(data.db as NurseDatabase));
+      }
+      return { ok: true, message: successMessage };
+    } catch {
+      return { ok: false, message: 'Network error while saving changes.' };
+    }
+  };
+
+  const handleAdminCreateStudent = async (
+    fullName: string,
+    section: string,
+    rollNumber: string,
+    activeStatus: 'Active' | 'Inactive' = 'Active'
+  ): Promise<AdminActionResult> => {
+    const cleanSection = sanitizeClassSectionName(section) || normalizeSectionName(section);
+    if (!cleanSection) {
+      return { ok: false, message: 'Please choose a valid class section name.' };
+    }
+    const studentId = generatePermanentId(
+      'STU',
+      db.students.map((s) => s.student_id)
+    );
+    const nowIso = new Date().toISOString();
+    const rawRoll = String(rollNumber || '').trim();
+    const newStudent: StudentRecord = {
+      student_id: studentId,
+      full_name: fullName.trim(),
+      section: cleanSection,
+      roll_number: /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll,
+      active_status: activeStatus,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+    return postAdminMutation(
+      { action: 'createStudent', student: newStudent },
+      `Added student ${newStudent.full_name} (${newStudent.section} · Roll ${newStudent.roll_number}).`
+    );
+  };
+
+  const handleUpdateStudent = async (student: StudentRecord): Promise<AdminActionResult> => {
+    const cleanSection =
+      sanitizeClassSectionName(student.section) || normalizeSectionName(student.section);
+    const updated: StudentRecord = {
+      ...student,
+      full_name: student.full_name.trim(),
+      section: cleanSection,
+      updated_at: new Date().toISOString(),
+    };
+    return postAdminMutation(
+      { action: 'updateStudent', student: updated },
+      `Updated student ${updated.full_name} (${updated.section} · Roll ${updated.roll_number}).`
+    );
+  };
+
+  const handleCreateClass = async (className: string): Promise<AdminActionResult> => {
+    const clean = sanitizeClassSectionName(className);
+    if (!clean) {
+      return { ok: false, message: 'Please enter a valid section name (no grade numbers).' };
+    }
+    return postAdminMutation(
+      { action: 'createClass', className: clean },
+      `Created class section "${clean}".`
+    );
+  };
+
+  const handleRenameClass = async (
+    oldName: string,
+    newName: string
+  ): Promise<AdminActionResult> => {
+    const clean = sanitizeClassSectionName(newName);
+    if (!clean) {
+      return { ok: false, message: 'Please enter a valid section name (no grade numbers).' };
+    }
+    return postAdminMutation(
+      { action: 'renameClass', oldName, newName: clean },
+      `Updated class "${oldName}" to "${clean}".`
+    );
+  };
+
+  const handleDeleteClass = async (className: string): Promise<AdminActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteClass', className },
+      `Removed empty class "${className}".`
+    );
+  };
+
+  const handleUpsertUser = async (user: AppUserRecord): Promise<AdminActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertUser', user },
+      `Saved staff account "${user.username}" (${user.role}).`
+    );
+  };
+
+  const handleDeleteUser = async (username: string): Promise<AdminActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteUser', username },
+      `Deleted staff account "${username}".`
+    );
   };
 
   const handleAddMeasurement = (
@@ -656,30 +815,11 @@ export default function App() {
       measurements: [newMeas, ...prev.measurements],
     }));
 
-    fetch('/api/mutate', {
+    authFetch('/api/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'addMeasurement', measurement: newMeas, deviceId }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((resData) => {
-        if ((!resData || resData.sheetSynced === false) && appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'addMeasurement', measurement: newMeas }),
-          }).catch(() => {});
-        }
-      })
-      .catch(() => {
-        if (appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'addMeasurement', measurement: newMeas }),
-          }).catch(() => {});
-        }
-      });
+    }).catch(() => {});
   };
 
   const handleAddHealthProfile = (
@@ -706,30 +846,11 @@ export default function App() {
       healthProfiles: [newProfile, ...prev.healthProfiles],
     }));
 
-    fetch('/api/mutate', {
+    authFetch('/api/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'addHealthProfile', healthProfile: newProfile, deviceId }),
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((resData) => {
-        if ((!resData || resData.sheetSynced === false) && appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'addHealthProfile', healthProfile: newProfile }),
-          }).catch(() => {});
-        }
-      })
-      .catch(() => {
-        if (appsScriptUrl) {
-          fetch(appsScriptUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'addHealthProfile', healthProfile: newProfile }),
-          }).catch(() => {});
-        }
-      });
+    }).catch(() => {});
   };
 
   const startNewVisitForStudent = (
@@ -770,7 +891,7 @@ export default function App() {
       dispatches: [newDispatch, ...(prev.dispatches || [])],
     }));
 
-    await fetch('/api/mutate', {
+    await authFetch('/api/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'dispatchStudent', dispatch: newDispatch, deviceId }),
@@ -785,7 +906,7 @@ export default function App() {
       ),
     }));
 
-    await fetch('/api/mutate', {
+    await authFetch('/api/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -812,7 +933,7 @@ export default function App() {
       ),
     }));
 
-    fetch('/api/mutate', {
+    authFetch('/api/mutate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -879,21 +1000,13 @@ export default function App() {
     return map;
   }, [db.measurements]);
 
-  const homeAvailableSections = useMemo(() => {
-    const seen = new Set<string>();
-    const list: string[] = [];
-    for (const s of db.students) {
-      const sec = s.section.trim();
-      if (sec && !seen.has(sec.toLowerCase())) {
-        seen.add(sec.toLowerCase());
-        list.push(sec);
-      }
-    }
-    return list;
-  }, [db.students]);
+  const homeAvailableSections = useMemo(
+    () => getAllClassSections(db.students, db.classes),
+    [db.students, db.classes]
+  );
 
   const homeFilteredStudents = useMemo(() => {
-    const matches = searchStudents(db.students, homeSearchQuery, homeSectionFilter);
+    const matches = searchStudents(db.students, deferredHomeSearchQuery, homeSectionFilter);
     if (rosterFilter === 'visited-today') {
       return matches.filter((s) => visitedTodayStudentIds.has(s.student_id));
     }
@@ -901,7 +1014,7 @@ export default function App() {
       return matches.filter((s) => healthNoteByStudentId.has(s.student_id));
     }
     return matches;
-  }, [db.students, homeSearchQuery, homeSectionFilter, rosterFilter, visitedTodayStudentIds, healthNoteByStudentId]);
+  }, [db.students, deferredHomeSearchQuery, homeSectionFilter, rosterFilter, visitedTodayStudentIds, healthNoteByStudentId]);
 
   const recentVisits = useMemo(() => {
     const studentMap = new Map<string, StudentRecord>();
@@ -928,15 +1041,49 @@ export default function App() {
       }));
   }, [db.visits, db.students]);
 
-  // Authentication gate: strictly requires login on every reload or first visit
-  if (!currentUser) {
-    return (
-      <AuthScreen
-        onLoginSuccess={(user) => setCurrentUser(user)}
-        dynamicUsers={db.users}
-      />
-    );
+  const handleLoginSuccess = (payload: LoginSuccessPayload) => {
+    authTokenRef.current = payload.token;
+    setAuthToken(payload.token);
+    setCurrentUser(payload.user);
+    if (payload.updatedAt) {
+      lastServerUpdatedAtRef.current = payload.updatedAt;
+    }
+    if (payload.db) {
+      setDb(normalizeDatabaseSections(payload.db as NurseDatabase));
+    }
+    setAppsScriptUrl(payload.appsScriptUrl || '');
+    setIsCustomAppsScriptUrl(Boolean(payload.isCustomAppsScriptUrl));
+    if (typeof payload.autoSyncEnabled === 'boolean') {
+      setAutoSyncEnabled(payload.autoSyncEnabled);
+    }
+    if (payload.lastSheetsSyncAt && payload.lastSheetsSyncMessage) {
+      const syncedDate = new Date(payload.lastSheetsSyncAt);
+      const timeStr = Number.isNaN(syncedDate.getTime())
+        ? ''
+        : syncedDate.toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+      const formatted = timeStr
+        ? `${payload.lastSheetsSyncMessage} (${timeStr})`
+        : payload.lastSheetsSyncMessage;
+      lastSheetsSyncRef.current = { at: payload.lastSheetsSyncAt, formatted };
+      setSyncStatusMessage(formatted);
+    }
+    if (payload.user.role !== 'admin' && activeScreen === 'admin-panel') {
+      setActiveScreen('home');
+    }
+  };
+
+  // Authentication gate: strictly requires server-verified login on every reload or first visit
+  if (!currentUser || !authToken) {
+    return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
   }
+
+  const isAdmin = currentUser.role === 'admin';
+  const effectiveScreen: ActiveScreen =
+    activeScreen === 'admin-panel' && !isAdmin ? 'home' : activeScreen;
 
   // Warden portal view for hostel staff
   if (currentUser.role === 'warden') {
@@ -944,13 +1091,14 @@ export default function App() {
       <WardenPortalView
         currentUser={currentUser}
         students={db.students}
+        availableClasses={homeAvailableSections}
         visits={db.visits}
         measurements={db.measurements}
         healthProfiles={db.healthProfiles}
         dispatches={db.dispatches || []}
         onDispatchStudent={handleDispatchStudent}
         onCancelDispatch={handleCancelDispatch}
-        onLogout={() => setCurrentUser(null)}
+        onLogout={handleLogout}
       />
     );
   }
@@ -966,8 +1114,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FBFAF8] text-zinc-900 selection:bg-teal-100 selection:text-teal-900">
-      {/* DESKTOP HEADER (Preserved exactly for PC) */}
-      <header className="no-print hidden sm:flex sticky top-0 z-30 bg-[#FBFAF8]/95 backdrop-blur-md border-b border-stone-200/80 px-8 py-2.5 items-center justify-between gap-8">
+      {/* DESKTOP HEADER (GPU-promoted chrome without per-frame backdrop-blur jank) */}
+      <header className="no-print hidden sm:flex sticky top-0 z-30 chrome-sticky bg-[#FBFAF8]/98 border-b border-stone-200/80 px-8 py-2.5 items-center justify-between gap-8">
         {/* Zone 1: Official Crest + School Name */}
         <a
           href="#home"
@@ -1032,27 +1180,60 @@ export default function App() {
               setActiveScreen('daily-log');
             }}
             className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
-              activeScreen === 'daily-log'
+              effectiveScreen === 'daily-log'
                 ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
                 : ''
             }`}
           >
             Daily Log
           </a>
-          <a
-            href="#sheets-setup"
-            onClick={(e) => {
-              e.preventDefault();
-              setActiveScreen('sheets-setup');
-            }}
-            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
-              activeScreen === 'sheets-setup'
-                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                : ''
-            }`}
-          >
-            Google Sheets
-          </a>
+          {isAdmin ? (
+            <>
+              <a
+                href="#admin"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveScreen('admin-panel');
+                }}
+                className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+                  effectiveScreen === 'admin-panel'
+                    ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
+                    : ''
+                }`}
+              >
+                Admin
+              </a>
+              <a
+                href="#sheets-setup"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveScreen('sheets-setup');
+                }}
+                className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+                  effectiveScreen === 'sheets-setup'
+                    ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
+                    : ''
+                }`}
+              >
+                Google Sheets
+              </a>
+            </>
+          ) : (
+            <a
+              href="#downloads"
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveScreen('sheets-setup');
+              }}
+              className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+                effectiveScreen === 'sheets-setup'
+                  ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
+                  : ''
+              }`}
+            >
+              Downloads
+            </a>
+          )}
         </nav>
 
         {/* Zone 3: Record Action + Lock Button */}
@@ -1094,7 +1275,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setCurrentUser(null)}
+            onClick={handleLogout}
             title="Lock infirmary terminal"
             className="h-9 px-2.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200/90 rounded-xl hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition-colors flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
           >
@@ -1104,8 +1285,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* MOBILE HEADER (School Branding given full space - NEVER cut off) */}
-      <header className="no-print sm:hidden sticky top-0 z-40 bg-[#FBFAF8]/95 backdrop-blur-md border-b border-stone-200/80 px-3 py-2.5 flex items-center justify-between gap-2 shadow-2xs">
+      {/* MOBILE HEADER (School Branding given full space - GPU-promoted without blur jank) */}
+      <header className="no-print sm:hidden sticky top-0 z-40 chrome-sticky bg-[#FBFAF8]/98 border-b border-stone-200/80 px-3 py-2.5 flex items-center justify-between gap-2 shadow-2xs">
         {activeScreen === 'new-visit' ? (
           <div className="flex items-center justify-between w-full gap-2">
             <button
@@ -1121,7 +1302,7 @@ export default function App() {
             </span>
             <span className="w-8" />
           </div>
-        ) : activeScreen === 'sheets-setup' ? (
+        ) : effectiveScreen === 'sheets-setup' ? (
           <div className="flex items-center justify-between w-full gap-2">
             <button
               type="button"
@@ -1132,9 +1313,32 @@ export default function App() {
               <span>Infirmary</span>
             </button>
             <span className="text-xs font-bold text-zinc-900 font-display truncate">
-              Google Sheets Sync
+              {isAdmin ? 'Google Sheets & Excel' : 'Protected Sheets (.xlsx)'}
             </span>
             <span className="w-8" />
+          </div>
+        ) : effectiveScreen === 'admin-panel' ? (
+          <div className="flex items-center justify-between w-full gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveScreen('home')}
+              className="h-8 px-2.5 text-xs font-semibold text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 active:bg-stone-100 shrink-0 shadow-2xs"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Infirmary</span>
+            </button>
+            <span className="text-xs font-bold text-zinc-900 font-display truncate">
+              Admin Console
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveScreen('sheets-setup')}
+              aria-label="Open Google Sheets"
+              title="Google Sheets"
+              className="h-8 px-2 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 rounded-lg flex items-center gap-1 shrink-0"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+            </button>
           </div>
         ) : activeScreen === 'students' && selectedProfileStudentId ? (
           <div className="flex items-center justify-between w-full gap-2">
@@ -1208,7 +1412,18 @@ export default function App() {
                   </span>
                 )}
               </button>
-              {activeScreen !== 'home' && (
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setActiveScreen('sheets-setup')}
+                  aria-label="Google Sheets"
+                  title="Google Sheets"
+                  className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-teal-800 active:bg-teal-50 transition-colors"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {effectiveScreen !== 'home' && (
                 <button
                   type="button"
                   onClick={() =>
@@ -1227,7 +1442,7 @@ export default function App() {
               )}
               <button
                 type="button"
-                onClick={() => setCurrentUser(null)}
+                onClick={handleLogout}
                 aria-label="Lock infirmary"
                 title="Lock infirmary"
                 className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-zinc-700 active:bg-rose-50 active:text-rose-700 transition-colors"
@@ -1243,7 +1458,7 @@ export default function App() {
       {/* MAIN CONTENT VIEWPORT */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-8 py-3.5 sm:py-8 pb-28 sm:pb-8">
         {/* SCREEN 1: INFIRMARY WORKSPACE */}
-        {activeScreen === 'home' && (
+        {effectiveScreen === 'home' && (
           <div className="space-y-3.5 sm:space-y-6">
             {/* Desktop-only Workspace Title & Header (Preserved for PC) */}
             <div className="hidden sm:flex items-end justify-between gap-3">
@@ -1384,19 +1599,21 @@ export default function App() {
                 {/* Roster Filter Bar (Single line on mobile and desktop) */}
                 <div className="px-3 sm:px-4 py-2 bg-stone-50/70 border-b border-stone-100 flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar shrink-0">
                   <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                    <select
-                      aria-label="Filter by class section"
+                    <CustomSelect
+                      ariaLabel="Filter by class section"
+                      size="sm"
+                      menuMinWidth={170}
                       value={homeSectionFilter}
-                      onChange={(e) => setHomeSectionFilter(e.target.value)}
-                      className="h-7 px-2 text-[11px] sm:text-xs font-medium text-zinc-800 bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900 shrink-0"
-                    >
-                      <option value="ALL">All Classes ({db.students.length})</option>
-                      {homeAvailableSections.map((sec) => (
-                        <option key={sec} value={sec}>
-                          {sec}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setHomeSectionFilter}
+                      options={[
+                        { value: 'ALL', label: `All Classes (${db.students.length})` },
+                        ...homeAvailableSections.map((sec) => ({
+                          value: sec,
+                          label: sec,
+                        })),
+                      ]}
+                      className="shrink-0"
+                    />
                     <button
                       type="button"
                       onClick={() => setRosterFilter('all')}
@@ -1438,10 +1655,10 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* Student Rows (Natural page scroll on mobile, equal-height scrollable panel on lg desktop) */}
+                {/* Student Rows (Natural page scroll on mobile, equal-height smooth scrollable panel on lg desktop) */}
                 <div
                   data-testid="home-search-results"
-                  className="divide-y divide-stone-100 lg:flex-1 lg:overflow-y-auto"
+                  className="divide-y divide-stone-100 lg:flex-1 lg:overflow-y-auto smooth-scroll-list"
                 >
                   {homeFilteredStudents.length === 0 ? (
                     <div className="py-12 px-6 text-center text-xs text-zinc-500">
@@ -1476,7 +1693,7 @@ export default function App() {
                               openStudentProfile(stu.student_id);
                             }
                           }}
-                          className="group px-3.5 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-stone-50/90 active:bg-stone-100/70 transition-colors cursor-pointer select-none focus:outline-none focus-visible:bg-stone-50"
+                          className="list-row-opt group px-3.5 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-stone-50/90 active:bg-stone-100/70 transition-colors cursor-pointer select-none focus:outline-none focus-visible:bg-stone-50"
                         >
                           <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
                             <span className="w-8 h-8 rounded-lg bg-stone-100 text-zinc-700 group-hover:bg-teal-50 group-hover:text-teal-800 font-mono tabular-nums text-xs font-semibold flex items-center justify-center shrink-0 transition-colors">
@@ -1582,7 +1799,7 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="divide-y divide-stone-100 lg:flex-1 lg:overflow-y-auto">
+                <div className="divide-y divide-stone-100 lg:flex-1 lg:overflow-y-auto smooth-scroll-list">
                   {recentVisits.length === 0 ? (
                     <div className="py-12 px-6 text-center text-xs text-zinc-500">
                       No visits recorded yet. Tap <strong>+ Visit</strong> next to any student.
@@ -1662,9 +1879,10 @@ export default function App() {
         )}
 
         {/* SCREEN 2: VISIT ENTRY FORM */}
-        {activeScreen === 'new-visit' && (
+        {effectiveScreen === 'new-visit' && (
           <VisitEntryForm
             students={db.students}
+            availableClasses={homeAvailableSections}
             visits={db.visits}
             measurements={db.measurements}
             healthProfiles={db.healthProfiles}
@@ -1691,9 +1909,11 @@ export default function App() {
         )}
 
         {/* SCREEN 3: STUDENT DIRECTORY & 4-SECTION STUDENT PROFILE */}
-        {activeScreen === 'students' && (
+        {effectiveScreen === 'students' && (
           <StudentProfileView
             students={db.students}
+            availableClasses={homeAvailableSections}
+            isAdmin={isAdmin}
             visits={db.visits}
             measurements={db.measurements}
             healthProfiles={db.healthProfiles}
@@ -1717,6 +1937,7 @@ export default function App() {
               );
             }}
             onCreateStudent={handleCreateStudent}
+            onUpdateStudent={isAdmin ? handleUpdateStudent : undefined}
             onBulkImportStudents={(rows, replaceAll) => {
               const nowIso = new Date().toISOString();
               let batchToSync: StudentRecord[] = [];
@@ -1746,13 +1967,13 @@ export default function App() {
                 };
               });
               if (batchToSync.length > 0) {
-                fetch('/api/mutate', {
+                authFetch('/api/mutate', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     action: 'bulkImportStudents',
                     students: batchToSync,
-                    replaceAll,
+                    replaceAll: isAdmin ? replaceAll : false,
                     deviceId,
                   }),
                 }).catch(() => {});
@@ -1785,7 +2006,7 @@ export default function App() {
         )}
 
         {/* SCREEN 4: DAILY STUDENT VISIT LOG */}
-        {activeScreen === 'daily-log' && (
+        {effectiveScreen === 'daily-log' && (
           <DailyLogView
             students={db.students}
             visits={db.visits}
@@ -1801,17 +2022,38 @@ export default function App() {
           />
         )}
 
-        {/* SCREEN 5: GOOGLE SHEETS & APPS SCRIPT SYNC */}
-        {activeScreen === 'sheets-setup' && (
+        {/* SCREEN 5: GOOGLE SHEETS (ADMIN) OR PROTECTED EXCEL DOWNLOADS (NURSE) */}
+        {effectiveScreen === 'sheets-setup' && (
           <SheetsSetupView
             db={db}
+            isAdmin={isAdmin}
             appsScriptUrl={appsScriptUrl}
-            onSaveAppsScriptUrl={handleSaveAppsScriptUrl}
-            onSyncFromSheets={handleSyncFromSheets}
-            onPushToSheets={handlePushToSheets}
-            autoSyncEnabled={autoSyncEnabled}
-            onToggleAutoSync={handleToggleAutoSync}
+            isCustomAppsScriptUrl={isCustomAppsScriptUrl}
+            onSyncFromSheets={isAdmin ? handleManualSheetsSync : undefined}
+            onUpdateAppsScriptUrl={isAdmin ? handleUpdateAppsScriptUrl : undefined}
+            onPushFullBackup={isAdmin ? handlePushFullBackup : undefined}
+            onDownloadExcelSheet={handleDownloadExcelSheet}
             syncStatusMessage={syncStatusMessage}
+            onBackToHome={() => setActiveScreen('home')}
+          />
+        )}
+
+        {/* SCREEN 6: ADMIN PORTAL (USERS, CLASSES, STUDENTS) */}
+        {effectiveScreen === 'admin-panel' && isAdmin && (
+          <AdminPanelView
+            currentUser={currentUser}
+            students={db.students}
+            classes={homeAvailableSections}
+            users={db.users || []}
+            onCreateStudent={handleAdminCreateStudent}
+            onUpdateStudent={handleUpdateStudent}
+            onCreateClass={handleCreateClass}
+            onRenameClass={handleRenameClass}
+            onDeleteClass={handleDeleteClass}
+            onUpsertUser={handleUpsertUser}
+            onDeleteUser={handleDeleteUser}
+            onOpenStudentProfile={openStudentProfile}
+            onOpenSheetsSetup={() => setActiveScreen('sheets-setup')}
             onBackToHome={() => setActiveScreen('home')}
           />
         )}
@@ -1821,23 +2063,43 @@ export default function App() {
       <footer className="no-print hidden sm:block border-t border-stone-200/60 px-4 sm:px-8 py-4 mt-6 sm:mt-10">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4 text-xs text-zinc-400">
           <span>{SCHOOL_NAME} · School Infirmary</span>
-          <button
-            type="button"
-            onClick={() => setActiveScreen('sheets-setup')}
-            className={`inline-flex items-center gap-1.5 transition-colors ${
-              activeScreen === 'sheets-setup'
-                ? 'text-zinc-900 font-semibold'
-                : 'text-zinc-500 hover:text-zinc-900'
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                appsScriptUrl ? 'bg-teal-600' : 'bg-stone-300'
+          <div className="flex items-center gap-5">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setActiveScreen('admin-panel')}
+                className={`inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  effectiveScreen === 'admin-panel'
+                    ? 'text-zinc-900 font-semibold'
+                    : 'text-zinc-500 hover:text-zinc-900'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Admin Console
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveScreen('sheets-setup')}
+              className={`inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                effectiveScreen === 'sheets-setup'
+                  ? 'text-zinc-900 font-semibold'
+                  : 'text-zinc-500 hover:text-zinc-900'
               }`}
-              aria-hidden="true"
-            />
-            Google Sheets Sync &amp; CSV Backup
-          </button>
+            >
+              {isAdmin ? (
+                <>
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Google Sheets &amp; Excel Backup
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5" />
+                  Download Protected Sheets (.xlsx)
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </footer>
 
@@ -1845,7 +2107,7 @@ export default function App() {
       {activeScreen !== 'new-visit' && (
         <nav
           aria-label="Mobile Bottom Navigation"
-          className="no-print sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1"
+          className="no-print sm:hidden fixed bottom-0 inset-x-0 z-40 chrome-sticky bg-white/98 border-t border-stone-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1"
         >
           <div className="grid grid-cols-5 items-center px-1">
             <button
@@ -1932,147 +2194,140 @@ export default function App() {
               <span className="text-[10px] leading-tight mt-0.5">Daily Log</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveScreen('sheets-setup')}
-              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
-                activeScreen === 'sheets-setup'
-                  ? 'text-teal-900 font-bold'
-                  : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
-              }`}
-            >
-              <div
-                className={`p-1 rounded-lg relative transition-colors ${
-                  activeScreen === 'sheets-setup' ? 'bg-teal-100/80 text-teal-800' : ''
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => setActiveScreen('admin-panel')}
+                className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
+                  effectiveScreen === 'admin-panel'
+                    ? 'text-teal-900 font-bold'
+                    : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
                 }`}
               >
-                <Cloud className="w-5 h-5" />
-                <span
-                  className={`absolute top-0 right-0 w-2 h-2 rounded-full ring-2 ring-white ${
-                    appsScriptUrl ? 'bg-teal-600' : 'bg-stone-300'
+                <div
+                  className={`p-1 rounded-lg relative transition-colors ${
+                    effectiveScreen === 'admin-panel' ? 'bg-teal-100/80 text-teal-800' : ''
                   }`}
-                />
-              </div>
-              <span className="text-[10px] leading-tight mt-0.5">Cloud Sync</span>
-            </button>
+                >
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] leading-tight mt-0.5">Admin</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setActiveScreen('sheets-setup')}
+                className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
+                  effectiveScreen === 'sheets-setup'
+                    ? 'text-teal-900 font-bold'
+                    : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
+                }`}
+              >
+                <div
+                  className={`p-1 rounded-lg relative transition-colors ${
+                    effectiveScreen === 'sheets-setup' ? 'bg-teal-100/80 text-teal-800' : ''
+                  }`}
+                >
+                  <Download className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] leading-tight mt-0.5">Downloads</span>
+              </button>
+            )}
           </div>
         </nav>
       )}
 
-      {/* UNOBTRUSIVE INCOMING HOSTEL PASSES DRAWER / MODAL FOR NURSE */}
-      {showIncomingDispatches && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in"
-          onClick={() => setShowIncomingDispatches(false)}
-        >
-          <div
-            className="bg-white rounded-2xl border border-stone-200/90 shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between bg-stone-50/50">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                  <Bell className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-zinc-900 leading-tight">
-                    Hostel Passes (Incoming Students)
-                  </h3>
-                  <p className="text-xs text-zinc-500">
-                    Dispatched by hostel warden · Tap "Admit" to start visit
-                  </p>
-                </div>
+      {/* UNOBTRUSIVE INCOMING HOSTEL PASSES MODAL FOR NURSE */}
+      <ModalDialog
+        open={showIncomingDispatches}
+        onClose={() => setShowIncomingDispatches(false)}
+        title="Hostel Passes (Incoming Students)"
+        titleId="incoming-hostel-passes-title"
+        subtitle='Sent by hostel warden · Tap "Admit" to start visit'
+        icon={<Bell className="w-4 h-4 text-amber-700" />}
+        maxWidthClass="max-w-lg"
+        footer={
+          <div className="w-full flex items-center justify-between text-xs text-zinc-500">
+            <span>
+              {activeDispatches.length} active pass{activeDispatches.length === 1 ? '' : 'es'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowIncomingDispatches(false)}
+              className="h-8 px-3.5 font-medium text-zinc-700 bg-white border border-stone-200/90 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          {activeDispatches.length === 0 ? (
+            <div className="py-10 text-center text-zinc-400 flex flex-col items-center">
+              <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200/70 flex items-center justify-center mb-2.5">
+                <Check className="w-5 h-5 text-emerald-600" />
               </div>
-              <button
-                type="button"
-                onClick={() => setShowIncomingDispatches(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-stone-100 text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <p className="text-xs font-semibold text-zinc-700">
+                No students currently on the way
+              </p>
+              <p className="text-[11px] text-zinc-400 mt-1 max-w-xs leading-relaxed">
+                When hostel warden Agnel sends a student, their pass will appear here automatically.
+              </p>
             </div>
-
-            {/* List */}
-            <div className="p-5 overflow-y-auto space-y-3 flex-1">
-              {activeDispatches.length === 0 ? (
-                <div className="py-12 text-center text-zinc-400 flex flex-col items-center">
-                  <Check className="w-8 h-8 mb-2 text-emerald-500" />
-                  <p className="text-xs font-semibold text-zinc-700">No students currently in transit</p>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    When hostel warden Agnel sends a student, their pass will appear here automatically.
-                  </p>
-                </div>
-              ) : (
-                activeDispatches.map((d) => (
-                  <div
-                    key={d.dispatch_id}
-                    className="p-4 rounded-xl border border-amber-200/80 bg-amber-50/50 flex flex-col gap-2.5 shadow-2xs"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-bold text-zinc-900 flex items-center gap-2">
-                          {d.student_name}
-                          <span className="text-xs font-mono font-normal text-zinc-500">
-                            Class {d.section} · Roll {d.roll_number}
-                          </span>
-                        </div>
-                        <div className="text-xs text-zinc-700 mt-1">
-                          <span className="font-semibold text-zinc-900">Chief Complaint:</span> {d.reason}
-                        </div>
-                        {d.notes && (
-                          <div className="text-xs text-zinc-500 mt-0.5 italic">
-                            "{d.notes}"
-                          </div>
-                        )}
-                        <div className="text-[11px] text-zinc-400 font-mono mt-1">
-                          Dispatched by {d.dispatched_by} at{' '}
-                          {new Date(d.dispatched_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </div>
-                      </div>
+          ) : (
+            activeDispatches.map((d) => (
+              <div
+                key={d.dispatch_id}
+                className="p-4 rounded-xl border border-amber-200/80 bg-amber-50/50 flex flex-col gap-2.5 shadow-2xs"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-bold text-zinc-900 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span>{d.student_name}</span>
+                      <span className="text-xs font-mono font-normal text-zinc-500">
+                        {d.section} · Roll {d.roll_number}
+                      </span>
                     </div>
-
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => handleAdmitDispatchedStudent(d)}
-                        className="flex-1 py-2 px-3 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        Admit Student (Pre-fill Visit)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCancelDispatch(d.dispatch_id)}
-                        className="px-3 py-2 text-xs font-medium text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer"
-                      >
-                        Dismiss
-                      </button>
+                    <div className="text-xs text-zinc-700 mt-1">
+                      <span className="font-semibold text-zinc-900">Chief Complaint:</span> {d.reason}
+                    </div>
+                    {d.notes && (
+                      <div className="text-xs text-zinc-500 mt-0.5 italic">
+                        &ldquo;{d.notes}&rdquo;
+                      </div>
+                    )}
+                    <div className="text-[11px] text-zinc-400 font-mono mt-1">
+                      Sent by {d.dispatched_by} at{' '}
+                      {new Date(d.dispatched_at).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                </div>
 
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-stone-100 bg-stone-50/50 flex items-center justify-between text-xs text-zinc-500">
-              <span>{activeDispatches.length} active pass{activeDispatches.length === 1 ? '' : 'es'}</span>
-              <button
-                type="button"
-                onClick={() => setShowIncomingDispatches(false)}
-                className="font-medium text-zinc-700 hover:text-zinc-900"
-              >
-                Close
-              </button>
-            </div>
-          </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleAdmitDispatchedStudent(d)}
+                    className="flex-1 h-9 px-3 bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Admit Student (Pre-fill Visit)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCancelDispatch(d.dispatch_id)}
+                    className="h-9 px-3 text-xs font-medium text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
-      )}
+      </ModalDialog>
     </div>
   );
 }

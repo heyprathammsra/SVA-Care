@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+    overscroll-behavior-y: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1, 'ss01' 1;
@@ -9,6 +22,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.011em;
+    overscroll-behavior-y: none;
   }
 
   h1, h2, h3, .font-display {
@@ -21,6 +35,80 @@
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
     font-feature-settings: normal;
+  }
+}
+
+/* =========================================================================
+   BUTTERY-SMOOTH SCROLLING PERFORMANCE PRIMITIVES
+   - Eliminates jank on 280+ row rosters & prevents sticky blur repaints
+   ========================================================================= */
+.smooth-scroll-list {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  contain: layout style;
+}
+
+.list-row-opt {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60px;
+}
+
+.chrome-sticky {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* =========================================================================
+   POLISHED POPUP & DROPDOWN MOTION (Compositor-only, <=180ms)
+   ========================================================================= */
+@keyframes modalBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dropdownPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-backdrop-animate {
+  animation: modalBackdropIn 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.modal-panel-animate {
+  animation: modalPanelIn 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dropdown-panel-animate {
+  animation: dropdownPanelIn 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop-animate,
+  .modal-panel-animate,
+  .dropdown-panel-animate {
+    animation: none;
   }
 }
 

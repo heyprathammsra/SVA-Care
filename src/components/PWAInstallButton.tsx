@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Smartphone, Download, X, Share, PlusSquare } from 'lucide-react';
+import { Smartphone, Download, Share, PlusSquare } from 'lucide-react';
 import { usePWAInstall } from '../utils/usePWAInstall';
+import { ModalDialog } from './ModalDialog';
 
 export function PWAInstallButton({ variant = 'desktop' }: { variant?: 'desktop' | 'mobile' }) {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -58,50 +59,40 @@ export function PWAInstallButton({ variant = 'desktop' }: { variant?: 'desktop' 
           <span>{variant === 'mobile' ? 'App' : 'Add to Home'}</span>
         </button>
 
-        {showIOSGuide && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-sm bg-white rounded-2xl p-6 shadow-2xl border border-stone-200 relative">
-              <button
-                type="button"
-                onClick={() => setShowIOSGuide(false)}
-                className="absolute top-4 right-4 p-1 rounded-lg text-stone-400 hover:text-stone-700"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="flex items-center gap-3 mb-4">
-                <img src="/pwa-192x192.png" alt="SVA Infirmary Icon" className="w-12 h-12 rounded-xl shadow-xs" />
-                <div>
-                  <h3 className="text-sm font-bold text-stone-900">Add to iPhone / iPad</h3>
-                  <p className="text-xs text-stone-500">Install as standalone clinic app</p>
-                </div>
-              </div>
-
-              <div className="space-y-2.5 text-xs text-stone-700 bg-stone-50 p-3.5 rounded-xl border border-stone-200/80">
-                <div className="flex items-start gap-2">
-                  <span className="font-bold text-teal-800">1.</span>
-                  <span>
-                    Tap the <Share className="w-3.5 h-3.5 inline mx-1 text-teal-700" /> <strong>Share</strong> button in the Safari bottom bar.
-                  </span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="font-bold text-teal-800">2.</span>
-                  <span>
-                    Scroll down and tap <PlusSquare className="w-3.5 h-3.5 inline mx-1 text-teal-700" /> <strong>Add to Home Screen</strong>.
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowIOSGuide(false)}
-                className="w-full mt-4 py-2.5 bg-stone-900 text-white rounded-xl text-xs font-semibold hover:bg-black transition-colors"
-              >
-                Got it
-              </button>
+        <ModalDialog
+          open={showIOSGuide}
+          onClose={() => setShowIOSGuide(false)}
+          title="Add to iPhone / iPad"
+          subtitle="Install as standalone clinic app"
+          icon={<Smartphone className="w-4 h-4 text-teal-700" />}
+          maxWidthClass="max-w-sm"
+          footer={
+            <button
+              type="button"
+              onClick={() => setShowIOSGuide(false)}
+              className="w-full h-9 px-4 bg-zinc-900 text-white rounded-xl text-xs font-semibold hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              Got it
+            </button>
+          }
+        >
+          <div className="space-y-3 text-xs text-stone-700 bg-stone-50 p-4 rounded-xl border border-stone-200/80">
+            <div className="flex items-start gap-2.5">
+              <span className="font-bold text-teal-800">1.</span>
+              <span className="leading-relaxed">
+                Tap the <Share className="w-3.5 h-3.5 inline mx-1 text-teal-700" />{' '}
+                <strong>Share</strong> button in the Safari bottom bar.
+              </span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="font-bold text-teal-800">2.</span>
+              <span className="leading-relaxed">
+                Scroll down and tap <PlusSquare className="w-3.5 h-3.5 inline mx-1 text-teal-700" />{' '}
+                <strong>Add to Home Screen</strong>.
+              </span>
             </div>
           </div>
-        )}
+        </ModalDialog>
       </>
     );
   }
