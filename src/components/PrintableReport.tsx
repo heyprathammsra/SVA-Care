@@ -137,6 +137,17 @@ export const PrintableReport: React.FC<PrintableReportProps> = ({ config, onClos
     return () => observer.disconnect();
   }, [config, viewMode]);
 
+  // Allow closing Print Preview with the Escape key
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   // Zoom controls
   const handleZoomIn = () => {
     setIsAutoFit(false);
