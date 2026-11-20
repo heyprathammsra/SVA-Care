@@ -45,7 +45,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/assets\/aistudio\//],
           runtimeCaching: [
             {
               urlPattern: ({ url }) => url.pathname.startsWith('/api/'),

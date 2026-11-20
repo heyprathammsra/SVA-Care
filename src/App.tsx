@@ -18,6 +18,7 @@ import {
   Download,
   ShieldCheck,
   FileSpreadsheet,
+  AlertCircle,
 } from 'lucide-react';
 import {
   generatePermanentId,
@@ -200,6 +201,7 @@ export default function App() {
     return 'home';
   });
   const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
+  const [saveErrorBanner, setSaveErrorBanner] = useState<string | null>(null);
   const [preselectedStudentIdForVisit, setPreselectedStudentIdForVisit] = useState<string>('');
   const [preselectedReasonForVisit, setPreselectedReasonForVisit] = useState<string>('');
   const [preselectedNotesForVisit, setPreselectedNotesForVisit] = useState<string>('');
@@ -255,6 +257,7 @@ export default function App() {
     setAppsScriptUrl('');
     setIsCustomAppsScriptUrl(false);
     setSyncStatusMessage(null);
+    setSaveErrorBanner(null);
     setShowIncomingDispatches(false);
     setPrintReportConfig(null);
     scrubLegacyLocalStorage();
@@ -280,6 +283,37 @@ export default function App() {
       return res;
     },
     [handleLogout]
+  );
+
+  const persistMutationToServer = useCallback(
+    async (payload: Record<string, unknown>, contextLabel: string): Promise<boolean> => {
+      try {
+        const res = await authFetch('/api/mutate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, deviceId }),
+        });
+        if (!res.ok) {
+          const ct = res.headers.get('content-type') || '';
+          const errData = ct.includes('application/json')
+            ? ((await res.json()) as Record<string, unknown>)
+            : null;
+          const errMsg =
+            (errData && typeof errData.message === 'string' && errData.message) ||
+            `Could not sync ${contextLabel} to the school server (HTTP ${res.status}).`;
+          setSaveErrorBanner(errMsg);
+          return false;
+        }
+        setSaveErrorBanner(null);
+        return true;
+      } catch {
+        setSaveErrorBanner(
+          `Network error while saving ${contextLabel}. Please verify your connection before closing.`
+        );
+        return false;
+      }
+    },
+    [authFetch, deviceId]
   );
 
   const safeFetchJson = useCallback(
@@ -615,11 +649,7 @@ export default function App() {
     }));
 
     // Sync to shared school server (which forwards action: 'createVisit' to Google Sheets & broadcasts to all phones)
-    authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'recordVisit', visit: newVisit, deviceId }),
-    }).catch(() => {});
+    void persistMutationToServer({ action: 'recordVisit', visit: newVisit }, 'visit record');
 
     return newVisit;
   };
@@ -656,11 +686,7 @@ export default function App() {
       ]),
     }));
 
-    authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'createStudent', student: newStudent, deviceId }),
-    }).catch(() => {});
+    void persistMutationToServer({ action: 'createStudent', student: newStudent }, 'student record');
 
     return newStudent;
   };
@@ -815,11 +841,10 @@ export default function App() {
       measurements: [newMeas, ...prev.measurements],
     }));
 
-    authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'addMeasurement', measurement: newMeas, deviceId }),
-    }).catch(() => {});
+    void persistMutationToServer(
+      { action: 'addMeasurement', measurement: newMeas },
+      'height & weight measurement'
+    );
   };
 
   const handleAddHealthProfile = (
@@ -846,11 +871,10 @@ export default function App() {
       healthProfiles: [newProfile, ...prev.healthProfiles],
     }));
 
-    authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'addHealthProfile', healthProfile: newProfile, deviceId }),
-    }).catch(() => {});
+    void persistMutationToServer(
+      { action: 'addHealthProfile', healthProfile: newProfile },
+      'health note'
+    );
   };
 
   const startNewVisitForStudent = (
@@ -891,11 +915,10 @@ export default function App() {
       dispatches: [newDispatch, ...(prev.dispatches || [])],
     }));
 
-    await authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'dispatchStudent', dispatch: newDispatch, deviceId }),
-    }).catch(() => {});
+    await persistMutationToServer(
+      { action: 'dispatchStudent', dispatch: newDispatch },
+      'infirmary pass'
+    );
   };
 
   const handleCancelDispatch = async (dispatchId: string): Promise<void> => {
@@ -906,16 +929,14 @@ export default function App() {
       ),
     }));
 
-    await authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await persistMutationToServer(
+      {
         action: 'updateDispatchStatus',
         dispatch_id: dispatchId,
         status: 'cancelled',
-        deviceId,
-      }),
-    }).catch(() => {});
+      },
+      'pass cancellation'
+    );
   };
 
   const handleAdmitDispatchedStudent = async (dispatch: WardenDispatchRecord): Promise<void> => {
@@ -933,17 +954,15 @@ export default function App() {
       ),
     }));
 
-    authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    void persistMutationToServer(
+      {
         action: 'updateDispatchStatus',
         dispatch_id: dispatch.dispatch_id,
         status: 'arrived',
         acknowledged_at: new Date().toISOString(),
-        deviceId,
-      }),
-    }).catch(() => {});
+      },
+      'pass arrival update'
+    );
 
     // Open visit entry form pre-filled with student and warden's reason and notes
     setShowIncomingDispatches(false);
@@ -1457,6 +1476,25 @@ export default function App() {
 
       {/* MAIN CONTENT VIEWPORT */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-8 py-3.5 sm:py-8 pb-28 sm:pb-8">
+        {saveErrorBanner && (
+          <div
+            role="alert"
+            className="mb-4 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-medium flex items-center justify-between gap-3 shadow-2xs"
+          >
+            <span className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{saveErrorBanner}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSaveErrorBanner(null)}
+              aria-label="Dismiss save warning"
+              className="text-rose-700 hover:text-rose-900 p-0.5 shrink-0 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         {/* SCREEN 1: INFIRMARY WORKSPACE */}
         {effectiveScreen === 'home' && (
           <div className="space-y-3.5 sm:space-y-6">
@@ -1940,44 +1978,43 @@ export default function App() {
             onUpdateStudent={isAdmin ? handleUpdateStudent : undefined}
             onBulkImportStudents={(rows, replaceAll) => {
               const nowIso = new Date().toISOString();
-              let batchToSync: StudentRecord[] = [];
-              setDb((prev) => {
-                const baseStudents = replaceAll ? [] : [...prev.students];
-                const existingIds = baseStudents.map((s) => s.student_id);
-                const createdStudents: StudentRecord[] = [];
-                rows.forEach((r) => {
-                  const id = generatePermanentId('STU', [
-                    ...existingIds,
-                    ...createdStudents.map((c) => c.student_id),
-                  ]);
-                  createdStudents.push({
-                    student_id: id,
-                    full_name: r.fullName,
-                    section: normalizeSectionName(r.section),
-                    roll_number: r.rollNumber,
-                    active_status: 'Active',
-                    created_at: nowIso,
-                    updated_at: nowIso,
-                  });
+              const useReplaceAll = Boolean(isAdmin && replaceAll);
+              const baseStudents = useReplaceAll ? [] : [...db.students];
+              const existingIds = baseStudents.map((s) => s.student_id);
+              const createdStudents: StudentRecord[] = [];
+              rows.forEach((r) => {
+                const id = generatePermanentId('STU', [
+                  ...existingIds,
+                  ...createdStudents.map((c) => c.student_id),
+                ]);
+                const cleanSec =
+                  sanitizeClassSectionName(r.section) || normalizeSectionName(r.section);
+                const rawRoll = String(r.rollNumber || '').trim();
+                createdStudents.push({
+                  student_id: id,
+                  full_name: r.fullName.trim(),
+                  section: cleanSec,
+                  roll_number: /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll,
+                  active_status: 'Active',
+                  created_at: nowIso,
+                  updated_at: nowIso,
                 });
-                batchToSync = createdStudents;
-                return {
-                  ...prev,
-                  students: [...baseStudents, ...createdStudents],
-                };
               });
-              if (batchToSync.length > 0) {
-                authFetch('/api/mutate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    action: 'bulkImportStudents',
-                    students: batchToSync,
-                    replaceAll: isAdmin ? replaceAll : false,
-                    deviceId,
-                  }),
-                }).catch(() => {});
-              }
+              if (createdStudents.length === 0) return;
+              const nextStudents = [...baseStudents, ...createdStudents];
+              setDb((prev) => ({
+                ...prev,
+                students: nextStudents,
+                classes: getAllClassSections(nextStudents, prev.classes),
+              }));
+              void persistMutationToServer(
+                {
+                  action: 'bulkImportStudents',
+                  students: createdStudents,
+                  replaceAll: useReplaceAll,
+                },
+                'bulk student import'
+              );
             }}
             onPrintStudentHistory={(student, visitsList, dateRange) =>
               setPrintReportConfig({

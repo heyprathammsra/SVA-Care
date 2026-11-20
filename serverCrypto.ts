@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import type {
   NurseDatabase,
   StudentRecord,
@@ -12,9 +12,9 @@ import type {
   AppUserRecord,
 } from './src/utils/nurseLogic.ts';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, 'data');
+export const RUNTIME_DATA_DIR =
+  (process.env.DATA_DIR || '').trim() || path.join(os.tmpdir(), 'sva-infirmary-data');
+const DATA_DIR = RUNTIME_DATA_DIR;
 const LOCAL_KEY_FILE = path.join(DATA_DIR, '.master.key');
 
 const SCRYPT_PREFIX = 'scrypt$v1$';

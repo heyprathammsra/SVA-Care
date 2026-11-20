@@ -416,7 +416,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         <button
           type="button"
           onClick={onBackToHome}
-          className="px-3.5 py-2 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          className="px-3.5 py-2 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors hidden sm:inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to Infirmary Desk
@@ -489,7 +489,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       <div
         role="tablist"
         aria-label="Admin management sections"
-        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
+        className="flex flex-wrap items-center gap-1.5"
       >
         <button
           type="button"
@@ -499,7 +499,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             setActiveTab('users');
             setFeedback(null);
           }}
-          className={`px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'users'
               ? 'bg-zinc-900 text-white shadow-xs'
               : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
@@ -518,7 +518,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             setActiveTab('classes');
             setFeedback(null);
           }}
-          className={`px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'classes'
               ? 'bg-zinc-900 text-white shadow-xs'
               : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
@@ -537,7 +537,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             setActiveTab('students');
             setFeedback(null);
           }}
-          className={`px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
             activeTab === 'students'
               ? 'bg-zinc-900 text-white shadow-xs'
               : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'

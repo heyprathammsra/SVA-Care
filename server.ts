@@ -28,6 +28,7 @@ import {
   getActiveSessionCount,
 } from './serverAuth.ts';
 import {
+  RUNTIME_DATA_DIR,
   hashPassword,
   isPasswordHash,
   verifyPassword,
@@ -69,7 +70,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = RUNTIME_DATA_DIR;
 const STATE_FILE = path.join(DATA_DIR, 'school-nurse-state.json');
 
 // Kept strictly on the server — NEVER bundled into public frontend JavaScript
@@ -1193,6 +1194,7 @@ async function startServer() {
           newlyAdded = incoming.filter((s) => !existingIds.has(s.student_id));
           serverState.db.students = [...serverState.db.students, ...newlyAdded];
         }
+        serverState.db.classes = getAllClassSections(serverState.db.students, serverState.db.classes);
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
         if (newlyAdded.length > 0) {
@@ -1711,6 +1713,11 @@ async function startServer() {
       void pullFromAppsScript();
     }
   }, 10000);
+
+  // Never expose chat/workspace upload attachments or archives publicly
+  app.use('/assets/aistudio', (_req, res) => {
+    res.status(404).end();
+  });
 
   if (process.env.NODE_ENV !== 'production') {
     process.env.DISABLE_HMR = 'true';
