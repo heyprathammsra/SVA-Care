@@ -7,15 +7,21 @@ import {
 } from 'lucide-react';
 import {
   getDailyVisitLog,
+  resolveVisitShiftPeriod,
+  formatShiftPeriodLabel,
+  DEFAULT_INFIRMARY_SETTINGS,
   type StudentRecord,
   type VisitRecord,
   type DailyLogEntry,
+  type InfirmarySettings,
+  type VisitShiftPeriod,
 } from '../utils/nurseLogic';
 import { getTodayLocalDateString } from '../utils/seedData';
 
 interface DailyLogViewProps {
   students: StudentRecord[];
   visits: VisitRecord[];
+  settings?: InfirmarySettings;
   onOpenPrintPreview: (date: string, entries: DailyLogEntry[]) => void;
   onOpenStudentProfile: (studentId: string) => void;
   onStartNewVisit: () => void;
@@ -24,26 +30,43 @@ interface DailyLogViewProps {
 export const DailyLogView: React.FC<DailyLogViewProps> = ({
   students,
   visits,
+  settings = DEFAULT_INFIRMARY_SETTINGS,
   onOpenPrintPreview,
   onOpenStudentProfile,
   onStartNewVisit,
 }) => {
   const [selectedDate, setSelectedDate] = useState(getTodayLocalDateString);
+  const [shiftFilter, setShiftFilter] = useState<'all' | VisitShiftPeriod>('all');
 
   const dailyEntries = useMemo(
     () => getDailyVisitLog(visits, students, selectedDate),
     [visits, students, selectedDate]
   );
 
-  const sortedEntriesNewestFirst = useMemo(
-    () =>
-      [...dailyEntries].sort((a, b) => {
-        const dtCmp = b.visit.visit_datetime.localeCompare(a.visit.visit_datetime);
-        if (dtCmp !== 0) return dtCmp;
-        return b.visit.created_at.localeCompare(a.visit.created_at);
-      }),
-    [dailyEntries]
-  );
+  const shiftCounts = useMemo(() => {
+    let schoolHours = 0;
+    let night = 0;
+    for (const entry of dailyEntries) {
+      const period = resolveVisitShiftPeriod(entry.visit, settings);
+      if (period === 'night') night++;
+      else schoolHours++;
+    }
+    return { schoolHours, night };
+  }, [dailyEntries, settings]);
+
+  const sortedEntriesNewestFirst = useMemo(() => {
+    const filtered =
+      shiftFilter === 'all'
+        ? dailyEntries
+        : dailyEntries.filter(
+            (entry) => resolveVisitShiftPeriod(entry.visit, settings) === shiftFilter
+          );
+    return [...filtered].sort((a, b) => {
+      const dtCmp = b.visit.visit_datetime.localeCompare(a.visit.visit_datetime);
+      if (dtCmp !== 0) return dtCmp;
+      return b.visit.created_at.localeCompare(a.visit.created_at);
+    });
+  }, [dailyEntries, shiftFilter, settings]);
 
   const shiftDate = (daysDelta: number) => {
     const parts = selectedDate.split('-').map(Number);
@@ -71,7 +94,9 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
             <span data-testid="daily-log-count" className="font-mono font-semibold text-zinc-800">
               {dailyEntries.length}
             </span>{' '}
-            {dailyEntries.length === 1 ? 'visit' : 'visits'} recorded on {selectedDate} · Newest first
+            {dailyEntries.length === 1 ? 'visit' : 'visits'} recorded on {selectedDate} ·{' '}
+            <span className="font-mono text-teal-700 font-medium">{shiftCounts.schoolHours}</span> School ·{' '}
+            <span className="font-mono text-indigo-700 font-medium">{shiftCounts.night}</span> Night
           </p>
         </div>
 
@@ -174,99 +199,159 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
         </div>
       </div>
 
+      {/* Shift Segmented Filter Strip */}
+      <div className="flex items-center justify-between gap-2">
+        <div
+          role="tablist"
+          aria-label="Filter visits by shift"
+          className="inline-flex items-center gap-1 p-1 bg-stone-100 rounded-xl"
+        >
+          {(
+            [
+              { key: 'all', label: `All (${dailyEntries.length})` },
+              { key: 'school_hours', label: `School Hours (${shiftCounts.schoolHours})` },
+              { key: 'night', label: `Night (${shiftCounts.night})` },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              role="tab"
+              aria-selected={shiftFilter === opt.key}
+              onClick={() => setShiftFilter(opt.key)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                shiftFilter === opt.key
+                  ? 'bg-white text-zinc-900 shadow-xs font-semibold'
+                  : 'text-zinc-500 hover:text-zinc-900'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Log Surface */}
       <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-[0_4px_24px_rgb(0,0,0,0.02)]">
         {sortedEntriesNewestFirst.length === 0 ? (
           <div data-testid="daily-log-empty" className="py-14 px-4 text-center max-w-sm mx-auto">
             <p className="text-base font-semibold text-zinc-900 font-display">
-              No visits on {selectedDate}
+              {dailyEntries.length === 0
+                ? `No visits on ${selectedDate}`
+                : `No ${formatShiftPeriodLabel(shiftFilter as VisitShiftPeriod).toLowerCase()} visits on ${selectedDate}`}
             </p>
             <p className="text-xs text-zinc-500 mt-1">
-              Select another date above or record a new student visit.
+              {dailyEntries.length === 0
+                ? 'Select another date above or record a new student visit.'
+                : 'Switch the shift filter above to view all visits for this date.'}
             </p>
-            <button
-              type="button"
-              onClick={onStartNewVisit}
-              className="mt-4 h-10 px-4 text-xs font-semibold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 inline-flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Record Visit
-            </button>
+            {dailyEntries.length === 0 && (
+              <button
+                type="button"
+                onClick={onStartNewVisit}
+                className="mt-4 h-10 px-4 text-xs font-semibold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Record Visit
+              </button>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-stone-100">
-            {sortedEntriesNewestFirst.map((entry) => (
-              <div
-                key={entry.visit.visit_id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpenStudentProfile(entry.student.student_id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpenStudentProfile(entry.student.student_id);
-                  }
-                }}
-                className="group p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-6 hover:bg-stone-50/80 active:bg-stone-100/60 transition-colors cursor-pointer select-none"
-              >
-                {/* Mobile Top Meta Row (hidden on sm+, shown inline on mobile) */}
-                <div className="flex sm:hidden items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="font-semibold text-zinc-900">
-                      {entry.visitTimeFormatted}
-                    </span>
-                    <span className="text-zinc-300" aria-hidden="true">·</span>
-                    <span className="text-zinc-500">Visit #{entry.visitNumber}</span>
-                  </div>
-                  <span className="font-mono text-zinc-500">
-                    Roll {entry.student.roll_number} · {entry.student.section}
-                  </span>
-                </div>
-
-                {/* Desktop Left + Center Stack */}
-                <div className="flex items-start gap-4 min-w-0 flex-1">
-                  {/* Desktop Time Column */}
-                  <div className="hidden sm:block text-left shrink-0 w-20 pt-0.5">
-                    <span className="block font-mono text-xs font-semibold text-zinc-900 whitespace-nowrap">
-                      {entry.visitTimeFormatted}
-                    </span>
-                    <span className="block font-mono text-[11px] text-zinc-400 mt-0.5">
-                      Visit #{entry.visitNumber}
-                    </span>
-                  </div>
-
-                  {/* Student & Clinical Details */}
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm sm:text-base font-semibold text-zinc-900 group-hover:text-teal-700 text-left transition-colors">
-                        {entry.student.full_name}
+            {sortedEntriesNewestFirst.map((entry) => {
+              const shiftPeriod = resolveVisitShiftPeriod(entry.visit, settings);
+              return (
+                <div
+                  key={entry.visit.visit_id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenStudentProfile(entry.student.student_id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpenStudentProfile(entry.student.student_id);
+                    }
+                  }}
+                  className="group p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-6 hover:bg-stone-50/80 active:bg-stone-100/60 transition-colors cursor-pointer select-none"
+                >
+                  {/* Mobile Top Meta Row (hidden on sm+, shown inline on mobile) */}
+                  <div className="flex sm:hidden items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 font-mono">
+                      <span className="font-semibold text-zinc-900">
+                        {entry.visitTimeFormatted}
                       </span>
-                      <span className="hidden sm:inline font-mono text-xs text-zinc-400">
-                        Roll {entry.student.roll_number} · {entry.student.section}
+                      <span
+                        className={`font-sans text-[11px] font-semibold ${
+                          shiftPeriod === 'night' ? 'text-indigo-700' : 'text-teal-700'
+                        }`}
+                      >
+                        {formatShiftPeriodLabel(shiftPeriod)}
+                      </span>
+                    </div>
+                    <span className="font-mono text-zinc-500">
+                      Roll {entry.student.roll_number} · {entry.student.section}
+                    </span>
+                  </div>
+
+                  {/* Desktop Left + Center Stack */}
+                  <div className="flex items-start gap-4 min-w-0 flex-1">
+                    {/* Desktop Time & Shift Column */}
+                    <div className="hidden sm:block text-left shrink-0 w-24 pt-0.5">
+                      <span className="block font-mono text-xs font-semibold text-zinc-900 whitespace-nowrap">
+                        {entry.visitTimeFormatted}
+                      </span>
+                      <span
+                        className={`block text-[11px] font-semibold mt-0.5 whitespace-nowrap ${
+                          shiftPeriod === 'night' ? 'text-indigo-700' : 'text-teal-700'
+                        }`}
+                      >
+                        {formatShiftPeriodLabel(shiftPeriod)}
                       </span>
                     </div>
 
-                    <p className="text-xs sm:text-sm font-medium text-zinc-800 leading-snug">
-                      {entry.visit.reason}
-                    </p>
-                    <p className="text-xs text-zinc-500 leading-relaxed">
-                      {entry.visit.action_taken}
-                    </p>
+                    {/* Student & Clinical Details */}
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm sm:text-base font-semibold text-zinc-900 group-hover:text-teal-700 text-left transition-colors">
+                          {entry.student.full_name}
+                        </span>
+                        <span className="hidden sm:inline font-mono text-xs text-zinc-400">
+                          Roll {entry.student.roll_number} · {entry.student.section}
+                        </span>
+                      </div>
+
+                      <p className="text-xs sm:text-sm font-medium text-zinc-800 leading-snug">
+                        {entry.visit.reason}
+                      </p>
+                      <p className="text-xs text-zinc-500 leading-relaxed">
+                        {entry.visit.action_taken}
+                      </p>
+                      {entry.visit.item_name && (
+                        <p className="text-[11px] text-zinc-500">
+                          Item used:{' '}
+                          <span className="font-medium text-zinc-700">
+                            {entry.visit.item_name}
+                            {entry.visit.item_qty ? ` × ${entry.visit.item_qty}` : ''}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Medicine Summary (Clean bottom strip on mobile, structured right column on desktop) */}
+                  <div className="pt-2 sm:pt-0.5 border-t sm:border-t-0 border-stone-100 flex flex-col items-start sm:items-end justify-between text-xs shrink-0 sm:text-right sm:max-w-[230px] gap-0.5 sm:gap-0">
+                    <span className="text-[11px] text-zinc-400 font-medium">Medicine</span>
+                    <span className="font-medium text-zinc-800 sm:mt-0.5 leading-snug">
+                      {entry.medicineSummary}
+                    </span>
                   </div>
                 </div>
-
-                {/* Medicine Summary (Clean bottom strip on mobile, structured right column on desktop) */}
-                <div className="pt-2 sm:pt-0.5 border-t sm:border-t-0 border-stone-100 flex flex-col items-start sm:items-end justify-between text-xs shrink-0 sm:text-right sm:max-w-[230px] gap-0.5 sm:gap-0">
-                  <span className="text-[11px] text-zinc-400 font-medium">Medicine</span>
-                  <span className="font-medium text-zinc-800 sm:mt-0.5 leading-snug">
-                    {entry.medicineSummary}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
     </div>
   );
 };
+

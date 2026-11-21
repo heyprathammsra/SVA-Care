@@ -17,12 +17,16 @@ import {
   AlertCircle,
   CheckCircle2,
   Plus,
+  Clock,
 } from 'lucide-react';
 import {
   sanitizeClassSectionName,
   searchStudents,
+  formatHHMMTo12h,
+  DEFAULT_INFIRMARY_SETTINGS,
   type StudentRecord,
   type AppUserRecord,
+  type InfirmarySettings,
 } from '../utils/nurseLogic';
 import { type AuthRole, type AuthUser } from '../utils/auth';
 import { CustomSelect } from './CustomSelect';
@@ -38,6 +42,7 @@ interface AdminPanelViewProps {
   students: StudentRecord[];
   classes: string[];
   users: AppUserRecord[];
+  settings?: InfirmarySettings;
   onCreateStudent: (
     fullName: string,
     section: string,
@@ -50,12 +55,13 @@ interface AdminPanelViewProps {
   onDeleteClass: (className: string) => Promise<AdminActionResult>;
   onUpsertUser: (user: AppUserRecord) => Promise<AdminActionResult>;
   onDeleteUser: (username: string) => Promise<AdminActionResult>;
+  onUpdateSchoolHours?: (start: string, end: string) => Promise<AdminActionResult>;
   onOpenStudentProfile: (studentId: string) => void;
   onOpenSheetsSetup: () => void;
   onBackToHome: () => void;
 }
 
-type AdminTab = 'users' | 'classes' | 'students';
+type AdminTab = 'users' | 'classes' | 'students' | 'hours';
 
 const ROLE_LABELS: Record<AuthRole, { label: string; defaultBadge: string; pillClass: string }> = {
   admin: {
@@ -80,6 +86,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   students,
   classes,
   users,
+  settings = DEFAULT_INFIRMARY_SETTINGS,
   onCreateStudent,
   onUpdateStudent,
   onCreateClass,
@@ -87,6 +94,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   onDeleteClass,
   onUpsertUser,
   onDeleteUser,
+  onUpdateSchoolHours,
   onOpenStudentProfile,
   onOpenSheetsSetup,
   onBackToHome,
@@ -96,6 +104,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     null
   );
   const [busy, setBusy] = useState(false);
+
+  // School Hours / Shift Settings state
+  const [hoursStart, setHoursStart] = useState(
+    settings.school_hours_start || DEFAULT_INFIRMARY_SETTINGS.school_hours_start
+  );
+  const [hoursEnd, setHoursEnd] = useState(
+    settings.school_hours_end || DEFAULT_INFIRMARY_SETTINGS.school_hours_end
+  );
 
   // ============================================================================
   // USERS & ROLES STATE
@@ -547,6 +563,32 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           <span>Students</span>
           <span className="font-mono text-[11px] opacity-75">({students.length})</span>
         </button>
+
+        {onUpdateSchoolHours && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'hours'}
+            onClick={() => {
+              setHoursStart(
+                settings.school_hours_start || DEFAULT_INFIRMARY_SETTINGS.school_hours_start
+              );
+              setHoursEnd(
+                settings.school_hours_end || DEFAULT_INFIRMARY_SETTINGS.school_hours_end
+              );
+              setActiveTab('hours');
+              setFeedback(null);
+            }}
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+              activeTab === 'hours'
+                ? 'bg-zinc-900 text-white shadow-xs'
+                : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>Infirmary Hours</span>
+          </button>
+        )}
       </div>
 
       {/* ========================================================================
@@ -1235,6 +1277,101 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================
+          TAB 4: INFIRMARY HOURS (SCHOOL HOURS VS NIGHT CLASSIFICATION)
+      ======================================================================== */}
+      {activeTab === 'hours' && onUpdateSchoolHours && (
+        <div className="max-w-xl bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
+          <div className="pb-3 border-b border-stone-100">
+            <h2 className="text-base font-semibold text-zinc-900 font-display">
+              School Hours vs. Night Visit Timings
+            </h2>
+            <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+              Visits recorded within this window are automatically tagged as{' '}
+              <strong className="text-teal-800">School Hours</strong>. Visits outside this window are tagged as{' '}
+              <strong className="text-indigo-700">Night / After-Hours</strong>. Staff can still manually override the tag on any visit.
+            </p>
+          </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              try {
+                const res = await onUpdateSchoolHours(hoursStart, hoursEnd);
+                showToast(res);
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="school-hours-start" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                  School Hours Start
+                </label>
+                <input
+                  id="school-hours-start"
+                  type="time"
+                  required
+                  value={hoursStart}
+                  onChange={(e) => setHoursStart(e.target.value)}
+                  className="w-full h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                />
+              </div>
+              <div>
+                <label htmlFor="school-hours-end" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                  School Hours End
+                </label>
+                <input
+                  id="school-hours-end"
+                  type="time"
+                  required
+                  value={hoursEnd}
+                  onChange={(e) => setHoursEnd(e.target.value)}
+                  className="w-full h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                />
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200/70 text-xs text-zinc-600 space-y-1">
+              <p>
+                <span className="font-semibold text-teal-800">School Hours:</span>{' '}
+                <span className="font-mono text-zinc-900">
+                  {formatHHMMTo12h(hoursStart)} – {formatHHMMTo12h(hoursEnd)}
+                </span>
+              </p>
+              <p>
+                <span className="font-semibold text-indigo-700">Night / After-Hours:</span>{' '}
+                All visits recorded before {formatHHMMTo12h(hoursStart)} or after {formatHHMMTo12h(hoursEnd)}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setHoursStart(DEFAULT_INFIRMARY_SETTINGS.school_hours_start);
+                  setHoursEnd(DEFAULT_INFIRMARY_SETTINGS.school_hours_end);
+                }}
+                className="text-xs font-medium text-zinc-500 hover:text-zinc-900 cursor-pointer"
+              >
+                Reset to 7:30 AM – 3:30 PM
+              </button>
+              <button
+                type="submit"
+                disabled={busy}
+                className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>{busy ? 'Saving...' : 'Save School Hours'}</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

@@ -9,6 +9,78 @@ export interface StudentRecord {
 }
 
 export type MedicineStatus = 'none' | 'given' | 'not_recorded';
+export type VisitShiftPeriod = 'school_hours' | 'night';
+
+export interface InfirmarySettings {
+  school_hours_start: string; // HH:mm 24-hour (default "07:30")
+  school_hours_end: string; // HH:mm 24-hour (default "15:30")
+  updated_at?: string;
+}
+
+export const DEFAULT_INFIRMARY_SETTINGS: InfirmarySettings = {
+  school_hours_start: '07:30',
+  school_hours_end: '15:30',
+};
+
+export interface MedicineInventoryRecord {
+  medicine_id: string;
+  name: string;
+  category: string;
+  form_strength: string;
+  unit: string;
+  batch_number: string;
+  expiry_date: string; // YYYY-MM-DD or ''
+  current_stock: number;
+  min_stock_alert: number;
+  notes?: string;
+  updated_at: string;
+}
+
+export interface ItemInventoryRecord {
+  item_id: string;
+  name: string;
+  category: string;
+  unit: string;
+  current_stock: number;
+  min_stock_alert: number;
+  notes?: string;
+  updated_at: string;
+}
+
+export type StockTransactionReason = 'visit' | 'bill_restock' | 'adjustment' | 'menstrual';
+
+export interface StockTransactionRecord {
+  txn_id: string;
+  target_type: 'medicine' | 'item';
+  target_id: string;
+  target_name: string;
+  change_qty: number; // positive for additions, negative for deductions
+  balance_after?: number;
+  reason: StockTransactionReason;
+  reference_id?: string;
+  notes?: string;
+  recorded_by: string;
+  created_at: string;
+}
+
+export type BillCategory = 'Medicines' | 'Items' | 'Equipment' | 'Camp' | 'Other';
+export type BillPaymentStatus = 'Paid' | 'Pending' | 'Reimbursed';
+
+export interface BillRecord {
+  bill_id: string;
+  bill_number: string;
+  vendor_name: string;
+  bill_date: string; // YYYY-MM-DD
+  category: BillCategory;
+  total_amount: number;
+  payment_status: BillPaymentStatus;
+  notes?: string;
+  drive_file_id?: string;
+  image_url?: string;
+  image_data_url?: string; // Compressed local fallback preview if offline or Drive not yet updated
+  recorded_by?: string;
+  created_at: string;
+}
 
 export interface VisitRecord {
   visit_id: string;
@@ -19,11 +91,18 @@ export interface VisitRecord {
   roll_number?: string;
   roll_no?: string;
   visit_datetime: string; // YYYY-MM-DDTHH:mm
+  shift_period?: VisitShiftPeriod;
+  shift_overridden?: boolean;
   reason: string;
   observations: string;
   action_taken: string;
   medicine_status: MedicineStatus;
   medicine_name: string; // Stored in Sheets as "None (No medicine given)", "Not recorded", or actual name
+  medicine_id?: string;
+  medicine_qty?: number;
+  item_id?: string;
+  item_name?: string;
+  item_qty?: number;
   dosage: string;
   dosage_unit: string;
   route: string;
@@ -86,16 +165,28 @@ export interface NurseDatabase {
   dispatches?: WardenDispatchRecord[];
   users?: AppUserRecord[];
   classes?: string[];
+  medicines?: MedicineInventoryRecord[];
+  items?: ItemInventoryRecord[];
+  stockTransactions?: StockTransactionRecord[];
+  bills?: BillRecord[];
+  settings?: InfirmarySettings;
 }
 
 export interface VisitFormInput {
   student_id: string;
   visit_datetime: string;
+  shift_period?: VisitShiftPeriod;
+  shift_overridden?: boolean;
   reason: string;
   observations: string;
   action_taken: string;
   medicine_status: MedicineStatus;
   medicine_name: string;
+  medicine_id?: string;
+  medicine_qty?: number;
+  item_id?: string;
+  item_name?: string;
+  item_qty?: number;
   dosage: string;
   dosage_unit: string;
   route: string;
@@ -113,10 +204,99 @@ export interface DailyLogEntry {
 }
 
 /**
+ * Normalizes a 24-hour HH:mm string, falling back cleanly if invalid.
+ */
+export function normalizeHHMM(raw: string | undefined | null, fallback: string): string {
+  const clean = String(raw || '').trim();
+  const match = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return fallback;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function formatHHMMTo12h(hhmm: string): string {
+  const norm = normalizeHHMM(hhmm, '07:30');
+  const [hStr, mStr] = norm.split(':');
+  const h = parseInt(hStr, 10);
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${mStr} ${suffix}`;
+}
+
+/**
+ * Classifies a visit timestamp into 'school_hours' or 'night' using configurable school timings.
+ * Default school hours: 07:30 to 15:30 (inclusive).
+ */
+export function classifyVisitShift(
+  visitDatetime: string | undefined | null,
+  settings?: Partial<InfirmarySettings> | null
+): VisitShiftPeriod {
+  const startStr = normalizeHHMM(settings?.school_hours_start, DEFAULT_INFIRMARY_SETTINGS.school_hours_start);
+  const endStr = normalizeHHMM(settings?.school_hours_end, DEFAULT_INFIRMARY_SETTINGS.school_hours_end);
+  const dt = String(visitDatetime || '').trim();
+  const timeMatch = dt.match(/(?:T|\s)(\d{1,2}):(\d{2})/);
+  if (!timeMatch) return 'school_hours';
+
+  const visitMins = parseInt(timeMatch[1], 10) * 60 + parseInt(timeMatch[2], 10);
+  const [sh, sm] = startStr.split(':').map(Number);
+  const [eh, em] = endStr.split(':').map(Number);
+  const startMins = sh * 60 + sm;
+  const endMins = eh * 60 + em;
+
+  if (startMins <= endMins) {
+    return visitMins >= startMins && visitMins <= endMins ? 'school_hours' : 'night';
+  }
+  // Overnight range fallback
+  return visitMins >= startMins || visitMins <= endMins ? 'school_hours' : 'night';
+}
+
+export function resolveVisitShiftPeriod(
+  visit: Pick<VisitRecord, 'visit_datetime' | 'shift_period' | 'shift_overridden'>,
+  settings?: Partial<InfirmarySettings> | null
+): VisitShiftPeriod {
+  if (visit.shift_overridden && (visit.shift_period === 'school_hours' || visit.shift_period === 'night')) {
+    return visit.shift_period;
+  }
+  if (visit.shift_period === 'school_hours' || visit.shift_period === 'night') {
+    return visit.shift_period;
+  }
+  return classifyVisitShift(visit.visit_datetime, settings);
+}
+
+export function formatShiftPeriodLabel(shift: VisitShiftPeriod): string {
+  return shift === 'night' ? 'Night / After-Hours' : 'School Hours';
+}
+
+export function getStockStatus(currentStock: number, minStockAlert: number): 'out' | 'low' | 'ok' {
+  const cur = Number(currentStock) || 0;
+  const min = Math.max(0, Number(minStockAlert) || 0);
+  if (cur <= 0) return 'out';
+  if (min > 0 && cur <= min) return 'low';
+  return 'ok';
+}
+
+export function getExpiryStatus(
+  expiryDate: string | undefined | null,
+  referenceDate: string = new Date().toISOString().slice(0, 10)
+): 'expired' | 'expiring_soon' | 'valid' | 'none' {
+  const clean = String(expiryDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(clean)) return 'none';
+  const refTime = new Date(`${referenceDate}T00:00:00Z`).getTime();
+  const expTime = new Date(`${clean}T00:00:00Z`).getTime();
+  if (Number.isNaN(refTime) || Number.isNaN(expTime)) return 'none';
+  const diffDays = Math.floor((expTime - refTime) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return 'expired';
+  if (diffDays <= 45) return 'expiring_soon';
+  return 'valid';
+}
+
+/**
  * Generates a permanent internal ID (never using spreadsheet row numbers).
  */
 export function generatePermanentId(
-  prefix: 'STU' | 'VIS' | 'MSR' | 'HPR' | 'DSP',
+  prefix: 'STU' | 'VIS' | 'MSR' | 'HPR' | 'DSP' | 'MED' | 'ITM' | 'TXN' | 'BIL',
   existingIds: string[],
   year: number = 2026
 ): string {
@@ -842,6 +1022,14 @@ export function getAllClassSections(
  * 3) Raw string measurement records convert height_cm and weight_kg to numbers.
  * 4) Any unsynced local records are preserved rather than overwritten, while purged test records are ignored.
  */
+export function isPlaceholderSheetPassword(rawPassword: string | undefined | null): boolean {
+  const clean = String(rawPassword || '').trim();
+  if (!clean) return true;
+  if (/^CHANGE_[A-Z0-9_]*PASSWORD$/i.test(clean)) return true;
+  if (/^REDACTED$/i.test(clean) || /^\*+$/.test(clean)) return true;
+  return false;
+}
+
 export function normalizeSheetSyncPayload(
   payload: {
     students?: Array<Partial<StudentRecord> & Record<string, any>>;
@@ -850,10 +1038,51 @@ export function normalizeSheetSyncPayload(
     healthProfiles?: Array<Partial<HealthProfileRecord> & Record<string, any>>;
     users?: Array<Partial<AppUserRecord> & Record<string, any>>;
     classes?: string[];
+    medicines?: Array<Partial<MedicineInventoryRecord> & Record<string, any>>;
+    items?: Array<Partial<ItemInventoryRecord> & Record<string, any>>;
+    stockTransactions?: Array<Partial<StockTransactionRecord> & Record<string, any>>;
+    bills?: Array<Partial<BillRecord> & Record<string, any>>;
+    settings?: Partial<InfirmarySettings> | Array<{ setting_key?: string; setting_value?: string; key?: string; value?: string }>;
   },
   currentDb: NurseDatabase,
   nowIso: string = new Date().toISOString()
 ): NurseDatabase {
+  // Normalize Settings first so visits can derive shift_period accurately
+  let resolvedSettings: InfirmarySettings = {
+    school_hours_start: normalizeHHMM(
+      currentDb.settings?.school_hours_start,
+      DEFAULT_INFIRMARY_SETTINGS.school_hours_start
+    ),
+    school_hours_end: normalizeHHMM(
+      currentDb.settings?.school_hours_end,
+      DEFAULT_INFIRMARY_SETTINGS.school_hours_end
+    ),
+    updated_at: currentDb.settings?.updated_at,
+  };
+  if (Array.isArray(payload.settings)) {
+    for (const row of payload.settings) {
+      const k = String(row?.setting_key || row?.key || '').trim().toLowerCase();
+      const v = String(row?.setting_value || row?.value || '').trim();
+      if (k === 'school_hours_start' && v) {
+        resolvedSettings.school_hours_start = normalizeHHMM(v, resolvedSettings.school_hours_start);
+      } else if (k === 'school_hours_end' && v) {
+        resolvedSettings.school_hours_end = normalizeHHMM(v, resolvedSettings.school_hours_end);
+      }
+    }
+  } else if (payload.settings && typeof payload.settings === 'object') {
+    if (payload.settings.school_hours_start) {
+      resolvedSettings.school_hours_start = normalizeHHMM(
+        payload.settings.school_hours_start,
+        resolvedSettings.school_hours_start
+      );
+    }
+    if (payload.settings.school_hours_end) {
+      resolvedSettings.school_hours_end = normalizeHHMM(
+        payload.settings.school_hours_end,
+        resolvedSettings.school_hours_end
+      );
+    }
+  }
   const existingByIdentity = new Map<string, StudentRecord>();
   const existingBySectionRoll = new Map<string, StudentRecord>();
   const existingIds = new Set<string>();
@@ -1022,6 +1251,22 @@ export function normalizeSheetSyncPayload(
     );
     const resolvedRoll = stuRoll || (matchedStudent?.roll_number ? matchedStudent.roll_number.padStart(2, '0') : '');
 
+    const normalizedVisitDt = normalizeDatetimeString(
+      String(row?.visit_datetime || ''),
+      nowIso.slice(0, 16)
+    );
+    const rawShift = String(row?.shift_period || '').trim().toLowerCase();
+    const rawShiftOverridden =
+      row?.shift_overridden === true ||
+      String(row?.shift_overridden || '').trim().toLowerCase() === 'true';
+    const shiftPeriod: VisitShiftPeriod =
+      rawShift === 'night' || rawShift === 'school_hours'
+        ? rawShift
+        : classifyVisitShift(normalizedVisitDt, resolvedSettings);
+
+    const medQtyNum = Number(row?.medicine_qty);
+    const itemQtyNum = Number(row?.item_qty);
+
     normalizedRemoteVisits.push({
       visit_id: visitId,
       student_id: studentId,
@@ -1030,15 +1275,19 @@ export function normalizeSheetSyncPayload(
       class: stuSection,
       roll_number: resolvedRoll,
       roll_no: resolvedRoll,
-      visit_datetime: normalizeDatetimeString(
-        String(row?.visit_datetime || ''),
-        nowIso.slice(0, 16)
-      ),
+      visit_datetime: normalizedVisitDt,
+      shift_period: shiftPeriod,
+      shift_overridden: rawShiftOverridden,
       reason: String(row?.reason || '').trim(),
       observations: String(row?.observations || '').trim(),
       action_taken: String(row?.action_taken || '').trim(),
       medicine_status: medStatus,
       medicine_name: medName || (medStatus === 'none' ? 'None (No medicine given)' : ''),
+      medicine_id: String(row?.medicine_id || '').trim() || undefined,
+      medicine_qty: !Number.isNaN(medQtyNum) && medQtyNum > 0 ? medQtyNum : undefined,
+      item_id: String(row?.item_id || '').trim() || undefined,
+      item_name: String(row?.item_name || '').trim() || undefined,
+      item_qty: !Number.isNaN(itemQtyNum) && itemQtyNum > 0 ? itemQtyNum : undefined,
       dosage: String(row?.dosage || '').trim(),
       dosage_unit: String(row?.dosage_unit || '').trim(),
       route: String(row?.route || '').trim(),
@@ -1210,7 +1459,7 @@ export function normalizeSheetSyncPayload(
   rawUsers.forEach((row: any) => {
     const rawUsername = String(row?.username || '').trim();
     const rawPass = String(row?.password || '').trim();
-    if (!rawUsername || !rawPass) return;
+    if (!rawUsername || isPlaceholderSheetPassword(rawPass)) return;
     const lowerUser = rawUsername.toLowerCase();
     if (seenUsernames.has(lowerUser)) return;
     seenUsernames.add(lowerUser);
@@ -1235,11 +1484,162 @@ export function normalizeSheetSyncPayload(
     });
   });
 
-  const finalUsers = normalizedRemoteUsers.length > 0 ? normalizedRemoteUsers : (currentDb.users || []);
+  const existingValidUsers = (currentDb.users || []).filter(
+    (u) => !isPlaceholderSheetPassword(u.password)
+  );
+  let finalUsers: AppUserRecord[] = existingValidUsers;
+  if (normalizedRemoteUsers.length > 0) {
+    const remoteUserMap = new Map(
+      normalizedRemoteUsers.map((u) => [u.username.toLowerCase(), u])
+    );
+    const preservedExisting = existingValidUsers.filter(
+      (u) => !remoteUserMap.has(u.username.toLowerCase())
+    );
+    finalUsers = [...normalizedRemoteUsers, ...preservedExisting];
+  }
   const mergedClasses = getAllClassSections(finalStudents, [
     ...(Array.isArray(currentDb.classes) ? currentDb.classes : []),
     ...(Array.isArray(payload.classes) ? payload.classes : []),
   ]);
+
+  // Normalize & merge Medicines Inventory
+  const rawMedicines = Array.isArray(payload.medicines) ? payload.medicines : [];
+  const normalizedRemoteMedicines: MedicineInventoryRecord[] = [];
+  const seenRemoteMedIds = new Set<string>();
+  rawMedicines.forEach((row) => {
+    const id = String(row?.medicine_id || '').trim();
+    const name = String(row?.name || '').trim();
+    if (!id || !name || seenRemoteMedIds.has(id)) return;
+    seenRemoteMedIds.add(id);
+    normalizedRemoteMedicines.push({
+      medicine_id: id,
+      name,
+      category: String(row?.category || 'General').trim() || 'General',
+      form_strength: String(row?.form_strength || '').trim(),
+      unit: String(row?.unit || 'tablets').trim() || 'tablets',
+      batch_number: String(row?.batch_number || '').trim(),
+      expiry_date: row?.expiry_date ? normalizeDateOnlyString(String(row.expiry_date), '') : '',
+      current_stock: Math.max(0, Number(row?.current_stock) || 0),
+      min_stock_alert: Math.max(0, Number(row?.min_stock_alert) || 0),
+      notes: String(row?.notes || '').trim() || undefined,
+      updated_at: String(row?.updated_at || '').trim() || nowIso,
+    });
+  });
+  let finalMedicines: MedicineInventoryRecord[] = Array.isArray(currentDb.medicines)
+    ? currentDb.medicines
+    : [];
+  if (normalizedRemoteMedicines.length > 0) {
+    const remoteMap = new Map(normalizedRemoteMedicines.map((m) => [m.medicine_id, m]));
+    const localOnly = finalMedicines.filter((m) => !remoteMap.has(m.medicine_id));
+    finalMedicines = [...normalizedRemoteMedicines, ...localOnly];
+  }
+
+  // Normalize & merge Items Inventory
+  const rawItems = Array.isArray(payload.items) ? payload.items : [];
+  const normalizedRemoteItems: ItemInventoryRecord[] = [];
+  const seenRemoteItemIds = new Set<string>();
+  rawItems.forEach((row) => {
+    const id = String(row?.item_id || '').trim();
+    const name = String(row?.name || '').trim();
+    if (!id || !name || seenRemoteItemIds.has(id)) return;
+    seenRemoteItemIds.add(id);
+    normalizedRemoteItems.push({
+      item_id: id,
+      name,
+      category: String(row?.category || 'First Aid').trim() || 'First Aid',
+      unit: String(row?.unit || 'pcs').trim() || 'pcs',
+      current_stock: Math.max(0, Number(row?.current_stock) || 0),
+      min_stock_alert: Math.max(0, Number(row?.min_stock_alert) || 0),
+      notes: String(row?.notes || '').trim() || undefined,
+      updated_at: String(row?.updated_at || '').trim() || nowIso,
+    });
+  });
+  let finalItems: ItemInventoryRecord[] = Array.isArray(currentDb.items) ? currentDb.items : [];
+  if (normalizedRemoteItems.length > 0) {
+    const remoteMap = new Map(normalizedRemoteItems.map((it) => [it.item_id, it]));
+    const localOnly = finalItems.filter((it) => !remoteMap.has(it.item_id));
+    finalItems = [...normalizedRemoteItems, ...localOnly];
+  }
+
+  // Normalize & merge Stock Transactions
+  const rawTxns = Array.isArray(payload.stockTransactions) ? payload.stockTransactions : [];
+  const normalizedRemoteTxns: StockTransactionRecord[] = [];
+  const seenRemoteTxnIds = new Set<string>();
+  rawTxns.forEach((row) => {
+    const id = String(row?.txn_id || '').trim();
+    const targetId = String(row?.target_id || '').trim();
+    if (!id || !targetId || seenRemoteTxnIds.has(id)) return;
+    seenRemoteTxnIds.add(id);
+    const rawReason = String(row?.reason || 'adjustment').trim().toLowerCase();
+    const reason: StockTransactionReason =
+      rawReason === 'visit' || rawReason === 'bill_restock' || rawReason === 'menstrual'
+        ? rawReason
+        : 'adjustment';
+    const balNum = Number(row?.balance_after);
+    normalizedRemoteTxns.push({
+      txn_id: id,
+      target_type: String(row?.target_type || '').toLowerCase() === 'item' ? 'item' : 'medicine',
+      target_id: targetId,
+      target_name: String(row?.target_name || targetId).trim(),
+      change_qty: Number(row?.change_qty) || 0,
+      balance_after: !Number.isNaN(balNum) ? balNum : undefined,
+      reason,
+      reference_id: String(row?.reference_id || '').trim() || undefined,
+      notes: String(row?.notes || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || 'Staff').trim(),
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalTxns: StockTransactionRecord[] = Array.isArray(currentDb.stockTransactions)
+    ? currentDb.stockTransactions
+    : [];
+  if (normalizedRemoteTxns.length > 0) {
+    const remoteIds = new Set(normalizedRemoteTxns.map((t) => t.txn_id));
+    const localOnly = finalTxns.filter((t) => !remoteIds.has(t.txn_id));
+    finalTxns = [...localOnly, ...normalizedRemoteTxns];
+  }
+
+  // Normalize & merge Bills (preserving local fallback image_data_url when remote has none)
+  const rawBills = Array.isArray(payload.bills) ? payload.bills : [];
+  const localBillById = new Map((currentDb.bills || []).map((b) => [b.bill_id, b]));
+  const normalizedRemoteBills: BillRecord[] = [];
+  const seenRemoteBillIds = new Set<string>();
+  rawBills.forEach((row) => {
+    const id = String(row?.bill_id || '').trim();
+    const vendor = String(row?.vendor_name || '').trim();
+    if (!id || !vendor || seenRemoteBillIds.has(id)) return;
+    seenRemoteBillIds.add(id);
+    const rawCat = String(row?.category || 'Medicines').trim();
+    const category: BillCategory =
+      rawCat === 'Items' || rawCat === 'Equipment' || rawCat === 'Camp' || rawCat === 'Other'
+        ? rawCat
+        : 'Medicines';
+    const rawPay = String(row?.payment_status || 'Paid').trim();
+    const paymentStatus: BillPaymentStatus =
+      rawPay === 'Pending' || rawPay === 'Reimbursed' ? rawPay : 'Paid';
+    const prevLocal = localBillById.get(id);
+    normalizedRemoteBills.push({
+      bill_id: id,
+      bill_number: String(row?.bill_number || '').trim(),
+      vendor_name: vendor,
+      bill_date: normalizeDateOnlyString(String(row?.bill_date || ''), nowIso.slice(0, 10)),
+      category,
+      total_amount: Math.max(0, Number(row?.total_amount) || 0),
+      payment_status: paymentStatus,
+      notes: String(row?.notes || '').trim() || undefined,
+      drive_file_id: String(row?.drive_file_id || '').trim() || prevLocal?.drive_file_id || undefined,
+      image_url: String(row?.image_url || '').trim() || prevLocal?.image_url || undefined,
+      image_data_url: prevLocal?.image_data_url,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalBills: BillRecord[] = Array.isArray(currentDb.bills) ? currentDb.bills : [];
+  if (normalizedRemoteBills.length > 0) {
+    const remoteIds = new Set(normalizedRemoteBills.map((b) => b.bill_id));
+    const localOnly = finalBills.filter((b) => !remoteIds.has(b.bill_id));
+    finalBills = [...localOnly, ...normalizedRemoteBills];
+  }
 
   return {
     students: finalStudents,
@@ -1249,18 +1649,27 @@ export function normalizeSheetSyncPayload(
     dispatches: currentDb.dispatches,
     users: finalUsers,
     classes: mergedClasses,
+    medicines: finalMedicines,
+    items: finalItems,
+    stockTransactions: finalTxns,
+    bills: finalBills,
+    settings: resolvedSettings,
   };
 }
 
 /**
  * Generates RFC 4180 compliant CSV string with UTF-8 BOM for Excel/Google Sheets compatibility
  */
-export function generateVisitsCSV(entries: DailyLogEntry[]): string {
+export function generateVisitsCSV(
+  entries: DailyLogEntry[],
+  settings?: Partial<InfirmarySettings> | null
+): string {
   const headers = [
     'Sr No',
     'Visit ID',
     'Date',
     'Time',
+    'Shift',
     'Student Name',
     'Roll No',
     'Class',
@@ -1272,6 +1681,7 @@ export function generateVisitsCSV(entries: DailyLogEntry[]): string {
     'Dosage',
     'Route',
     'Administration Time',
+    'Item Used',
     'Recorded By',
   ];
 
@@ -1292,12 +1702,17 @@ export function generateVisitsCSV(entries: DailyLogEntry[]): string {
     const dt = v.visit_datetime || '';
     const datePart = dt.length >= 10 ? dt.slice(0, 10) : '';
     const timePart = formatTimeFromDatetime(dt);
+    const shiftLabel = formatShiftPeriodLabel(resolveVisitShiftPeriod(v, settings));
+    const itemUsed = v.item_name
+      ? `${v.item_name}${v.item_qty ? ` (x${v.item_qty})` : ''}`
+      : '';
 
     return [
       idx + 1,
       v.visit_id,
       datePart,
       timePart,
+      shiftLabel,
       stu.full_name,
       stu.roll_number,
       stu.section,
@@ -1313,6 +1728,7 @@ export function generateVisitsCSV(entries: DailyLogEntry[]): string {
       v.dosage ? `${v.dosage} ${v.dosage_unit || ''}`.trim() : '',
       v.route,
       v.administration_time,
+      itemUsed,
       v.recorded_by,
     ].map(escapeCSV).join(',');
   });

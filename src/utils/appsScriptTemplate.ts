@@ -1,38 +1,45 @@
 import type { NurseDatabase } from './nurseLogic';
 
-export const GOOGLE_APPS_SCRIPT_CODE = `/**
+export const GOOGLE_APPS_SCRIPT_CODE = String.raw`/**
  * SARASWATI VIDYA ACADEMY — SCHOOL INFIRMARY BACKEND (Code.gs)
- * Google Sheets Database + Google Apps Script Backend
+ * Google Sheets Database + Google Drive Documents + Google Apps Script Backend
  *
  * Spreadsheet Tabs & Exact Columns:
  * 1. Students:
  *    student_id, full_name, section, roll_number, active_status, created_at, updated_at
  * 2. Visits:
- *    visit_id, student_id, student_name, class, roll_no, visit_datetime, reason,
- *    observations, action_taken, medicine_name, dosage, dosage_unit, route,
- *    administration_time, notes, recorded_by, created_at
+ *    visit_id, student_id, student_name, class, roll_no, visit_datetime, shift_period,
+ *    shift_overridden, reason, observations, action_taken, medicine_name, dosage,
+ *    dosage_unit, route, administration_time, medicine_id, medicine_qty, item_id,
+ *    item_name, item_qty, notes, recorded_by, created_at
  * 3. Measurements:
  *    measurement_id, student_id, measurement_date, height_cm, weight_kg, notes, updated_at
  * 4. Health Profiles:
  *    health_record_id, student_id, condition_or_note, status, date_recorded, last_reviewed
  * 5. Users (Staff login accounts — Admin only):
  *    username, password, role, display_name, badge_title, active_status
+ * 6. Medicines (Infirmary Medicines Inventory):
+ *    medicine_id, name, category, unit, stock_qty, min_stock_threshold, expiry_date,
+ *    batch_number, notes, updated_at
+ * 7. Items (Infirmary Supplies & Equipment Inventory):
+ *    item_id, name, category, unit, stock_qty, min_stock_threshold, location, notes, updated_at
+ * 8. Stock Transactions (Inventory Audit Trail):
+ *    txn_id, entity_type, entity_id, entity_name, delta, balance_after, reason,
+ *    ref_id, recorded_by, created_at
+ * 9. Bills (Infirmary Bills & Receipts — links to Google Drive photos):
+ *    bill_id, bill_number, vendor_name, bill_date, category, total_amount, payment_status,
+ *    drive_file_id, image_url, notes, recorded_by, created_at
+ * 10. Settings (Infirmary Configuration, e.g. School Hours Start & End):
+ *    key, value, updated_at
  *
  * Notes:
  * - Classes use section names ONLY (e.g. Sparkle, Twinkle, Topaz, Sapphire) without grade numbers.
- * - Supports Admin user management (upsertUser, deleteUser), student edits (updateStudent),
- *   class renames (renameClass), and full database backup pushes (syncFullDatabase).
- * - SECURITY: Set API_SECRET below to a long random string and set the same APPS_SCRIPT_SECRET
- *   in your web server environment so nobody can access this sheet URL directly.
+ * - Clinical & operational records are stored in plain readable text.
+ * - Bill photos are saved to a Google Drive folder named "SVA Infirmary Documents"
+ *   and linked via drive_file_id + image_url in the Bills tab.
  */
 
-// Optional shared secret (recommended when deployed online). Leave '' only during initial setup.
-const API_SECRET = '';
-
-function isAuthorizedRequest(providedSecret) {
-  if (!API_SECRET) return true;
-  return String(providedSecret || '') === String(API_SECRET);
-}
+const DRIVE_DOCS_FOLDER_NAME = 'SVA Infirmary Documents';
 
 const SHEET_SCHEMAS = {
   'Students': [
@@ -41,9 +48,10 @@ const SHEET_SCHEMAS = {
   ],
   'Visits': [
     'visit_id', 'student_id', 'student_name', 'class', 'roll_no',
-    'visit_datetime', 'reason', 'observations',
+    'visit_datetime', 'shift_period', 'shift_overridden', 'reason', 'observations',
     'action_taken', 'medicine_name', 'dosage', 'dosage_unit', 'route',
-    'administration_time', 'notes', 'recorded_by', 'created_at'
+    'administration_time', 'medicine_id', 'medicine_qty', 'item_id', 'item_name',
+    'item_qty', 'notes', 'recorded_by', 'created_at'
   ],
   'Measurements': [
     'measurement_id', 'student_id', 'measurement_date',
@@ -55,11 +63,32 @@ const SHEET_SCHEMAS = {
   ],
   'Users': [
     'username', 'password', 'role', 'display_name', 'badge_title', 'active_status'
+  ],
+  'Medicines': [
+    'medicine_id', 'name', 'category', 'form_strength', 'unit',
+    'batch_number', 'expiry_date', 'current_stock', 'min_stock_alert', 'notes', 'updated_at'
+  ],
+  'Items': [
+    'item_id', 'name', 'category', 'unit', 'current_stock',
+    'min_stock_alert', 'notes', 'updated_at'
+  ],
+  'Stock Transactions': [
+    'txn_id', 'target_type', 'target_id', 'target_name', 'change_qty',
+    'balance_after', 'reason', 'reference_id', 'notes', 'recorded_by', 'created_at'
+  ],
+  'Bills': [
+    'bill_id', 'bill_number', 'vendor_name', 'bill_date', 'category',
+    'total_amount', 'payment_status', 'drive_file_id', 'image_url',
+    'notes', 'recorded_by', 'created_at'
+  ],
+  'Settings': [
+    'key', 'value', 'updated_at'
   ]
 };
 
 /**
- * Run this function once in the Apps Script Editor to create and format all 5 tabs.
+ * Run this function once in the Apps Script Editor to create and format all 10 tabs
+ * and authorize Google Drive access for bill photo uploads.
  */
 function setupSpreadsheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -73,31 +102,17 @@ function setupSpreadsheet() {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
       sheet.setFrozenRows(1);
-
-      // Seed placeholder starter accounts into Users tab — change passwords immediately after setup
-      if (tabName === 'Users') {
-        const defaultUsers = [
-          ['admin', 'CHANGE_ADMIN_PASSWORD', 'admin', 'Infirmary Administrator', 'System Admin', 'Active'],
-          ['nurse', 'CHANGE_NURSE_PASSWORD', 'nurse', 'School Nurse', 'Infirmary Nurse', 'Active'],
-          ['warden', 'CHANGE_WARDEN_PASSWORD', 'warden', 'Hostel Warden', 'Hostel Warden', 'Active']
-        ];
-        sheet.getRange(2, 1, defaultUsers.length, headers.length).setValues(defaultUsers);
-      }
     }
   });
-  return { status: 'ok', message: 'All 5 Infirmary tabs initialized.' };
+  return { status: 'ok', message: 'All 10 Infirmary tabs initialized.' };
 }
 
 /**
- * GET endpoint: returns all records from the 5 sheets.
- * Automatically backfills student IDs and student name/class/roll columns in Visits.
+ * GET endpoint: returns all records from all Infirmary tabs.
+ * Automatically backfills student IDs and ensures Visits columns are up to date.
  */
 function doGet(e) {
   try {
-    const providedSecret = e && e.parameter ? e.parameter.secret : '';
-    if (!isAuthorizedRequest(providedSecret)) {
-      return jsonError('Unauthorized request.');
-    }
     setupSpreadsheet();
     ensureStudentIdsInSheet();
     ensureVisitColumnsInSheet();
@@ -107,7 +122,12 @@ function doGet(e) {
       visits: readSheetObjects('Visits'),
       measurements: readSheetObjects('Measurements'),
       healthProfiles: readSheetObjects('Health Profiles'),
-      users: readSheetObjects('Users')
+      users: readSheetObjects('Users'),
+      medicines: readSheetObjects('Medicines'),
+      items: readSheetObjects('Items'),
+      stockTransactions: readSheetObjects('Stock Transactions'),
+      bills: readSheetObjects('Bills'),
+      settings: readSettingsObject()
     };
     return ContentService
       .createTextOutput(JSON.stringify(data))
@@ -115,6 +135,49 @@ function doGet(e) {
   } catch (err) {
     return jsonError(err.message || 'Failed to read spreadsheet');
   }
+}
+
+function readSettingsObject() {
+  const rows = readSheetObjects('Settings');
+  const map = {};
+  rows.forEach(function(r) {
+    const k = String(r.key || '').trim();
+    if (k) {
+      map[k] = String(r.value || '').trim();
+      if (r.updated_at && (!map.updated_at || String(r.updated_at) > map.updated_at)) {
+        map.updated_at = String(r.updated_at);
+      }
+    }
+  });
+  return {
+    school_hours_start: map.school_hours_start || '07:30',
+    school_hours_end: map.school_hours_end || '15:30',
+    updated_at: map.updated_at || ''
+  };
+}
+
+function upsertSettingKey(key, value, updatedAt) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Settings');
+  if (!sheet) return;
+  const ts = updatedAt || new Date().toISOString();
+  if (sheet.getLastRow() >= 2) {
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+    const headers = values[0].map(function(h) { return String(h || '').trim().toLowerCase(); });
+    const keyIdx = headers.indexOf('key');
+    const valIdx = headers.indexOf('value');
+    const updIdx = headers.indexOf('updated_at');
+    for (let r = 1; r < values.length; r++) {
+      if (String(values[r][keyIdx] || '').trim() === key) {
+        if (valIdx !== -1) values[r][valIdx] = value;
+        if (updIdx !== -1) values[r][updIdx] = ts;
+        range.setValues(values);
+        return;
+      }
+    }
+  }
+  appendRowBySchema('Settings', { key: key, value: value, updated_at: ts });
 }
 
 /**
@@ -214,17 +277,17 @@ function sanitizeSectionNameOnly(raw) {
 }
 
 /**
- * Automatically upgrades existing Visits sheet by inserting student_name, class, roll_no
- * columns if missing and backfills them from the Students tab.
+ * Automatically upgrades existing Visits sheet with student_name/class/roll_no
+ * and appends any newly added Phase 1 columns (shift_period, inventory linkage) safely.
  */
 function ensureVisitColumnsInSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Visits');
   if (!sheet || sheet.getLastRow() < 1) return;
 
-  const lastCol = Math.max(1, sheet.getLastColumn());
-  const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const headersLower = headerRow.map(function(h) {
+  let lastCol = Math.max(1, sheet.getLastColumn());
+  let headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  let headersLower = headerRow.map(function(h) {
     return String(h || '').trim().toLowerCase();
   });
 
@@ -246,7 +309,6 @@ function ensureVisitColumnsInSheet() {
     sheet.getRange(1, insertAfterCol + 1, 1, 3).setValues([['student_name', 'class', 'roll_no']]);
     sheet.getRange(1, insertAfterCol + 1, 1, 3).setFontWeight('bold');
 
-    // Backfill any existing visit rows using the Students tab
     const studentsSheet = ss.getSheetByName('Students');
     if (studentsSheet && studentsSheet.getLastRow() >= 2 && sheet.getLastRow() >= 2) {
       const stuValues = studentsSheet.getDataRange().getValues();
@@ -278,6 +340,25 @@ function ensureVisitColumnsInSheet() {
       }
       sheet.getRange(2, insertAfterCol + 1, numRows, 3).setValues(backfillData);
     }
+
+    lastCol = Math.max(1, sheet.getLastColumn());
+    headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    headersLower = headerRow.map(function(h) {
+      return String(h || '').trim().toLowerCase();
+    });
+  }
+
+  // Safely append any missing Phase 1 optional columns at the right end of Visits
+  const extraVisitCols = [
+    'shift_period', 'shift_overridden', 'medicine_id', 'medicine_qty',
+    'item_id', 'item_name', 'item_qty'
+  ];
+  const missingCols = extraVisitCols.filter(function(col) {
+    return headersLower.indexOf(col) === -1;
+  });
+  if (missingCols.length > 0) {
+    sheet.getRange(1, lastCol + 1, 1, missingCols.length).setValues([missingCols]);
+    sheet.getRange(1, lastCol + 1, 1, missingCols.length).setFontWeight('bold');
   }
 }
 
@@ -310,21 +391,90 @@ function lookupStudentInfo(studentId) {
 }
 
 /**
- * POST endpoint: handles createVisit, addMeasurement, addHealthProfile, createStudent,
- * updateStudent, renameClass, upsertUser, deleteUser, syncStudentsBatch, and syncFullDatabase.
+ * Gets or creates the Google Drive folder used for storing uploaded bill/OPD photos.
+ */
+function getOrCreateDocumentsFolder() {
+  const folders = DriveApp.getFoldersByName(DRIVE_DOCS_FOLDER_NAME);
+  if (folders.hasNext()) {
+    return folders.next();
+  }
+  return DriveApp.createFolder(DRIVE_DOCS_FOLDER_NAME);
+}
+
+/**
+ * Upserts a single record by primary ID column on any sheet tab.
+ */
+function upsertRowById(tabName, idField, recordObj) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(tabName);
+  if (!sheet || !recordObj || !recordObj[idField]) return false;
+
+  const targetId = String(recordObj[idField]).trim();
+  if (sheet.getLastRow() >= 2) {
+    const range = sheet.getDataRange();
+    const values = range.getValues();
+    const headers = values[0];
+    const headersLower = headers.map(function(h) {
+      return String(h || '').trim().toLowerCase().replace(/[\s._-]+/g, '_');
+    });
+    const idIdx = headersLower.indexOf(idField);
+    if (idIdx !== -1) {
+      for (let r = 1; r < values.length; r++) {
+        if (String(values[r][idIdx] || '').trim() === targetId) {
+          for (let c = 0; c < headers.length; c++) {
+            const rawKey = String(headers[c] || '').trim();
+            const key = headersLower[c];
+            if (recordObj[rawKey] !== undefined && recordObj[rawKey] !== null) {
+              values[r][c] = recordObj[rawKey];
+            } else if (recordObj[key] !== undefined && recordObj[key] !== null) {
+              values[r][c] = recordObj[key];
+            }
+          }
+          range.setValues(values);
+          return true;
+        }
+      }
+    }
+  }
+  appendRowBySchema(tabName, recordObj);
+  return false;
+}
+
+/**
+ * Deletes matching row(s) by primary ID column on any sheet tab.
+ */
+function deleteRowById(tabName, idField, targetIdVal) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(tabName);
+  const targetId = String(targetIdVal || '').trim();
+  if (!sheet || !targetId || sheet.getLastRow() < 2) return false;
+  const values = sheet.getDataRange().getValues();
+  const headersLower = values[0].map(function(h) {
+    return String(h || '').trim().toLowerCase().replace(/[\s._-]+/g, '_');
+  });
+  const idIdx = headersLower.indexOf(idField);
+  if (idIdx === -1) return false;
+  for (let r = values.length - 1; r >= 1; r--) {
+    if (String(values[r][idIdx] || '').trim() === targetId) {
+      sheet.deleteRow(r + 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * POST endpoint: handles clinical, inventory, bills, settings, Drive upload, and backup sync actions.
  * Uses LockService to safely handle simultaneous submissions without overwriting rows.
  */
 function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(15000);
     setupSpreadsheet();
     ensureVisitColumnsInSheet();
 
     const payload = JSON.parse(e.postData.contents || '{}');
-    if (!isAuthorizedRequest(payload.secret)) {
-      return jsonError('Unauthorized request.');
-    }
     const action = payload.action;
 
     if (action === 'createVisit') {
@@ -340,7 +490,6 @@ function doPost(e) {
         return jsonSuccess({ visit_id: v.visit_id, deduplicated: true });
       }
 
-      // Automatically fill student_name, class, roll_no if missing
       if (!v.student_name || !v.class || !v.roll_no) {
         const sInfo = lookupStudentInfo(v.student_id);
         if (!v.student_name) v.student_name = sInfo.name;
@@ -419,7 +568,6 @@ function doPost(e) {
         appendRowBySchema('Students', s);
       }
 
-      // Also sync student_name, class/section, and roll_no in Visits tab
       const visitsSheet = ss.getSheetByName('Visits');
       if (visitsSheet && visitsSheet.getLastRow() >= 2) {
         const vRange = visitsSheet.getDataRange();
@@ -470,7 +618,6 @@ function doPost(e) {
         }
       }
 
-      // Also update Visits sheet class/section column
       const visitsSheet = ss.getSheetByName('Visits');
       if (visitsSheet && visitsSheet.getLastRow() >= 2) {
         const vRange = visitsSheet.getDataRange();
@@ -545,6 +692,104 @@ function doPost(e) {
       return jsonSuccess({ username: targetUsername, deleted: false });
     }
 
+    // ---- PHASE 1: SETTINGS, INVENTORY & BILLS + GOOGLE DRIVE UPLOAD ----
+    if (action === 'updateSettings') {
+      const settings = payload.settings || {};
+      const ts = settings.updated_at || new Date().toISOString();
+      if (settings.school_hours_start) {
+        upsertSettingKey('school_hours_start', String(settings.school_hours_start), ts);
+      }
+      if (settings.school_hours_end) {
+        upsertSettingKey('school_hours_end', String(settings.school_hours_end), ts);
+      }
+      return jsonSuccess({ settings: readSettingsObject() });
+    }
+
+    if (action === 'upsertMedicine') {
+      const med = payload.medicine;
+      if (!med || !med.medicine_id || !med.name) {
+        return jsonError('Missing required medicine fields.');
+      }
+      const updated = upsertRowById('Medicines', 'medicine_id', med);
+      return jsonSuccess({ medicine_id: med.medicine_id, updated: updated });
+    }
+
+    if (action === 'deleteMedicine') {
+      const deleted = deleteRowById('Medicines', 'medicine_id', payload.medicine_id);
+      return jsonSuccess({ medicine_id: payload.medicine_id, deleted: deleted });
+    }
+
+    if (action === 'upsertItem') {
+      const item = payload.item;
+      if (!item || !item.item_id || !item.name) {
+        return jsonError('Missing required item fields.');
+      }
+      const updated = upsertRowById('Items', 'item_id', item);
+      return jsonSuccess({ item_id: item.item_id, updated: updated });
+    }
+
+    if (action === 'deleteItem') {
+      const deleted = deleteRowById('Items', 'item_id', payload.item_id);
+      return jsonSuccess({ item_id: payload.item_id, deleted: deleted });
+    }
+
+    if (action === 'addStockTransaction') {
+      const txn = payload.transaction;
+      if (!txn || !txn.txn_id || !txn.target_id) {
+        return jsonError('Missing required stock transaction fields.');
+      }
+      appendRowBySchema('Stock Transactions', txn);
+      return jsonSuccess({ txn_id: txn.txn_id });
+    }
+
+    if (action === 'uploadBillImage') {
+      let mimeType = String(payload.mimeType || 'image/jpeg').trim();
+      let base64Body = String(payload.base64Data || '').trim();
+      if (!base64Body && payload.image_data_url) {
+        const rawDataUrl = String(payload.image_data_url || '').trim();
+        const match = rawDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Body = match[2];
+        } else {
+          base64Body = rawDataUrl;
+        }
+      }
+      if (!base64Body) {
+        return jsonError('Missing base64Data or image_data_url for upload.');
+      }
+      const ext = mimeType.indexOf('png') !== -1 ? 'png' : 'jpg';
+      const safeName = String(payload.filename || ('bill_' + new Date().getTime() + '.' + ext))
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+      const bytes = Utilities.base64Decode(base64Body);
+      const blob = Utilities.newBlob(bytes, mimeType, safeName);
+      const folder = getOrCreateDocumentsFolder();
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      const fileId = file.getId();
+      const viewUrl = 'https://drive.google.com/uc?export=view&id=' + fileId;
+      return jsonSuccess({
+        drive_file_id: fileId,
+        image_url: viewUrl,
+        web_view_url: file.getUrl()
+      });
+    }
+
+    if (action === 'upsertBill') {
+      const bill = payload.bill;
+      if (!bill || !bill.bill_id || !bill.vendor_name) {
+        return jsonError('Missing required bill fields.');
+      }
+      const updated = upsertRowById('Bills', 'bill_id', bill);
+      return jsonSuccess({ bill_id: bill.bill_id, updated: updated });
+    }
+
+    if (action === 'deleteBill') {
+      const deleted = deleteRowById('Bills', 'bill_id', payload.bill_id);
+      return jsonSuccess({ bill_id: payload.bill_id, deleted: deleted });
+    }
+
     if (action === 'syncStudentsBatch') {
       const students = payload.students;
       if (!Array.isArray(students) || students.length === 0) {
@@ -571,12 +816,37 @@ function doPost(e) {
       const addedUsers = Array.isArray(db.users)
         ? batchAppendUniqueRows('Users', 'username', db.users)
         : 0;
+      const addedMedicines = Array.isArray(db.medicines)
+        ? batchAppendUniqueRows('Medicines', 'medicine_id', db.medicines)
+        : 0;
+      const addedItems = Array.isArray(db.items)
+        ? batchAppendUniqueRows('Items', 'item_id', db.items)
+        : 0;
+      const addedStockTransactions = Array.isArray(db.stockTransactions)
+        ? batchAppendUniqueRows('Stock Transactions', 'txn_id', db.stockTransactions)
+        : 0;
+      const addedBills = Array.isArray(db.bills)
+        ? batchAppendUniqueRows('Bills', 'bill_id', db.bills)
+        : 0;
+      if (db.settings) {
+        const ts = db.settings.updated_at || new Date().toISOString();
+        if (db.settings.school_hours_start) {
+          upsertSettingKey('school_hours_start', String(db.settings.school_hours_start), ts);
+        }
+        if (db.settings.school_hours_end) {
+          upsertSettingKey('school_hours_end', String(db.settings.school_hours_end), ts);
+        }
+      }
       return jsonSuccess({
         addedStudents: addedStudents,
         addedVisits: addedVisits,
         addedMeasurements: addedMeasurements,
         addedProfiles: addedProfiles,
-        addedUsers: addedUsers
+        addedUsers: addedUsers,
+        addedMedicines: addedMedicines,
+        addedItems: addedItems,
+        addedStockTransactions: addedStockTransactions,
+        addedBills: addedBills
       });
     }
 
@@ -607,7 +877,7 @@ function batchAppendUniqueRows(tabName, idField, records) {
         if (rec[rawKey] !== undefined && rec[rawKey] !== null) return rec[rawKey];
         if (rec[key] !== undefined && rec[key] !== null) return rec[key];
         if (key === 'student_name' || key === 'full_name' || key === 'name') {
-          return rec.student_name || rec.full_name || '';
+          return rec.student_name || rec.full_name || rec.name || '';
         }
         if (key === 'class' || key === 'section') {
           return rec.class || rec.section || '';
@@ -658,9 +928,8 @@ function appendRowBySchema(tabName, recordObj) {
     if (recordObj[key] !== undefined && recordObj[key] !== null) {
       return recordObj[key];
     }
-    // Field aliases
     if (key === 'student_name' || key === 'full_name' || key === 'name') {
-      return recordObj.student_name || recordObj.full_name || '';
+      return recordObj.student_name || recordObj.full_name || recordObj.name || '';
     }
     if (key === 'class' || key === 'section') {
       return recordObj.class || recordObj.section || '';

@@ -6,11 +6,18 @@ import type {
   VisitRecord,
   MeasurementRecord,
   HealthProfileRecord,
+  MedicineInventoryRecord,
+  ItemInventoryRecord,
+  BillRecord,
+  InfirmarySettings,
 } from './src/utils/nurseLogic.ts';
 import {
   extractDatePart,
   formatTimeFromDatetime,
   formatMedicineDisplay,
+  resolveVisitShiftPeriod,
+  formatShiftPeriodLabel,
+  getStockStatus,
 } from './src/utils/nurseLogic.ts';
 
 const officeCrypto =
@@ -25,6 +32,9 @@ export type ClinicalExcelTab =
   | 'Visits'
   | 'Measurements'
   | 'Health Profiles'
+  | 'Medicines'
+  | 'Items'
+  | 'Bills'
   | 'All';
 
 export const ALLOWED_EXCEL_TABS = new Set<ClinicalExcelTab>([
@@ -32,6 +42,9 @@ export const ALLOWED_EXCEL_TABS = new Set<ClinicalExcelTab>([
   'Visits',
   'Measurements',
   'Health Profiles',
+  'Medicines',
+  'Items',
+  'Bills',
   'All',
 ]);
 
@@ -235,7 +248,8 @@ function addStudentsWorksheet(workbook: ExcelJS.Workbook, students: StudentRecor
 function addVisitsWorksheet(
   workbook: ExcelJS.Workbook,
   visits: VisitRecord[],
-  studentMap: Map<string, StudentRecord>
+  studentMap: Map<string, StudentRecord>,
+  settings?: InfirmarySettings
 ): void {
   const sorted = [...visits].sort((a, b) => {
     const cmp = (b.visit_datetime || '').localeCompare(a.visit_datetime || '');
@@ -248,6 +262,7 @@ function addVisitsWorksheet(
     { header: 'Visit ID', key: 'visit_id', width: 16, alignment: { horizontal: 'center' as const } },
     { header: 'Date', key: 'date', width: 13, alignment: { horizontal: 'center' as const } },
     { header: 'Time', key: 'time', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Shift', key: 'shift', width: 18, alignment: { horizontal: 'center' as const } },
     { header: 'Student Name', key: 'student_name', width: 28 },
     { header: 'Class', key: 'section', width: 14, alignment: { horizontal: 'center' as const } },
     { header: 'Roll No', key: 'roll_no', width: 10, alignment: { horizontal: 'center' as const } },
@@ -255,6 +270,7 @@ function addVisitsWorksheet(
     { header: 'Observations / Vitals', key: 'observations', width: 28 },
     { header: 'Care / Action Taken', key: 'action_taken', width: 30 },
     { header: 'Medicine & Dosage', key: 'medicine', width: 30 },
+    { header: 'Item Used', key: 'item_used', width: 22 },
     { header: 'Notes', key: 'notes', width: 24 },
     { header: 'Recorded By', key: 'recorded_by', width: 20 },
   ];
@@ -262,11 +278,16 @@ function addVisitsWorksheet(
   const ws = setupStyledSheet(workbook, 'Visits', 'Infirmary Visit Log', sorted.length, columns);
   sorted.forEach((v, idx) => {
     const stu = studentMap.get(v.student_id);
+    const shiftLabel = formatShiftPeriodLabel(resolveVisitShiftPeriod(v, settings));
+    const itemUsed = v.item_name
+      ? `${v.item_name}${v.item_qty ? ` (x${v.item_qty})` : ''}`
+      : '-';
     const row = ws.addRow({
       sr: idx + 1,
       visit_id: sanitizeExcelText(v.visit_id),
       date: extractDatePart(v.visit_datetime),
       time: formatTimeFromDatetime(v.visit_datetime),
+      shift: sanitizeExcelText(shiftLabel),
       student_name: sanitizeExcelText(v.student_name || stu?.full_name || 'Unknown'),
       section: sanitizeExcelText(v.class || v.section || stu?.section || '-'),
       roll_no: sanitizeExcelText(v.roll_no || v.roll_number || stu?.roll_number || '-'),
@@ -274,6 +295,7 @@ function addVisitsWorksheet(
       observations: sanitizeExcelText(v.observations || '-'),
       action_taken: sanitizeExcelText(v.action_taken),
       medicine: sanitizeExcelText(formatMedicineDisplay(v)),
+      item_used: sanitizeExcelText(itemUsed),
       notes: sanitizeExcelText(v.notes || '-'),
       recorded_by: sanitizeExcelText(v.recorded_by || 'Staff on Duty'),
     });
@@ -393,6 +415,118 @@ function addHealthProfilesWorksheet(
   });
 }
 
+function addMedicinesWorksheet(
+  workbook: ExcelJS.Workbook,
+  medicines: MedicineInventoryRecord[]
+): void {
+  const sorted = [...medicines].sort((a, b) => a.name.localeCompare(b.name));
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Medicine ID', key: 'medicine_id', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Medicine Name', key: 'name', width: 28 },
+    { header: 'Category', key: 'category', width: 16 },
+    { header: 'Form & Strength', key: 'form_strength', width: 20 },
+    { header: 'Batch No.', key: 'batch_number', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Expiry Date', key: 'expiry_date', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Current Stock', key: 'current_stock', width: 14, alignment: { horizontal: 'right' as const } },
+    { header: 'Unit', key: 'unit', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Min Alert', key: 'min_stock_alert', width: 12, alignment: { horizontal: 'right' as const } },
+    { header: 'Stock Status', key: 'status', width: 14, alignment: { horizontal: 'center' as const } },
+  ];
+
+  const ws = setupStyledSheet(workbook, 'Medicines', 'Medicines Inventory', sorted.length, columns);
+  sorted.forEach((m, idx) => {
+    const st = getStockStatus(m.current_stock, m.min_stock_alert);
+    const statusLabel = st === 'out' ? 'Out of Stock' : st === 'low' ? 'Low Stock' : 'In Stock';
+    const row = ws.addRow({
+      sr: idx + 1,
+      medicine_id: sanitizeExcelText(m.medicine_id),
+      name: sanitizeExcelText(m.name),
+      category: sanitizeExcelText(m.category || 'General'),
+      form_strength: sanitizeExcelText(m.form_strength || '-'),
+      batch_number: sanitizeExcelText(m.batch_number || '-'),
+      expiry_date: m.expiry_date ? extractDatePart(m.expiry_date) : '-',
+      current_stock: Number(m.current_stock) || 0,
+      unit: sanitizeExcelText(m.unit || 'tablets'),
+      min_stock_alert: Number(m.min_stock_alert) || 0,
+      status: statusLabel,
+    });
+    styleDataRow(row, idx, columns);
+  });
+}
+
+function addItemsWorksheet(
+  workbook: ExcelJS.Workbook,
+  items: ItemInventoryRecord[]
+): void {
+  const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Item ID', key: 'item_id', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Item Name', key: 'name', width: 30 },
+    { header: 'Category', key: 'category', width: 18 },
+    { header: 'Current Stock', key: 'current_stock', width: 14, alignment: { horizontal: 'right' as const } },
+    { header: 'Unit', key: 'unit', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Min Alert', key: 'min_stock_alert', width: 12, alignment: { horizontal: 'right' as const } },
+    { header: 'Stock Status', key: 'status', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Notes', key: 'notes', width: 32 },
+  ];
+
+  const ws = setupStyledSheet(workbook, 'Items', 'Infirmary Supplies & Items Inventory', sorted.length, columns);
+  sorted.forEach((it, idx) => {
+    const st = getStockStatus(it.current_stock, it.min_stock_alert);
+    const statusLabel = st === 'out' ? 'Out of Stock' : st === 'low' ? 'Low Stock' : 'In Stock';
+    const row = ws.addRow({
+      sr: idx + 1,
+      item_id: sanitizeExcelText(it.item_id),
+      name: sanitizeExcelText(it.name),
+      category: sanitizeExcelText(it.category || 'First Aid'),
+      current_stock: Number(it.current_stock) || 0,
+      unit: sanitizeExcelText(it.unit || 'pcs'),
+      min_stock_alert: Number(it.min_stock_alert) || 0,
+      status: statusLabel,
+      notes: sanitizeExcelText(it.notes || '-'),
+    });
+    styleDataRow(row, idx, columns);
+  });
+}
+
+function addBillsWorksheet(
+  workbook: ExcelJS.Workbook,
+  bills: BillRecord[]
+): void {
+  const sorted = [...bills].sort((a, b) => (b.bill_date || '').localeCompare(a.bill_date || ''));
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Bill ID', key: 'bill_id', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Bill Date', key: 'bill_date', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Invoice / Bill No.', key: 'bill_number', width: 18 },
+    { header: 'Vendor / Pharmacy', key: 'vendor_name', width: 28 },
+    { header: 'Category', key: 'category', width: 15, alignment: { horizontal: 'center' as const } },
+    { header: 'Total Amount (INR)', key: 'total_amount', width: 18, alignment: { horizontal: 'right' as const } },
+    { header: 'Payment Status', key: 'payment_status', width: 15, alignment: { horizontal: 'center' as const } },
+    { header: 'Bill Photo Link', key: 'image_url', width: 34 },
+    { header: 'Notes', key: 'notes', width: 28 },
+  ];
+
+  const ws = setupStyledSheet(workbook, 'Bills', 'Infirmary Bills & Pharmacy Receipts', sorted.length, columns);
+  sorted.forEach((b, idx) => {
+    const row = ws.addRow({
+      sr: idx + 1,
+      bill_id: sanitizeExcelText(b.bill_id),
+      bill_date: extractDatePart(b.bill_date),
+      bill_number: sanitizeExcelText(b.bill_number || '-'),
+      vendor_name: sanitizeExcelText(b.vendor_name),
+      category: sanitizeExcelText(b.category),
+      total_amount: Number(b.total_amount) || 0,
+      payment_status: sanitizeExcelText(b.payment_status),
+      image_url: sanitizeExcelText(b.image_url || (b.image_data_url ? 'Attached in App' : '-')),
+      notes: sanitizeExcelText(b.notes || '-'),
+    });
+    styleDataRow(row, idx, columns);
+  });
+}
+
 export async function generateEncryptedExcelWorkbook(
   db: NurseDatabase,
   tab: ClinicalExcelTab,
@@ -409,13 +543,22 @@ export async function generateEncryptedExcelWorkbook(
     addStudentsWorksheet(workbook, db.students || []);
   }
   if (tab === 'Visits' || tab === 'All') {
-    addVisitsWorksheet(workbook, db.visits || [], studentMap);
+    addVisitsWorksheet(workbook, db.visits || [], studentMap, db.settings);
   }
   if (tab === 'Measurements' || tab === 'All') {
     addMeasurementsWorksheet(workbook, db.measurements || [], studentMap);
   }
   if (tab === 'Health Profiles' || tab === 'All') {
     addHealthProfilesWorksheet(workbook, db.healthProfiles || [], studentMap);
+  }
+  if (tab === 'Medicines' || tab === 'All') {
+    addMedicinesWorksheet(workbook, db.medicines || []);
+  }
+  if (tab === 'Items' || tab === 'All') {
+    addItemsWorksheet(workbook, db.items || []);
+  }
+  if (tab === 'Bills' || tab === 'All') {
+    addBillsWorksheet(workbook, db.bills || []);
   }
 
   const rawBuffer = Buffer.from(await workbook.xlsx.writeBuffer());

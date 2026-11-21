@@ -33,10 +33,6 @@ import {
   isPasswordHash,
   verifyPassword,
   ensureUsersHashed,
-  encryptVisitForStorage,
-  encryptMeasurementForStorage,
-  encryptHealthProfileForStorage,
-  encryptDatabaseForSheets,
   decryptRemoteSheetPayload,
   encryptStateFileEnvelope,
   decryptStateFileEnvelope,
@@ -53,9 +49,15 @@ import {
   sanitizeClassSectionName,
   getAllClassSections,
   normalizeSheetSyncPayload,
+  isPlaceholderSheetPassword,
   normalizeDatetimeString,
   normalizeDateOnlyString,
   normalizeTimeOnlyString,
+  normalizeHHMM,
+  classifyVisitShift,
+  resolveVisitShiftPeriod,
+  generatePermanentId,
+  DEFAULT_INFIRMARY_SETTINGS,
   PURGED_TEST_VISIT_IDS,
   PURGED_TEST_MEASUREMENT_IDS,
   PURGED_TEST_HEALTH_PROFILE_IDS,
@@ -65,6 +67,11 @@ import {
   type MeasurementRecord,
   type HealthProfileRecord,
   type AppUserRecord,
+  type MedicineInventoryRecord,
+  type ItemInventoryRecord,
+  type StockTransactionRecord,
+  type BillRecord,
+  type InfirmarySettings,
 } from './src/utils/nurseLogic.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,7 +84,6 @@ const STATE_FILE = path.join(DATA_DIR, 'school-nurse-state.json');
 const DEFAULT_APPS_SCRIPT_URL =
   (process.env.APPS_SCRIPT_URL || '').trim() ||
   'https://script.google.com/macros/s/AKfycbxpB8pHEpmaZwnp6Zgzksl5xpFRi55EdE_srVOC7STWHcwiWp-lN-t4R1Zt207diPaLqQ/exec';
-const APPS_SCRIPT_SECRET = (process.env.APPS_SCRIPT_SECRET || '').trim();
 
 interface ServerState {
   db: NurseDatabase;
@@ -118,6 +124,18 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
     const stuSec = normalizeSectionName(v.section || v.class || matched?.section || '');
     const rawR = String(v.roll_no || v.roll_number || matched?.roll_number || '').trim();
     const stuR = /^\d+$/.test(rawR) ? rawR.padStart(2, '0') : rawR;
+    const normalizedDt = normalizeDatetimeString(v.visit_datetime);
+    const settingsForShift: InfirmarySettings = {
+      school_hours_start: normalizeHHMM(
+        db.settings?.school_hours_start,
+        DEFAULT_INFIRMARY_SETTINGS.school_hours_start
+      ),
+      school_hours_end: normalizeHHMM(
+        db.settings?.school_hours_end,
+        DEFAULT_INFIRMARY_SETTINGS.school_hours_end
+      ),
+      updated_at: db.settings?.updated_at,
+    };
     visits.push({
       ...v,
       student_name: stuName,
@@ -125,7 +143,15 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
       class: stuSec,
       roll_number: stuR,
       roll_no: stuR,
-      visit_datetime: normalizeDatetimeString(v.visit_datetime),
+      visit_datetime: normalizedDt,
+      shift_period: resolveVisitShiftPeriod(
+        {
+          visit_datetime: normalizedDt,
+          shift_period: v.shift_period,
+          shift_overridden: v.shift_overridden,
+        },
+        settingsForShift
+      ),
       administration_time: normalizeTimeOnlyString(v.administration_time),
     });
   }
@@ -178,8 +204,36 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
   }
 
   const classes = getAllClassSections(students, db.classes);
+  const medicines = Array.isArray(db.medicines) ? db.medicines : [];
+  const items = Array.isArray(db.items) ? db.items : [];
+  const stockTransactions = Array.isArray(db.stockTransactions) ? db.stockTransactions : [];
+  const bills = Array.isArray(db.bills) ? db.bills : [];
+  const settings: InfirmarySettings = {
+    school_hours_start: normalizeHHMM(
+      db.settings?.school_hours_start,
+      DEFAULT_INFIRMARY_SETTINGS.school_hours_start
+    ),
+    school_hours_end: normalizeHHMM(
+      db.settings?.school_hours_end,
+      DEFAULT_INFIRMARY_SETTINGS.school_hours_end
+    ),
+    updated_at: db.settings?.updated_at,
+  };
 
-  return { students, visits, measurements, healthProfiles, dispatches, users, classes };
+  return {
+    students,
+    visits,
+    measurements,
+    healthProfiles,
+    dispatches,
+    users,
+    classes,
+    medicines,
+    items,
+    stockTransactions,
+    bills,
+    settings,
+  };
 }
 
 function applyAdminOverridesToDb(
@@ -267,6 +321,52 @@ function applyAdminOverridesToDb(
   };
 }
 
+const KNOWN_PLACEHOLDER_PASSWORDS = [
+  'CHANGE_ADMIN_PASSWORD',
+  'CHANGE_NURSE_PASSWORD',
+  'CHANGE_WARDEN_PASSWORD',
+];
+
+function isPoisonedPlaceholderPassword(storedPassword: string): boolean {
+  if (isPlaceholderSheetPassword(storedPassword)) return true;
+  if (isPasswordHash(storedPassword)) {
+    return KNOWN_PLACEHOLDER_PASSWORDS.some(
+      (placeholder) => verifyPassword(placeholder, storedPassword).valid
+    );
+  }
+  return false;
+}
+
+function healPoisonedPlaceholderUsers(users: AppUserRecord[]): AppUserRecord[] {
+  let hadPoisoned = false;
+  const cleaned: AppUserRecord[] = [];
+  for (const u of users || []) {
+    if (isPoisonedPlaceholderPassword(String(u.password || ''))) {
+      hadPoisoned = true;
+      const defaultMatch = SERVER_DEFAULT_USERS.find(
+        (d) => d.username.toLowerCase() === String(u.username || '').trim().toLowerCase()
+      );
+      if (defaultMatch) {
+        cleaned.push({ ...defaultMatch });
+      }
+      // Drop synthetic placeholder rows (e.g. 'warden' seeded with CHANGE_WARDEN_PASSWORD)
+      continue;
+    }
+    cleaned.push(u);
+  }
+
+  if (hadPoisoned) {
+    const present = new Set(cleaned.map((u) => u.username.toLowerCase()));
+    for (const defUser of SERVER_DEFAULT_USERS) {
+      if (!present.has(defUser.username.toLowerCase())) {
+        cleaned.push({ ...defUser });
+      }
+    }
+  }
+
+  return ensureUsersHashed(cleaned.length > 0 ? cleaned : [...SERVER_DEFAULT_USERS]).users;
+}
+
 function mergePreservingHashedPasswords(
   incomingUsers: AppUserRecord[],
   existingUsers: AppUserRecord[]
@@ -275,16 +375,19 @@ function mergePreservingHashedPasswords(
   for (const u of existingUsers || []) {
     existingMap.set(u.username.toLowerCase(), u);
   }
-  const merged = (incomingUsers || []).map((u) => {
-    const prev = existingMap.get(u.username.toLowerCase());
-    if (prev && isPasswordHash(prev.password) && !isPasswordHash(u.password)) {
-      if (!u.password || verifyPassword(u.password, prev.password).valid) {
-        return { ...u, password: prev.password };
+  const merged = (incomingUsers || [])
+    .filter((u) => !isPlaceholderSheetPassword(u.password))
+    .map((u) => {
+      const prev = existingMap.get(u.username.toLowerCase());
+      if (prev && isPasswordHash(prev.password) && !isPasswordHash(u.password)) {
+        if (!u.password || verifyPassword(u.password, prev.password).valid) {
+          return { ...u, password: prev.password };
+        }
       }
-    }
-    return u;
-  });
-  return ensureUsersHashed(merged).users;
+      return u;
+    });
+  const baseList = merged.length > 0 ? merged : existingUsers;
+  return healPoisonedPlaceholderUsers(baseList);
 }
 
 function loadServerState(): ServerState {
@@ -312,9 +415,8 @@ function loadServerState(): ServerState {
           classRenames: parsed.classRenames || {},
         };
         loaded.db = normalizeDbSections(applyAdminOverridesToDb(loaded.db, loaded));
-        // Automatically upgrade any legacy plaintext passwords on disk to salted scrypt hashes
-        const { users: hashedUsers } = ensureUsersHashed(loaded.db.users || []);
-        loaded.db.users = hashedUsers;
+        // Automatically heal any accounts poisoned by Google Sheet placeholder passwords & hash with salted scrypt
+        loaded.db.users = healPoisonedPlaceholderUsers(loaded.db.users || []);
         if (loaded.adminUserOverrides) {
           for (const [uname, override] of Object.entries(loaded.adminUserOverrides)) {
             if (override.password && !isPasswordHash(override.password)) {
@@ -361,6 +463,11 @@ function computeDbSignature(db: NurseDatabase): string {
     dispatches: db.dispatches || [],
     users: db.users || [],
     classes: db.classes || [],
+    medicines: db.medicines || [],
+    items: db.items || [],
+    stockTransactions: db.stockTransactions || [],
+    bills: db.bills || [],
+    settings: db.settings || DEFAULT_INFIRMARY_SETTINGS,
   });
 }
 
@@ -456,40 +563,45 @@ function safeParseJsonObject(rawText: string): Record<string, unknown> | null {
   }
 }
 
-async function forwardToAppsScript(payload: Record<string, unknown>): Promise<boolean> {
+async function forwardToAppsScriptWithData(
+  payload: Record<string, unknown>,
+  timeoutMs: number = 15000
+): Promise<{ ok: boolean; data: Record<string, unknown> | null }> {
   const url = serverState.appsScriptUrl.trim();
-  if (!url) return false;
+  if (!url) return { ok: false, data: null };
   try {
-    const bodyPayload = APPS_SCRIPT_SECRET
-      ? { ...payload, secret: APPS_SCRIPT_SECRET }
-      : payload;
     const res = await fetchWithTimeout(
       url,
       {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(bodyPayload),
+        body: JSON.stringify(payload),
         redirect: 'follow',
       },
-      12000
+      timeoutMs
     );
-    if (!res.ok) return false;
+    if (!res.ok) return { ok: false, data: null };
     const rawText = await res.text();
     const data = safeParseJsonObject(rawText);
-    if (!data) return false;
+    if (!data) return { ok: false, data: null };
     if (data.status === 'error') {
       const msg = String(data.message || '');
       if (msg.toLowerCase().includes('duplicate')) {
-        return true;
+        return { ok: true, data };
       }
       console.error('Google Apps Script error for action', payload.action, ':', msg);
-      return false;
+      return { ok: false, data };
     }
-    return true;
+    return { ok: true, data };
   } catch (err) {
     console.error('Background Google Sheets forward error:', err instanceof Error ? err.message : err);
-    return false;
+    return { ok: false, data: null };
   }
+}
+
+async function forwardToAppsScript(payload: Record<string, unknown>): Promise<boolean> {
+  const result = await forwardToAppsScriptWithData(payload, 12000);
+  return result.ok;
 }
 
 async function pushMissingToAppsScript(remoteData: {
@@ -516,7 +628,7 @@ async function pushMissingToAppsScript(remoteData: {
   for (const visit of missingVisits) {
     const ok = await forwardToAppsScript({
       action: 'createVisit',
-      visit: encryptVisitForStorage(visit),
+      visit,
     });
     if (ok) {
       remoteVisitIds.add(visit.visit_id);
@@ -536,7 +648,7 @@ async function pushMissingToAppsScript(remoteData: {
   for (const measurement of missingMeasurements) {
     const ok = await forwardToAppsScript({
       action: 'addMeasurement',
-      measurement: encryptMeasurementForStorage(measurement),
+      measurement,
     });
     if (ok) {
       remoteMeasIds.add(measurement.measurement_id);
@@ -556,7 +668,7 @@ async function pushMissingToAppsScript(remoteData: {
   for (const healthProfile of missingProfiles) {
     const ok = await forwardToAppsScript({
       action: 'addHealthProfile',
-      healthProfile: encryptHealthProfileForStorage(healthProfile),
+      healthProfile,
     });
     if (ok) {
       remoteProfileIds.add(healthProfile.health_record_id);
@@ -602,11 +714,8 @@ async function pullFromAppsScript(waitForPush: boolean = false): Promise<{ ok: b
   inFlightSyncPromise = (async () => {
     try {
       const separator = url.includes('?') ? '&' : '?';
-      const secretParam = APPS_SCRIPT_SECRET
-        ? `&secret=${encodeURIComponent(APPS_SCRIPT_SECRET)}`
-        : '';
       const response = await fetchWithTimeout(
-        `${url}${separator}action=getAll${secretParam}&t=${Date.now()}`,
+        `${url}${separator}action=getAll&t=${Date.now()}`,
         {
           method: 'GET',
           redirect: 'follow',
@@ -633,10 +742,24 @@ async function pullFromAppsScript(waitForPush: boolean = false): Promise<{ ok: b
         >,
         healthProfiles: data.healthProfiles as Array<Partial<HealthProfileRecord>>,
         users: data.users as Array<Record<string, unknown>>,
+        medicines: data.medicines as Array<Partial<MedicineInventoryRecord>>,
+        items: data.items as Array<Partial<ItemInventoryRecord>>,
+        stockTransactions: data.stockTransactions as Array<Partial<StockTransactionRecord>>,
+        bills: data.bills as Array<Partial<BillRecord>>,
+        settings: data.settings as
+          | Partial<InfirmarySettings>
+          | Array<{ setting_key?: string; setting_value?: string }>,
       };
 
       // Transparently decrypt any AES-256-GCM encrypted clinical fields from Google Sheets
-      const remotePayload = decryptRemoteSheetPayload(rawRemotePayload);
+      const remotePayload = {
+        ...decryptRemoteSheetPayload(rawRemotePayload),
+        medicines: rawRemotePayload.medicines,
+        items: rawRemotePayload.items,
+        stockTransactions: rawRemotePayload.stockTransactions,
+        bills: rawRemotePayload.bills,
+        settings: rawRemotePayload.settings,
+      };
 
       const previousUsers = serverState.db.users || [];
       const mergedFromRemote = normalizeSheetSyncPayload(remotePayload, serverState.db);
@@ -717,7 +840,7 @@ async function startServer() {
     next();
   });
 
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '6mb' }));
 
   // Global API defense layer: rate limiting, CSRF Origin check, prototype pollution & control-char guard
   app.use('/api', (req, res, next) => {
@@ -947,7 +1070,7 @@ async function startServer() {
       activeSessions: getActiveSessionCount(),
       hashedUsersCount,
       totalUsersCount: users.length,
-      appsScriptSecretConfigured: Boolean(APPS_SCRIPT_SECRET),
+      appsScriptEncryption: false,
       recentEvents: getRecentSecurityEvents().slice(0, 20),
     });
   });
@@ -1044,6 +1167,19 @@ async function startServer() {
         const stuSec = normalizeSectionName(rawVisit.section || rawVisit.class || matched?.section || '');
         const rawR = String(rawVisit.roll_no || rawVisit.roll_number || matched?.roll_number || '').trim();
         const stuR = /^\d+$/.test(rawR) ? rawR.padStart(2, '0') : rawR;
+        const normalizedDt = normalizeDatetimeString(rawVisit.visit_datetime);
+        const shiftOverridden = Boolean(rawVisit.shift_overridden);
+        const shiftPeriod =
+          shiftOverridden && (rawVisit.shift_period === 'school_hours' || rawVisit.shift_period === 'night')
+            ? rawVisit.shift_period
+            : classifyVisitShift(normalizedDt, serverState.db.settings);
+
+        const medQty =
+          rawVisit.medicine_status === 'given' && rawVisit.medicine_id
+            ? Math.max(0, Number(rawVisit.medicine_qty) || 0)
+            : 0;
+        const itemQty = rawVisit.item_id ? Math.max(0, Number(rawVisit.item_qty) || 0) : 0;
+
         const visit: VisitRecord = {
           ...rawVisit,
           student_name: stuName,
@@ -1051,20 +1187,109 @@ async function startServer() {
           class: stuSec,
           roll_number: stuR,
           roll_no: stuR,
-          visit_datetime: normalizeDatetimeString(rawVisit.visit_datetime),
+          visit_datetime: normalizedDt,
+          shift_period: shiftPeriod,
+          shift_overridden: shiftOverridden,
+          medicine_id: rawVisit.medicine_status === 'given' && rawVisit.medicine_id ? String(rawVisit.medicine_id).trim() : undefined,
+          medicine_qty: medQty > 0 ? medQty : undefined,
+          item_id: rawVisit.item_id ? String(rawVisit.item_id).trim() : undefined,
+          item_name: rawVisit.item_name ? String(rawVisit.item_name).trim() : undefined,
+          item_qty: itemQty > 0 ? itemQty : undefined,
           administration_time: normalizeTimeOnlyString(rawVisit.administration_time),
         };
         const exists = serverState.db.visits.some((v) => v.visit_id === visit.visit_id);
+        const generatedTxns: StockTransactionRecord[] = [];
+        let updatedMedForSheet: MedicineInventoryRecord | null = null;
+        let updatedItemForSheet: ItemInventoryRecord | null = null;
+
         if (!exists) {
+          const nowIso = new Date().toISOString();
           serverState.db.visits = [visit, ...serverState.db.visits];
+
+          // Atomic stock deduction for dispensed medicine from Medicines Inventory
+          if (visit.medicine_id && medQty > 0) {
+            const meds = serverState.db.medicines || [];
+            const medIdx = meds.findIndex((m) => m.medicine_id === visit.medicine_id);
+            if (medIdx !== -1) {
+              const prevMed = meds[medIdx];
+              const nextStock = Math.max(0, Number((prevMed.current_stock - medQty).toFixed(2)));
+              const updatedMed: MedicineInventoryRecord = {
+                ...prevMed,
+                current_stock: nextStock,
+                updated_at: nowIso,
+              };
+              serverState.db.medicines = meds.map((m, idx) => (idx === medIdx ? updatedMed : m));
+              updatedMedForSheet = updatedMed;
+              const txnId = generatePermanentId('TXN', [
+                ...(serverState.db.stockTransactions || []).map((t) => t.txn_id),
+                ...generatedTxns.map((t) => t.txn_id),
+              ]);
+              generatedTxns.push({
+                txn_id: txnId,
+                target_type: 'medicine',
+                target_id: prevMed.medicine_id,
+                target_name: prevMed.name,
+                change_qty: -medQty,
+                balance_after: nextStock,
+                reason: 'visit',
+                reference_id: visit.visit_id,
+                notes: `Dispensed to ${stuName || visit.student_id}`,
+                recorded_by: visit.recorded_by || req.authUser!.displayName,
+                created_at: nowIso,
+              });
+            }
+          }
+
+          // Atomic stock deduction for infirmary item used during visit
+          if (visit.item_id && itemQty > 0) {
+            const items = serverState.db.items || [];
+            const itemIdx = items.findIndex((it) => it.item_id === visit.item_id);
+            if (itemIdx !== -1) {
+              const prevItem = items[itemIdx];
+              const nextStock = Math.max(0, Number((prevItem.current_stock - itemQty).toFixed(2)));
+              const updatedItem: ItemInventoryRecord = {
+                ...prevItem,
+                current_stock: nextStock,
+                updated_at: nowIso,
+              };
+              serverState.db.items = items.map((it, idx) => (idx === itemIdx ? updatedItem : it));
+              updatedItemForSheet = updatedItem;
+              if (!visit.item_name) visit.item_name = prevItem.name;
+              const txnId = generatePermanentId('TXN', [
+                ...(serverState.db.stockTransactions || []).map((t) => t.txn_id),
+                ...generatedTxns.map((t) => t.txn_id),
+              ]);
+              generatedTxns.push({
+                txn_id: txnId,
+                target_type: 'item',
+                target_id: prevItem.item_id,
+                target_name: prevItem.name,
+                change_qty: -itemQty,
+                balance_after: nextStock,
+                reason: 'visit',
+                reference_id: visit.visit_id,
+                notes: `Used for ${stuName || visit.student_id}`,
+                recorded_by: visit.recorded_by || req.authUser!.displayName,
+                created_at: nowIso,
+              });
+            }
+          }
+
+          if (generatedTxns.length > 0) {
+            serverState.db.stockTransactions = [
+              ...generatedTxns,
+              ...(serverState.db.stockTransactions || []),
+            ];
+          }
+
           saveServerState(serverState, true);
           broadcastStateUpdate(deviceId);
         }
-        const encryptedVisit = encryptVisitForStorage(visit);
+
         const sheetSynced = await forwardToAppsScript({
           action: 'createVisit',
           visit: {
-            ...encryptedVisit,
+            ...visit,
             student_name: stuName,
             full_name: stuName,
             class: stuSec,
@@ -1073,6 +1298,16 @@ async function startServer() {
             roll_number: stuR,
           },
         });
+        if (updatedMedForSheet) {
+          void forwardToAppsScript({ action: 'upsertMedicine', medicine: updatedMedForSheet });
+        }
+        if (updatedItemForSheet) {
+          void forwardToAppsScript({ action: 'upsertItem', item: updatedItemForSheet });
+        }
+        for (const txn of generatedTxns) {
+          void forwardToAppsScript({ action: 'addStockTransaction', transaction: txn });
+        }
+
         return res.json({
           status: 'ok',
           sheetSynced,
@@ -1223,7 +1458,7 @@ async function startServer() {
         }
         const sheetSynced = await forwardToAppsScript({
           action: 'addMeasurement',
-          measurement: encryptMeasurementForStorage(measurement),
+          measurement,
         });
         return res.json({
           status: 'ok',
@@ -1250,7 +1485,7 @@ async function startServer() {
         }
         const sheetSynced = await forwardToAppsScript({
           action: 'addHealthProfile',
-          healthProfile: encryptHealthProfileForStorage(healthProfile),
+          healthProfile,
         });
         return res.json({
           status: 'ok',
@@ -1527,6 +1762,535 @@ async function startServer() {
         });
       }
 
+      if (action === 'updateSchoolHours') {
+        const start = normalizeHHMM(body.school_hours_start, '');
+        const end = normalizeHHMM(body.school_hours_end, '');
+        if (!start || !end) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Please provide valid 24-hour times (HH:MM) for school hours start and end.',
+          });
+        }
+        const nextSettings: InfirmarySettings = {
+          school_hours_start: start,
+          school_hours_end: end,
+          updated_at: new Date().toISOString(),
+        };
+        serverState.db.settings = nextSettings;
+        // Reclassify non-overridden visits using the updated school timing window
+        serverState.db.visits = (serverState.db.visits || []).map((v) =>
+          v.shift_overridden
+            ? v
+            : { ...v, shift_period: classifyVisitShift(v.visit_datetime, nextSettings) }
+        );
+        saveServerState(serverState, true);
+        recordSecurityEvent(
+          'config_changed',
+          req.authUser!.username,
+          `Updated School Hours window to ${start}–${end}`,
+          req.ip
+        );
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'updateSettings',
+          settings: nextSettings,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          settings: nextSettings,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'upsertMedicine' && body.medicine) {
+        const raw = body.medicine as Partial<MedicineInventoryRecord>;
+        const name = String(raw.name || '').trim().slice(0, 120);
+        if (!name) {
+          return res.status(400).json({ status: 'error', message: 'Medicine name is required.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.medicines || [];
+        const medId =
+          String(raw.medicine_id || '').trim() ||
+          generatePermanentId('MED', existingList.map((m) => m.medicine_id));
+        const existingMed = existingList.find((m) => m.medicine_id === medId);
+        const record: MedicineInventoryRecord = {
+          medicine_id: medId,
+          name,
+          category: String(raw.category || 'General').trim().slice(0, 60) || 'General',
+          form_strength: String(raw.form_strength || '').trim().slice(0, 80),
+          unit: String(raw.unit || 'tablets').trim().slice(0, 30) || 'tablets',
+          batch_number: String(raw.batch_number || '').trim().slice(0, 50),
+          expiry_date: raw.expiry_date ? normalizeDateOnlyString(String(raw.expiry_date), '') : '',
+          current_stock: Math.max(0, Number(raw.current_stock) || 0),
+          min_stock_alert: Math.max(0, Number(raw.min_stock_alert) || 0),
+          notes: String(raw.notes || '').trim().slice(0, 240) || undefined,
+          updated_at: nowIso,
+        };
+        serverState.db.medicines = existingMed
+          ? existingList.map((m) => (m.medicine_id === medId ? record : m))
+          : [record, ...existingList];
+
+        let openingTxn: StockTransactionRecord | null = null;
+        if (!existingMed && record.current_stock > 0) {
+          const txnId = generatePermanentId(
+            'TXN',
+            (serverState.db.stockTransactions || []).map((t) => t.txn_id)
+          );
+          openingTxn = {
+            txn_id: txnId,
+            target_type: 'medicine',
+            target_id: record.medicine_id,
+            target_name: record.name,
+            change_qty: record.current_stock,
+            balance_after: record.current_stock,
+            reason: 'adjustment',
+            notes: 'Opening stock',
+            recorded_by: req.authUser!.displayName,
+            created_at: nowIso,
+          };
+          serverState.db.stockTransactions = [
+            openingTxn,
+            ...(serverState.db.stockTransactions || []),
+          ];
+        }
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({ action: 'upsertMedicine', medicine: record });
+        if (openingTxn) {
+          void forwardToAppsScript({ action: 'addStockTransaction', transaction: openingTxn });
+        }
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          medicine: record,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteMedicine' && body.medicine_id) {
+        const medId = String(body.medicine_id).trim();
+        serverState.db.medicines = (serverState.db.medicines || []).filter(
+          (m) => m.medicine_id !== medId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({ action: 'deleteMedicine', medicine_id: medId });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'upsertItem' && body.item) {
+        const raw = body.item as Partial<ItemInventoryRecord>;
+        const name = String(raw.name || '').trim().slice(0, 120);
+        if (!name) {
+          return res.status(400).json({ status: 'error', message: 'Item name is required.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.items || [];
+        const itemId =
+          String(raw.item_id || '').trim() ||
+          generatePermanentId('ITM', existingList.map((it) => it.item_id));
+        const existingItem = existingList.find((it) => it.item_id === itemId);
+        const record: ItemInventoryRecord = {
+          item_id: itemId,
+          name,
+          category: String(raw.category || 'First Aid').trim().slice(0, 60) || 'First Aid',
+          unit: String(raw.unit || 'pcs').trim().slice(0, 30) || 'pcs',
+          current_stock: Math.max(0, Number(raw.current_stock) || 0),
+          min_stock_alert: Math.max(0, Number(raw.min_stock_alert) || 0),
+          notes: String(raw.notes || '').trim().slice(0, 240) || undefined,
+          updated_at: nowIso,
+        };
+        serverState.db.items = existingItem
+          ? existingList.map((it) => (it.item_id === itemId ? record : it))
+          : [record, ...existingList];
+
+        let openingTxn: StockTransactionRecord | null = null;
+        if (!existingItem && record.current_stock > 0) {
+          const txnId = generatePermanentId(
+            'TXN',
+            (serverState.db.stockTransactions || []).map((t) => t.txn_id)
+          );
+          openingTxn = {
+            txn_id: txnId,
+            target_type: 'item',
+            target_id: record.item_id,
+            target_name: record.name,
+            change_qty: record.current_stock,
+            balance_after: record.current_stock,
+            reason: 'adjustment',
+            notes: 'Opening stock',
+            recorded_by: req.authUser!.displayName,
+            created_at: nowIso,
+          };
+          serverState.db.stockTransactions = [
+            openingTxn,
+            ...(serverState.db.stockTransactions || []),
+          ];
+        }
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({ action: 'upsertItem', item: record });
+        if (openingTxn) {
+          void forwardToAppsScript({ action: 'addStockTransaction', transaction: openingTxn });
+        }
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          item: record,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteItem' && body.item_id) {
+        const itemId = String(body.item_id).trim();
+        serverState.db.items = (serverState.db.items || []).filter((it) => it.item_id !== itemId);
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({ action: 'deleteItem', item_id: itemId });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'adjustStock') {
+        const targetType = body.target_type === 'item' ? 'item' : 'medicine';
+        const targetId = String(body.target_id || '').trim();
+        const delta = Number(body.change_qty);
+        if (!targetId || Number.isNaN(delta) || delta === 0) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Select an inventory entry and enter a non-zero quantity adjustment.',
+          });
+        }
+        const nowIso = new Date().toISOString();
+        const rawReason = String(body.reason || 'adjustment');
+        const reason =
+          rawReason === 'bill_restock' || rawReason === 'visit' || rawReason === 'menstrual'
+            ? rawReason
+            : 'adjustment';
+        const notes = String(body.notes || '').trim().slice(0, 240);
+        const referenceId = String(body.reference_id || '').trim() || undefined;
+
+        let targetName = '';
+        let nextBalance = 0;
+        let updatedMed: MedicineInventoryRecord | null = null;
+        let updatedItem: ItemInventoryRecord | null = null;
+
+        if (targetType === 'medicine') {
+          const list = serverState.db.medicines || [];
+          const found = list.find((m) => m.medicine_id === targetId);
+          if (!found) {
+            return res.status(404).json({ status: 'error', message: 'Medicine not found.' });
+          }
+          targetName = found.name;
+          nextBalance = Math.max(0, Number((found.current_stock + delta).toFixed(2)));
+          updatedMed = { ...found, current_stock: nextBalance, updated_at: nowIso };
+          serverState.db.medicines = list.map((m) => (m.medicine_id === targetId ? updatedMed! : m));
+        } else {
+          const list = serverState.db.items || [];
+          const found = list.find((it) => it.item_id === targetId);
+          if (!found) {
+            return res.status(404).json({ status: 'error', message: 'Item not found.' });
+          }
+          targetName = found.name;
+          nextBalance = Math.max(0, Number((found.current_stock + delta).toFixed(2)));
+          updatedItem = { ...found, current_stock: nextBalance, updated_at: nowIso };
+          serverState.db.items = list.map((it) => (it.item_id === targetId ? updatedItem! : it));
+        }
+
+        const txn: StockTransactionRecord = {
+          txn_id: generatePermanentId(
+            'TXN',
+            (serverState.db.stockTransactions || []).map((t) => t.txn_id)
+          ),
+          target_type: targetType,
+          target_id: targetId,
+          target_name: targetName,
+          change_qty: delta,
+          balance_after: nextBalance,
+          reason,
+          reference_id: referenceId,
+          notes: notes || undefined,
+          recorded_by: req.authUser!.displayName,
+          created_at: nowIso,
+        };
+        serverState.db.stockTransactions = [txn, ...(serverState.db.stockTransactions || [])];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+
+        let sheetSynced = false;
+        if (updatedMed) {
+          sheetSynced = await forwardToAppsScript({ action: 'upsertMedicine', medicine: updatedMed });
+        } else if (updatedItem) {
+          sheetSynced = await forwardToAppsScript({ action: 'upsertItem', item: updatedItem });
+        }
+        void forwardToAppsScript({ action: 'addStockTransaction', transaction: txn });
+
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          transaction: txn,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'createBill' && body.bill) {
+        const raw = body.bill as Partial<BillRecord> & {
+          image_base64?: string;
+          image_mime?: string;
+          image_filename?: string;
+        };
+        const vendorName = String(raw.vendor_name || '').trim().slice(0, 120);
+        if (!vendorName) {
+          return res.status(400).json({ status: 'error', message: 'Vendor or pharmacy name is required.' });
+        }
+        const totalAmount = Number(raw.total_amount);
+        if (Number.isNaN(totalAmount) || totalAmount < 0) {
+          return res.status(400).json({ status: 'error', message: 'Enter a valid bill amount.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingBills = serverState.db.bills || [];
+        const billId =
+          String(raw.bill_id || '').trim() ||
+          generatePermanentId('BIL', existingBills.map((b) => b.bill_id));
+
+        const rawCat = String(raw.category || 'Medicines').trim();
+        const category =
+          rawCat === 'Items' || rawCat === 'Equipment' || rawCat === 'Camp' || rawCat === 'Other'
+            ? rawCat
+            : 'Medicines';
+        const rawPay = String(raw.payment_status || 'Paid').trim();
+        const paymentStatus =
+          rawPay === 'Pending' || rawPay === 'Reimbursed' ? rawPay : 'Paid';
+
+        // Validate optional uploaded photo payload (JPEG/PNG/WebP data URL)
+        const imageDataUrl =
+          typeof raw.image_data_url === 'string' &&
+          /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.image_data_url) &&
+          raw.image_data_url.length <= 2_500_000
+            ? raw.image_data_url
+            : undefined;
+
+        let driveFileId = String(raw.drive_file_id || '').trim() || undefined;
+        let imageUrl = String(raw.image_url || '').trim() || undefined;
+
+        // Upload compressed bill photo to Google Drive via Apps Script (if provided)
+        if (imageDataUrl && !imageUrl) {
+          const commaIdx = imageDataUrl.indexOf(',');
+          const header = imageDataUrl.slice(0, commaIdx);
+          const mimeMatch = header.match(/data:(image\/[a-z+]+);base64/i);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const base64Data = imageDataUrl.slice(commaIdx + 1);
+          const safeVendorSlug = vendorName.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 28) || 'Bill';
+          const filename = `${billId}_${safeVendorSlug}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
+          const driveUpload = await forwardToAppsScriptWithData(
+            {
+              action: 'uploadBillImage',
+              bill_id: billId,
+              filename,
+              mimeType,
+              base64Data,
+            },
+            20000
+          );
+          if (driveUpload.ok && driveUpload.data) {
+            if (typeof driveUpload.data.drive_file_id === 'string' && driveUpload.data.drive_file_id) {
+              driveFileId = driveUpload.data.drive_file_id;
+            }
+            if (typeof driveUpload.data.image_url === 'string' && driveUpload.data.image_url) {
+              imageUrl = driveUpload.data.image_url;
+            }
+          }
+        }
+
+        const billRecord: BillRecord = {
+          bill_id: billId,
+          bill_number: String(raw.bill_number || '').trim().slice(0, 60),
+          vendor_name: vendorName,
+          bill_date: normalizeDateOnlyString(String(raw.bill_date || ''), nowIso.slice(0, 10)),
+          category,
+          total_amount: Number(totalAmount.toFixed(2)),
+          payment_status: paymentStatus,
+          notes: String(raw.notes || '').trim().slice(0, 300) || undefined,
+          drive_file_id: driveFileId,
+          image_url: imageUrl,
+          image_data_url: imageDataUrl,
+          recorded_by: req.authUser!.displayName,
+          created_at: nowIso,
+        };
+
+        serverState.db.bills = [billRecord, ...existingBills.filter((b) => b.bill_id !== billId)];
+
+        // Optional linked stock restock lines (add purchased quantities directly to Medicines/Items)
+        const restockLines = Array.isArray(body.restockLines)
+          ? (body.restockLines as Array<{ target_type?: string; target_id?: string; qty?: number }>)
+          : [];
+        const createdTxns: StockTransactionRecord[] = [];
+        const touchedMeds: MedicineInventoryRecord[] = [];
+        const touchedItems: ItemInventoryRecord[] = [];
+
+        for (const line of restockLines) {
+          const qty = Number(line?.qty);
+          const tId = String(line?.target_id || '').trim();
+          if (!tId || Number.isNaN(qty) || qty <= 0) continue;
+          if (line.target_type === 'item') {
+            const list = serverState.db.items || [];
+            const found = list.find((it) => it.item_id === tId);
+            if (!found) continue;
+            const nextStock = Number((found.current_stock + qty).toFixed(2));
+            const updated: ItemInventoryRecord = { ...found, current_stock: nextStock, updated_at: nowIso };
+            serverState.db.items = list.map((it) => (it.item_id === tId ? updated : it));
+            touchedItems.push(updated);
+            const txnId = generatePermanentId('TXN', [
+              ...(serverState.db.stockTransactions || []).map((t) => t.txn_id),
+              ...createdTxns.map((t) => t.txn_id),
+            ]);
+            createdTxns.push({
+              txn_id: txnId,
+              target_type: 'item',
+              target_id: found.item_id,
+              target_name: found.name,
+              change_qty: qty,
+              balance_after: nextStock,
+              reason: 'bill_restock',
+              reference_id: billId,
+              notes: `Restocked via ${vendorName}${billRecord.bill_number ? ` (#${billRecord.bill_number})` : ''}`,
+              recorded_by: req.authUser!.displayName,
+              created_at: nowIso,
+            });
+          } else {
+            const list = serverState.db.medicines || [];
+            const found = list.find((m) => m.medicine_id === tId);
+            if (!found) continue;
+            const nextStock = Number((found.current_stock + qty).toFixed(2));
+            const updated: MedicineInventoryRecord = { ...found, current_stock: nextStock, updated_at: nowIso };
+            serverState.db.medicines = list.map((m) => (m.medicine_id === tId ? updated : m));
+            touchedMeds.push(updated);
+            const txnId = generatePermanentId('TXN', [
+              ...(serverState.db.stockTransactions || []).map((t) => t.txn_id),
+              ...createdTxns.map((t) => t.txn_id),
+            ]);
+            createdTxns.push({
+              txn_id: txnId,
+              target_type: 'medicine',
+              target_id: found.medicine_id,
+              target_name: found.name,
+              change_qty: qty,
+              balance_after: nextStock,
+              reason: 'bill_restock',
+              reference_id: billId,
+              notes: `Restocked via ${vendorName}${billRecord.bill_number ? ` (#${billRecord.bill_number})` : ''}`,
+              recorded_by: req.authUser!.displayName,
+              created_at: nowIso,
+            });
+          }
+        }
+
+        if (createdTxns.length > 0) {
+          serverState.db.stockTransactions = [
+            ...createdTxns,
+            ...(serverState.db.stockTransactions || []),
+          ];
+        }
+
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+
+        // Send bill metadata (without large base64 data URL) to Google Sheets
+        const { image_data_url: _omitDataUrl, ...billForSheet } = billRecord;
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertBill',
+          bill: billForSheet,
+        });
+        for (const m of touchedMeds) {
+          void forwardToAppsScript({ action: 'upsertMedicine', medicine: m });
+        }
+        for (const it of touchedItems) {
+          void forwardToAppsScript({ action: 'upsertItem', item: it });
+        }
+        for (const txn of createdTxns) {
+          void forwardToAppsScript({ action: 'addStockTransaction', transaction: txn });
+        }
+
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          driveUploaded: Boolean(driveFileId || imageUrl),
+          bill: billRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'updateBill' && body.bill && body.bill.bill_id) {
+        const raw = body.bill as Partial<BillRecord>;
+        const billId = String(raw.bill_id).trim();
+        const existing = (serverState.db.bills || []).find((b) => b.bill_id === billId);
+        if (!existing) {
+          return res.status(404).json({ status: 'error', message: 'Bill record not found.' });
+        }
+        const rawCat = String(raw.category || existing.category).trim();
+        const category =
+          rawCat === 'Items' || rawCat === 'Equipment' || rawCat === 'Camp' || rawCat === 'Other'
+            ? rawCat
+            : 'Medicines';
+        const rawPay = String(raw.payment_status || existing.payment_status).trim();
+        const paymentStatus =
+          rawPay === 'Pending' || rawPay === 'Reimbursed' ? rawPay : 'Paid';
+        const updated: BillRecord = {
+          ...existing,
+          bill_number: raw.bill_number !== undefined ? String(raw.bill_number).trim().slice(0, 60) : existing.bill_number,
+          vendor_name: raw.vendor_name ? String(raw.vendor_name).trim().slice(0, 120) : existing.vendor_name,
+          bill_date: raw.bill_date ? normalizeDateOnlyString(String(raw.bill_date), existing.bill_date) : existing.bill_date,
+          category,
+          total_amount: raw.total_amount !== undefined ? Math.max(0, Number(raw.total_amount) || 0) : existing.total_amount,
+          payment_status: paymentStatus,
+          notes: raw.notes !== undefined ? String(raw.notes).trim().slice(0, 300) || undefined : existing.notes,
+        };
+        serverState.db.bills = (serverState.db.bills || []).map((b) =>
+          b.bill_id === billId ? updated : b
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const { image_data_url: _omitDataUrl, ...billForSheet } = updated;
+        const sheetSynced = await forwardToAppsScript({ action: 'upsertBill', bill: billForSheet });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          bill: updated,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteBill' && body.bill_id) {
+        const billId = String(body.bill_id).trim();
+        serverState.db.bills = (serverState.db.bills || []).filter((b) => b.bill_id !== billId);
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({ action: 'deleteBill', bill_id: billId });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
       return res.status(400).json({ status: 'error', message: `Unsupported action: ${action}` });
     } catch (err) {
       console.error('Mutation error:', err);
@@ -1587,9 +2351,14 @@ async function startServer() {
 
     if (serverState.appsScriptUrl && body.triggerSync) {
       if (body.pushBackup) {
+        const billsForSheet = (serverState.db.bills || []).map(({ image_data_url: _omit, ...rest }) => rest);
         await forwardToAppsScript({
           action: 'syncFullDatabase',
-          db: encryptDatabaseForSheets(serverState.db),
+          db: {
+            ...serverState.db,
+            bills: billsForSheet,
+            users: ensureUsersHashed(serverState.db.users || []).users,
+          },
         });
       }
       const syncResult = await pullFromAppsScript();
@@ -1598,7 +2367,7 @@ async function startServer() {
         status: 'ok',
         syncResult,
         message: syncResult.ok
-          ? `Backup link updated & synced with AES-256-GCM encryption (${serverState.db.students.length} students, ${serverState.db.visits.length} visits).`
+          ? `Backup link updated & synced (${serverState.db.students.length} students, ${serverState.db.visits.length} visits).`
           : `Backup link saved. ${syncResult.message}`,
         ...updatedSafe,
       });
@@ -1622,11 +2391,16 @@ async function startServer() {
     });
   });
 
-  // 6. Push full shared database (AES-256-GCM encrypted clinical fields + scrypt hashed users) to Google Sheets (Admin ONLY)
+  // 6. Push full shared database in plain readable format to Google Sheets (Admin ONLY)
   app.post('/api/sheets-push', requireAuth, requireAdmin, async (_req: AuthedRequest, res) => {
+    const billsForSheet = (serverState.db.bills || []).map(({ image_data_url: _omit, ...rest }) => rest);
     const pushedFull = await forwardToAppsScript({
       action: 'syncFullDatabase',
-      db: encryptDatabaseForSheets(serverState.db),
+      db: {
+        ...serverState.db,
+        bills: billsForSheet,
+        users: ensureUsersHashed(serverState.db.users || []).users,
+      },
     });
     const result = await pullFromAppsScript(true);
     if (!pushedFull && !result.ok) {
@@ -1638,7 +2412,7 @@ async function startServer() {
     const safeState = sanitizeStateForRole(serverState, 'admin', DEFAULT_APPS_SCRIPT_URL);
     return res.json({
       status: 'ok',
-      message: `Encrypted backup pushed: ${serverState.db.students.length} students, ${serverState.db.visits.length} visits (AES-256-GCM), and ${(serverState.db.users || []).length} staff accounts (scrypt hashed).`,
+      message: `Backup pushed to Google Sheets: ${serverState.db.students.length} students, ${serverState.db.visits.length} visits, and ${(serverState.db.users || []).length} staff accounts.`,
       ...safeState,
     });
   });
@@ -1663,7 +2437,8 @@ async function startServer() {
     if (!ALLOWED_EXCEL_TABS.has(tab)) {
       return res.status(400).json({
         status: 'error',
-        message: 'Invalid sheet requested. Only Students, Visits, Measurements, Health Profiles, or All are allowed.',
+        message:
+          'Invalid sheet requested. Allowed sheets: Students, Visits, Measurements, Health Profiles, Medicines, Items, Bills, or All.',
       });
     }
 

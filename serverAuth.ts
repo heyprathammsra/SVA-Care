@@ -403,12 +403,34 @@ export function sanitizeDbForRole(db: NurseDatabase, role: AuthRole): NurseDatab
   if (role === 'admin') {
     return {
       ...db,
+      medicines: db.medicines || [],
+      items: db.items || [],
+      stockTransactions: db.stockTransactions || [],
+      bills: db.bills || [],
+      settings: db.settings,
       users: (db.users || []).map((u) => ({
         ...u,
         password: '',
       })),
     };
   }
+  if (role === 'nurse') {
+    return {
+      students: db.students,
+      classes: db.classes,
+      visits: db.visits,
+      measurements: db.measurements,
+      healthProfiles: db.healthProfiles,
+      dispatches: db.dispatches,
+      medicines: db.medicines || [],
+      items: db.items || [],
+      stockTransactions: db.stockTransactions || [],
+      bills: db.bills || [],
+      settings: db.settings,
+      users: [],
+    };
+  }
+  // Hostel Warden: strictly excluded from Inventory, Stock Transactions, Bills, and Staff Users
   return {
     students: db.students,
     classes: db.classes,
@@ -416,6 +438,11 @@ export function sanitizeDbForRole(db: NurseDatabase, role: AuthRole): NurseDatab
     measurements: db.measurements,
     healthProfiles: db.healthProfiles,
     dispatches: db.dispatches,
+    medicines: [],
+    items: [],
+    stockTransactions: [],
+    bills: [],
+    settings: db.settings,
     users: [],
   };
 }
@@ -463,6 +490,14 @@ const NURSE_ALLOWED_MUTATIONS = new Set([
   'addMeasurement',
   'addHealthProfile',
   'updateDispatchStatus',
+  'upsertMedicine',
+  'deleteMedicine',
+  'upsertItem',
+  'deleteItem',
+  'adjustStock',
+  'createBill',
+  'updateBill',
+  'deleteBill',
 ]);
 
 const WARDEN_ALLOWED_MUTATIONS = new Set([
@@ -479,6 +514,7 @@ const ADMIN_ALLOWED_MUTATIONS = new Set([
   'deleteClass',
   'upsertUser',
   'deleteUser',
+  'updateSchoolHours',
 ]);
 
 export function isMutationAllowedForRole(

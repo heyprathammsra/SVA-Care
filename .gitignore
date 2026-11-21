@@ -9,3 +9,4 @@ coverage/
 bun.lock
 .playwright-cli/
 data/
+public/assets/aistudio/

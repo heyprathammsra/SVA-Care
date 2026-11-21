@@ -18,6 +18,9 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  Pill,
+  Package,
+  Receipt,
 } from 'lucide-react';
 import { GOOGLE_APPS_SCRIPT_CODE } from '../utils/appsScriptTemplate';
 import type { NurseDatabase } from '../utils/nurseLogic';
@@ -27,6 +30,9 @@ export type DownloadableExcelTab =
   | 'Visits'
   | 'Measurements'
   | 'Health Profiles'
+  | 'Medicines'
+  | 'Items'
+  | 'Bills'
   | 'All';
 
 export interface SheetsActionResult {
@@ -219,6 +225,30 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
       unit: db.healthProfiles.length === 1 ? 'entry' : 'entries',
       icon: <HeartPulse className="w-4 h-4 text-teal-700" />,
     },
+    {
+      tab: 'Medicines',
+      filename: 'Medicines.xlsx',
+      description: 'Current infirmary medicines stock, batch numbers, expiry dates, and low-stock status.',
+      count: (db.medicines || []).length,
+      unit: (db.medicines || []).length === 1 ? 'medicine' : 'medicines',
+      icon: <Pill className="w-4 h-4 text-teal-700" />,
+    },
+    {
+      tab: 'Items',
+      filename: 'Items.xlsx',
+      description: 'Bandages, sterile gauze, cotton, hygiene supplies, and infirmary consumables stock.',
+      count: (db.items || []).length,
+      unit: (db.items || []).length === 1 ? 'item' : 'items',
+      icon: <Package className="w-4 h-4 text-teal-700" />,
+    },
+    {
+      tab: 'Bills',
+      filename: 'Bills.xlsx',
+      description: 'Infirmary purchase bills, pharmacy invoice numbers, amounts, payment status, and Drive receipt links.',
+      count: (db.bills || []).length,
+      unit: (db.bills || []).length === 1 ? 'bill' : 'bills',
+      icon: <Receipt className="w-4 h-4 text-teal-700" />,
+    },
   ];
 
   return (
@@ -395,7 +425,7 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
               Apps Script Backend (Code.gs)
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-              Updated with section-only class names, student profile edits, class renames, staff user accounts, and 5-tab full backup support. Paste a new Apps Script Web App URL below whenever you want to switch to a different Google Sheet backup.
+              Updated with 10 tabs (Students, Visits with Shift &amp; Stock linkage, Measurements, Health Profiles, Users, Medicines, Items, Stock Transactions, Bills, and Settings) plus automatic Google Drive bill photo archiving in &ldquo;SVA Infirmary Documents&rdquo;. Paste this updated Code.gs into Apps Script, run <code className="font-mono text-zinc-700">setupSpreadsheet</code> once to approve Drive access, and redeploy your Web App.
             </p>
           </div>
 

@@ -705,7 +705,7 @@ test('generateVisitsCSV formats headers, columns, student details, and escaping 
 
   const csv = generateVisitsCSV(testEntries);
   assert.ok(csv.startsWith('\uFEFF')); // UTF-8 BOM
-  assert.ok(csv.includes('Sr No,Visit ID,Date,Time,Student Name,Roll No,Class'));
+  assert.ok(csv.includes('Sr No,Visit ID,Date,Time,Shift,Student Name,Roll No,Class'));
   assert.ok(csv.includes('Ajinkya Balu Gurav'));
   assert.ok(csv.includes('01'));
   assert.ok(csv.includes('Sparkle'));
@@ -1218,7 +1218,15 @@ test('generateEncryptedExcelWorkbook produces AES password-protected formatted w
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(decrypted as unknown as Parameters<typeof wb.xlsx.load>[0]);
   const sheetNames = wb.worksheets.map((ws) => ws.name);
-  assert.deepEqual(sheetNames, ['Students', 'Visits', 'Measurements', 'Health Profiles']);
+  assert.deepEqual(sheetNames, [
+    'Students',
+    'Visits',
+    'Measurements',
+    'Health Profiles',
+    'Medicines',
+    'Items',
+    'Bills',
+  ]);
   assert.ok(!sheetNames.includes('Users'));
 
   // Verify formula neutralization in Students sheet
@@ -1230,5 +1238,271 @@ test('generateEncryptedExcelWorkbook produces AES password-protected formatted w
   assert.ok(cellValues.some((v) => v.startsWith("'=HYPERLINK")));
 });
 
+test('normalizeSheetSyncPayload ignores CHANGE_*_PASSWORD placeholder rows in Users tab and preserves real staff logins', () => {
+  const existingDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    users: [
+      {
+        username: 'admin',
+        password: 'scrypt$existingAdminHash',
+        role: 'admin',
+        display_name: 'Infirmary Administrator',
+        badge_title: 'System Admin',
+        active_status: 'Active',
+      },
+      {
+        username: 'nurse',
+        password: 'scrypt$existingNurseHash',
+        role: 'nurse',
+        display_name: 'School Nurse',
+        badge_title: 'Infirmary Nurse',
+        active_status: 'Active',
+      },
+      {
+        username: 'agnel',
+        password: 'scrypt$existingAgnelHash',
+        role: 'warden',
+        display_name: 'Agnel (Hostel Warden)',
+        badge_title: 'Hostel Warden',
+        active_status: 'Active',
+      },
+    ],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: [],
+      visits: [],
+      measurements: [],
+      healthProfiles: [],
+      users: [
+        { username: 'admin', password: 'CHANGE_ADMIN_PASSWORD', role: 'admin', active_status: 'Active' },
+        { username: 'nurse', password: 'CHANGE_NURSE_PASSWORD', role: 'nurse', active_status: 'Active' },
+        { username: 'warden', password: 'CHANGE_WARDEN_PASSWORD', role: 'warden', active_status: 'Active' },
+      ],
+    },
+    existingDb
+  );
+
+  assert.equal(synced.users?.length, 3);
+  assert.equal(synced.users?.find((u) => u.username === 'admin')?.password, 'scrypt$existingAdminHash');
+  assert.equal(synced.users?.find((u) => u.username === 'nurse')?.password, 'scrypt$existingNurseHash');
+  assert.equal(synced.users?.find((u) => u.username === 'agnel')?.password, 'scrypt$existingAgnelHash');
+  assert.equal(synced.users?.some((u) => u.username === 'warden'), false);
+});
+
+test('GOOGLE_APPS_SCRIPT_CODE has no secret-key gating or placeholder Users seeding and supports all sync actions', async () => {
+  const { GOOGLE_APPS_SCRIPT_CODE } = await import('./appsScriptTemplate.ts');
+  assert.equal(GOOGLE_APPS_SCRIPT_CODE.includes('API_SECRET'), false);
+  assert.equal(GOOGLE_APPS_SCRIPT_CODE.includes('isAuthorizedRequest'), false);
+  assert.equal(GOOGLE_APPS_SCRIPT_CODE.includes('CHANGE_ADMIN_PASSWORD'), false);
+  assert.equal(GOOGLE_APPS_SCRIPT_CODE.includes('CHANGE_NURSE_PASSWORD'), false);
+  assert.equal(GOOGLE_APPS_SCRIPT_CODE.includes('CHANGE_WARDEN_PASSWORD'), false);
+  for (const action of [
+    'createVisit',
+    'addMeasurement',
+    'addHealthProfile',
+    'createStudent',
+    'updateStudent',
+    'renameClass',
+    'upsertUser',
+    'deleteUser',
+    'updateSettings',
+    'upsertMedicine',
+    'deleteMedicine',
+    'upsertItem',
+    'deleteItem',
+    'addStockTransaction',
+    'uploadBillImage',
+    'upsertBill',
+    'deleteBill',
+    'syncStudentsBatch',
+    'syncFullDatabase',
+  ]) {
+    assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes(`action === '${action}'`), `Missing action ${action}`);
+  }
+});
+
+test('Phase 1 shift classification auto-tags School Hours vs Night and respects custom timings and manual overrides', async () => {
+  const {
+    classifyVisitShift,
+    resolveVisitShiftPeriod,
+    formatShiftPeriodLabel,
+    DEFAULT_INFIRMARY_SETTINGS,
+  } = await import('./nurseLogic.ts');
+
+  // Default 07:30 – 15:30
+  assert.equal(classifyVisitShift('2026-10-17T07:30', DEFAULT_INFIRMARY_SETTINGS), 'school_hours');
+  assert.equal(classifyVisitShift('2026-10-17T12:15', DEFAULT_INFIRMARY_SETTINGS), 'school_hours');
+  assert.equal(classifyVisitShift('2026-10-17T15:30', DEFAULT_INFIRMARY_SETTINGS), 'school_hours');
+  assert.equal(classifyVisitShift('2026-10-17T07:29', DEFAULT_INFIRMARY_SETTINGS), 'night');
+  assert.equal(classifyVisitShift('2026-10-17T21:45', DEFAULT_INFIRMARY_SETTINGS), 'night');
+
+  // Custom Admin school hours (08:00 – 14:00)
+  const customHours = { school_hours_start: '08:00', school_hours_end: '14:00' };
+  assert.equal(classifyVisitShift('2026-10-17T07:45', customHours), 'night');
+  assert.equal(classifyVisitShift('2026-10-17T14:30', customHours), 'night');
+  assert.equal(classifyVisitShift('2026-10-17T10:00', customHours), 'school_hours');
+
+  // Manual override takes priority over timestamp
+  assert.equal(
+    resolveVisitShiftPeriod(
+      { visit_datetime: '2026-10-17T10:00', shift_period: 'night', shift_overridden: true },
+      DEFAULT_INFIRMARY_SETTINGS
+    ),
+    'night'
+  );
+  assert.equal(formatShiftPeriodLabel('school_hours'), 'School Hours');
+  assert.equal(formatShiftPeriodLabel('night'), 'Night / After-Hours');
+});
+
+test('Phase 1 normalizeSheetSyncPayload merges medicines, items, bills, stock transactions, and settings cleanly', () => {
+  const existingDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    bills: [
+      {
+        bill_id: 'BIL-2026-0001',
+        bill_number: 'INV-101',
+        vendor_name: 'Apollo Pharmacy',
+        bill_date: '2026-10-17',
+        category: 'Medicines',
+        total_amount: 1450,
+        payment_status: 'Paid',
+        image_data_url: 'data:image/jpeg;base64,LOCALPREVIEW',
+        created_at: '2026-10-17T10:00:00Z',
+      },
+    ],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: [],
+      visits: [],
+      measurements: [],
+      healthProfiles: [],
+      medicines: [
+        {
+          medicine_id: 'MED-2026-0001',
+          name: 'Paracetamol Syrup',
+          category: 'Fever & Pain',
+          form_strength: '60ml',
+          unit: 'bottles',
+          current_stock: '12',
+          min_stock_alert: '4',
+        },
+      ],
+      items: [
+        {
+          item_id: 'ITM-2026-0001',
+          name: 'Crepe Bandage',
+          category: 'Dressing & Bandages',
+          unit: 'rolls',
+          current_stock: '8',
+          min_stock_alert: '3',
+        },
+      ],
+      bills: [
+        {
+          bill_id: 'BIL-2026-0001',
+          bill_number: 'INV-101',
+          vendor_name: 'Apollo Pharmacy',
+          bill_date: '2026-10-17',
+          category: 'Medicines',
+          total_amount: '1450',
+          payment_status: 'Paid',
+          drive_file_id: 'drive123',
+          image_url: 'https://drive.google.com/uc?export=view&id=drive123',
+        },
+      ],
+      settings: {
+        school_hours_start: '08:00',
+        school_hours_end: '15:00',
+      },
+    } as any,
+    existingDb
+  );
+
+  assert.equal(synced.medicines?.length, 1);
+  assert.equal(synced.medicines?.[0].current_stock, 12);
+  assert.equal(synced.items?.length, 1);
+  assert.equal(synced.items?.[0].current_stock, 8);
+  assert.equal(synced.bills?.length, 1);
+  assert.equal(synced.bills?.[0].image_url, 'https://drive.google.com/uc?export=view&id=drive123');
+  assert.equal(synced.bills?.[0].image_data_url, 'data:image/jpeg;base64,LOCALPREVIEW');
+  assert.equal(synced.settings?.school_hours_start, '08:00');
+  assert.equal(synced.settings?.school_hours_end, '15:00');
+});
+
+test('Phase 1 RBAC blocks Warden from inventory, bills, and school hours while authorizing Nurse & Admin appropriately', async () => {
+  const { sanitizeDbForRole, isMutationAllowedForRole } = await import('../../serverAuth.ts');
+  const dbWithPhase1: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    medicines: [
+      {
+        medicine_id: 'MED-2026-0001',
+        name: 'ORS',
+        category: 'Hydration / ORS',
+        form_strength: '21g',
+        unit: 'sachets',
+        batch_number: 'B1',
+        expiry_date: '2027-01-01',
+        current_stock: 20,
+        min_stock_alert: 5,
+        updated_at: '2026-10-17T08:00:00Z',
+      },
+    ],
+    items: [
+      {
+        item_id: 'ITM-2026-0001',
+        name: 'Bandage',
+        category: 'First Aid',
+        unit: 'rolls',
+        current_stock: 15,
+        min_stock_alert: 5,
+        updated_at: '2026-10-17T08:00:00Z',
+      },
+    ],
+    stockTransactions: [],
+    bills: [
+      {
+        bill_id: 'BIL-2026-0001',
+        bill_number: 'INV-1',
+        vendor_name: 'MedPlus',
+        bill_date: '2026-10-17',
+        category: 'Medicines',
+        total_amount: 500,
+        payment_status: 'Paid',
+        created_at: '2026-10-17T08:00:00Z',
+      },
+    ],
+  };
+
+  const wardenDb = sanitizeDbForRole(dbWithPhase1, 'warden');
+  assert.equal(wardenDb.medicines?.length, 0);
+  assert.equal(wardenDb.items?.length, 0);
+  assert.equal(wardenDb.bills?.length, 0);
+
+  const nurseDb = sanitizeDbForRole(dbWithPhase1, 'nurse');
+  assert.equal(nurseDb.medicines?.length, 1);
+  assert.equal(nurseDb.items?.length, 1);
+  assert.equal(nurseDb.bills?.length, 1);
+
+  assert.equal(isMutationAllowedForRole('upsertMedicine', 'warden'), false);
+  assert.equal(isMutationAllowedForRole('createBill', 'warden'), false);
+  assert.equal(isMutationAllowedForRole('updateSchoolHours', 'warden'), false);
+  assert.equal(isMutationAllowedForRole('upsertMedicine', 'nurse'), true);
+  assert.equal(isMutationAllowedForRole('createBill', 'nurse'), true);
+  assert.equal(isMutationAllowedForRole('updateSchoolHours', 'nurse'), false);
+  assert.equal(isMutationAllowedForRole('updateSchoolHours', 'admin'), true);
+});
 
 

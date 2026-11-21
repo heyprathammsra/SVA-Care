@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   FileSpreadsheet,
   AlertCircle,
+  Package,
 } from 'lucide-react';
 import {
   generatePermanentId,
@@ -34,6 +35,9 @@ import {
   normalizeDatetimeString,
   normalizeDateOnlyString,
   normalizeTimeOnlyString,
+  resolveVisitShiftPeriod,
+  formatShiftPeriodLabel,
+  DEFAULT_INFIRMARY_SETTINGS,
   PURGED_TEST_VISIT_IDS,
   PURGED_TEST_MEASUREMENT_IDS,
   PURGED_TEST_HEALTH_PROFILE_IDS,
@@ -46,6 +50,9 @@ import {
   type AppUserRecord,
   type VisitFormInput,
   type DailyLogEntry,
+  type MedicineInventoryRecord,
+  type ItemInventoryRecord,
+  type BillRecord,
 } from './utils/nurseLogic';
 import {
   getTodayLocalDateString,
@@ -63,6 +70,11 @@ import {
   type DownloadableExcelTab,
 } from './components/SheetsSetupView';
 import { AdminPanelView, type AdminActionResult } from './components/AdminPanelView';
+import {
+  OperationsWorkspaceView,
+  type OperationsActionResult,
+  type BillRestockLine,
+} from './components/OperationsWorkspaceView';
 import { PrintableReport, type PrintReportConfig } from './components/PrintableReport';
 import { AuthScreen, type LoginSuccessPayload } from './components/AuthScreen';
 import { WardenPortalView } from './components/WardenPortalView';
@@ -70,7 +82,14 @@ import { CustomSelect } from './components/CustomSelect';
 import { ModalDialog } from './components/ModalDialog';
 import { type AuthUser } from './utils/auth';
 
-type ActiveScreen = 'home' | 'new-visit' | 'students' | 'daily-log' | 'sheets-setup' | 'admin-panel';
+type ActiveScreen =
+  | 'home'
+  | 'new-visit'
+  | 'students'
+  | 'daily-log'
+  | 'operations'
+  | 'sheets-setup'
+  | 'admin-panel';
 type RosterFilterMode = 'all' | 'visited-today' | 'health-notes';
 
 const EMPTY_DB: NurseDatabase = {
@@ -81,6 +100,11 @@ const EMPTY_DB: NurseDatabase = {
   healthProfiles: [],
   dispatches: [],
   users: [],
+  medicines: [],
+  items: [],
+  stockTransactions: [],
+  bills: [],
+  settings: DEFAULT_INFIRMARY_SETTINGS,
 };
 
 const LEGACY_STORAGE_KEYS = [
@@ -169,9 +193,37 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
 
   const dispatches = Array.isArray(inputDb.dispatches) ? inputDb.dispatches : [];
   const users = Array.isArray(inputDb.users) ? inputDb.users : [];
+  const medicines = Array.isArray(inputDb.medicines) ? inputDb.medicines : [];
+  const items = Array.isArray(inputDb.items) ? inputDb.items : [];
+  const stockTransactions = Array.isArray(inputDb.stockTransactions)
+    ? inputDb.stockTransactions
+    : [];
+  const bills = Array.isArray(inputDb.bills) ? inputDb.bills : [];
+  const settings = inputDb.settings
+    ? {
+        school_hours_start:
+          inputDb.settings.school_hours_start || DEFAULT_INFIRMARY_SETTINGS.school_hours_start,
+        school_hours_end:
+          inputDb.settings.school_hours_end || DEFAULT_INFIRMARY_SETTINGS.school_hours_end,
+        updated_at: inputDb.settings.updated_at,
+      }
+    : DEFAULT_INFIRMARY_SETTINGS;
   const classes = getAllClassSections(students, inputDb.classes);
 
-  return { students, classes, visits, measurements, healthProfiles, dispatches, users };
+  return {
+    students,
+    classes,
+    visits,
+    measurements,
+    healthProfiles,
+    dispatches,
+    users,
+    medicines,
+    items,
+    stockTransactions,
+    bills,
+    settings,
+  };
 }
 
 export default function App() {
@@ -195,6 +247,7 @@ export default function App() {
     const hash = window.location.hash.replace('#', '');
     if (hash === 'students') return 'students';
     if (hash === 'daily-log') return 'daily-log';
+    if (hash === 'operations' || hash === 'inventory' || hash === 'bills') return 'operations';
     if (hash === 'downloads' || hash === 'sheets-setup') return 'sheets-setup';
     if (hash === 'admin' || hash === 'admin-panel') return 'admin-panel';
     if (hash === 'new-visit' || hash === 'record') return 'new-visit';
@@ -215,7 +268,9 @@ export default function App() {
       const hash = window.location.hash.replace('#', '');
       if (hash === 'students') setActiveScreen('students');
       else if (hash === 'daily-log') setActiveScreen('daily-log');
-      else if (hash === 'downloads' || hash === 'sheets-setup') setActiveScreen('sheets-setup');
+      else if (hash === 'operations' || hash === 'inventory' || hash === 'bills') {
+        setActiveScreen('operations');
+      } else if (hash === 'downloads' || hash === 'sheets-setup') setActiveScreen('sheets-setup');
       else if (hash === 'admin' || hash === 'admin-panel') setActiveScreen('admin-panel');
       else if (hash === 'new-visit' || hash === 'record') setActiveScreen('new-visit');
       else if (hash === 'home' || !hash) setActiveScreen('home');
@@ -621,6 +676,8 @@ export default function App() {
       roll_number: stuRoll,
       roll_no: stuRoll,
       visit_datetime: normalizeDatetimeString(input.visit_datetime),
+      shift_period: input.shift_period,
+      shift_overridden: input.shift_overridden,
       reason: input.reason.trim(),
       observations: input.observations.trim(),
       action_taken: input.action_taken.trim(),
@@ -631,6 +688,11 @@ export default function App() {
           : input.medicine_status === 'not_recorded'
             ? 'Not recorded'
             : input.medicine_name.trim(),
+      medicine_id: input.medicine_status === 'given' ? input.medicine_id : undefined,
+      medicine_qty: input.medicine_status === 'given' ? input.medicine_qty : undefined,
+      item_id: input.item_id,
+      item_name: input.item_name,
+      item_qty: input.item_qty,
       dosage: input.medicine_status === 'given' ? input.dosage.trim() : '',
       dosage_unit: input.medicine_status === 'given' ? input.dosage_unit.trim() : '',
       route: input.medicine_status === 'given' ? input.route.trim() : '',
@@ -648,8 +710,34 @@ export default function App() {
       visits: [newVisit, ...prev.visits],
     }));
 
-    // Sync to shared school server (which forwards action: 'createVisit' to Google Sheets & broadcasts to all phones)
-    void persistMutationToServer({ action: 'recordVisit', visit: newVisit }, 'visit record');
+    // Sync to shared school server and apply server-returned db (with updated stock balances & shift)
+    void authFetch('/api/mutate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'recordVisit', visit: newVisit, deviceId }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          setSaveErrorBanner(`Could not sync visit record to the school server (HTTP ${res.status}).`);
+          return;
+        }
+        setSaveErrorBanner(null);
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = (await res.json()) as Record<string, unknown>;
+          if (data.db) {
+            if (typeof data.updatedAt === 'string') {
+              lastServerUpdatedAtRef.current = data.updatedAt;
+            }
+            setDb(normalizeDatabaseSections(data.db as NurseDatabase));
+          }
+        }
+      })
+      .catch(() => {
+        setSaveErrorBanner(
+          'Network error while saving visit record. Please verify your connection before closing.'
+        );
+      });
 
     return newVisit;
   };
@@ -811,6 +899,95 @@ export default function App() {
     return postAdminMutation(
       { action: 'deleteUser', username },
       `Deleted staff account "${username}".`
+    );
+  };
+
+  const handleUpdateSchoolHours = async (
+    schoolHoursStart: string,
+    schoolHoursEnd: string
+  ): Promise<AdminActionResult> => {
+    return postAdminMutation(
+      {
+        action: 'updateSchoolHours',
+        school_hours_start: schoolHoursStart,
+        school_hours_end: schoolHoursEnd,
+      },
+      `Updated School Hours window to ${schoolHoursStart} – ${schoolHoursEnd}.`
+    );
+  };
+
+  const handleUpsertMedicine = async (
+    medicine: Partial<MedicineInventoryRecord>
+  ): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertMedicine', medicine },
+      medicine.medicine_id
+        ? `Updated medicine "${medicine.name}".`
+        : `Added medicine "${medicine.name}" to inventory.`
+    );
+  };
+
+  const handleDeleteMedicine = async (medicineId: string): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteMedicine', medicine_id: medicineId },
+      'Removed medicine from inventory.'
+    );
+  };
+
+  const handleUpsertItem = async (
+    item: Partial<ItemInventoryRecord>
+  ): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertItem', item },
+      item.item_id
+        ? `Updated item "${item.name}".`
+        : `Added item "${item.name}" to inventory.`
+    );
+  };
+
+  const handleDeleteItem = async (itemId: string): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteItem', item_id: itemId },
+      'Removed item from inventory.'
+    );
+  };
+
+  const handleAdjustStock = async (payload: {
+    target_type: 'medicine' | 'item';
+    target_id: string;
+    change_qty: number;
+    reason?: 'adjustment' | 'bill_restock';
+    notes?: string;
+  }): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'adjustStock', ...payload },
+      `Stock ${payload.change_qty > 0 ? 'increased' : 'deducted'} by ${Math.abs(payload.change_qty)}.`
+    );
+  };
+
+  const handleCreateBill = async (
+    bill: Partial<BillRecord>,
+    restockLines?: BillRestockLine[]
+  ): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'createBill', bill, restockLines: restockLines || [] },
+      restockLines && restockLines.length > 0
+        ? `Recorded bill from ${bill.vendor_name} and restocked ${restockLines.length} inventory item(s).`
+        : `Recorded bill from ${bill.vendor_name}.`
+    );
+  };
+
+  const handleUpdateBill = async (bill: Partial<BillRecord>): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'updateBill', bill },
+      `Updated bill from ${bill.vendor_name}.`
+    );
+  };
+
+  const handleDeleteBill = async (billId: string): Promise<OperationsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteBill', bill_id: billId },
+      'Deleted bill record.'
     );
   };
 
@@ -1158,10 +1335,10 @@ export default function App() {
           <span className="truncate">{SCHOOL_NAME}</span>
         </a>
 
-        {/* Zone 2: Navigation Links */}
+        {/* Zone 2: Navigation Links (clean 5-link single-line bar) */}
         <nav
           aria-label="Primary navigation"
-          className="flex items-center justify-center gap-8 text-sm font-medium text-zinc-500"
+          className="flex items-center justify-center gap-6 text-sm font-medium text-zinc-500"
         >
           <a
             href="#home"
@@ -1206,37 +1383,35 @@ export default function App() {
           >
             Daily Log
           </a>
+          <a
+            href="#operations"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveScreen('operations');
+            }}
+            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+              effectiveScreen === 'operations'
+                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
+                : ''
+            }`}
+          >
+            Stock &amp; Bills
+          </a>
           {isAdmin ? (
-            <>
-              <a
-                href="#admin"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setActiveScreen('admin-panel');
-                }}
-                className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
-                  effectiveScreen === 'admin-panel'
-                    ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                    : ''
-                }`}
-              >
-                Admin
-              </a>
-              <a
-                href="#sheets-setup"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setActiveScreen('sheets-setup');
-                }}
-                className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
-                  effectiveScreen === 'sheets-setup'
-                    ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                    : ''
-                }`}
-              >
-                Google Sheets
-              </a>
-            </>
+            <a
+              href="#admin"
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveScreen('admin-panel');
+              }}
+              className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+                effectiveScreen === 'admin-panel' || effectiveScreen === 'sheets-setup'
+                  ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
+                  : ''
+              }`}
+            >
+              Admin
+            </a>
           ) : (
             <a
               href="#downloads"
@@ -1431,15 +1606,25 @@ export default function App() {
                   </span>
                 )}
               </button>
-              {isAdmin && (
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveScreen('admin-panel')}
+                  aria-label="Admin Console"
+                  title="Admin Console"
+                  className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-teal-800 active:bg-teal-50 transition-colors"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                </button>
+              ) : (
                 <button
                   type="button"
                   onClick={() => setActiveScreen('sheets-setup')}
-                  aria-label="Google Sheets"
-                  title="Google Sheets"
+                  aria-label="Download Protected Sheets"
+                  title="Download Protected Sheets"
                   className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-teal-800 active:bg-teal-50 transition-colors"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <Download className="w-3.5 h-3.5" />
                 </button>
               )}
               {effectiveScreen !== 'home' && (
@@ -1867,8 +2052,19 @@ export default function App() {
                               Roll {student.roll_number}
                             </span>
                           </div>
-                          <div className="font-mono text-[11px] text-zinc-400">
-                            {extractDatePart(visit.visit_datetime)} · {formatTimeFromDatetime(visit.visit_datetime)}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-zinc-400">
+                            <span>
+                              {extractDatePart(visit.visit_datetime)} · {formatTimeFromDatetime(visit.visit_datetime)}
+                            </span>
+                            <span
+                              className={`font-sans font-semibold ${
+                                resolveVisitShiftPeriod(visit, db.settings) === 'night'
+                                  ? 'text-indigo-700'
+                                  : 'text-teal-700'
+                              }`}
+                            >
+                              {formatShiftPeriodLabel(resolveVisitShiftPeriod(visit, db.settings))}
+                            </span>
                           </div>
 
                           <p className="text-xs font-medium text-zinc-800 pt-0.5">
@@ -1924,6 +2120,9 @@ export default function App() {
             visits={db.visits}
             measurements={db.measurements}
             healthProfiles={db.healthProfiles}
+            medicines={db.medicines || []}
+            items={db.items || []}
+            settings={db.settings || DEFAULT_INFIRMARY_SETTINGS}
             initialStudentId={preselectedStudentIdForVisit}
             initialReason={preselectedReasonForVisit}
             initialNotes={preselectedNotesForVisit}
@@ -2047,6 +2246,7 @@ export default function App() {
           <DailyLogView
             students={db.students}
             visits={db.visits}
+            settings={db.settings || DEFAULT_INFIRMARY_SETTINGS}
             onOpenPrintPreview={(date: string, entries: DailyLogEntry[]) =>
               setPrintReportConfig({
                 type: 'daily-log',
@@ -2056,6 +2256,24 @@ export default function App() {
             }
             onOpenStudentProfile={openStudentProfile}
             onStartNewVisit={() => startNewVisitForStudent('')}
+          />
+        )}
+
+        {/* SCREEN 4B: OPERATIONS WORKSPACE (MEDICINES, ITEMS, BILLS & STOCK LEDGER) */}
+        {effectiveScreen === 'operations' && (
+          <OperationsWorkspaceView
+            medicines={db.medicines || []}
+            items={db.items || []}
+            stockTransactions={db.stockTransactions || []}
+            bills={db.bills || []}
+            onUpsertMedicine={handleUpsertMedicine}
+            onDeleteMedicine={handleDeleteMedicine}
+            onUpsertItem={handleUpsertItem}
+            onDeleteItem={handleDeleteItem}
+            onAdjustStock={handleAdjustStock}
+            onCreateBill={handleCreateBill}
+            onUpdateBill={handleUpdateBill}
+            onDeleteBill={handleDeleteBill}
           />
         )}
 
@@ -2075,13 +2293,14 @@ export default function App() {
           />
         )}
 
-        {/* SCREEN 6: ADMIN PORTAL (USERS, CLASSES, STUDENTS) */}
+        {/* SCREEN 6: ADMIN PORTAL (USERS, CLASSES, STUDENTS, INFIRMARY HOURS) */}
         {effectiveScreen === 'admin-panel' && isAdmin && (
           <AdminPanelView
             currentUser={currentUser}
             students={db.students}
             classes={homeAvailableSections}
             users={db.users || []}
+            settings={db.settings || DEFAULT_INFIRMARY_SETTINGS}
             onCreateStudent={handleAdminCreateStudent}
             onUpdateStudent={handleUpdateStudent}
             onCreateClass={handleCreateClass}
@@ -2089,6 +2308,7 @@ export default function App() {
             onDeleteClass={handleDeleteClass}
             onUpsertUser={handleUpsertUser}
             onDeleteUser={handleDeleteUser}
+            onUpdateSchoolHours={handleUpdateSchoolHours}
             onOpenStudentProfile={openStudentProfile}
             onOpenSheetsSetup={() => setActiveScreen('sheets-setup')}
             onBackToHome={() => setActiveScreen('home')}
@@ -2231,45 +2451,24 @@ export default function App() {
               <span className="text-[10px] leading-tight mt-0.5">Daily Log</span>
             </button>
 
-            {isAdmin ? (
-              <button
-                type="button"
-                onClick={() => setActiveScreen('admin-panel')}
-                className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
-                  effectiveScreen === 'admin-panel'
-                    ? 'text-teal-900 font-bold'
-                    : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
+            <button
+              type="button"
+              onClick={() => setActiveScreen('operations')}
+              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
+                effectiveScreen === 'operations'
+                  ? 'text-teal-900 font-bold'
+                  : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
+              }`}
+            >
+              <div
+                className={`p-1 rounded-lg relative transition-colors ${
+                  effectiveScreen === 'operations' ? 'bg-teal-100/80 text-teal-800' : ''
                 }`}
               >
-                <div
-                  className={`p-1 rounded-lg relative transition-colors ${
-                    effectiveScreen === 'admin-panel' ? 'bg-teal-100/80 text-teal-800' : ''
-                  }`}
-                >
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <span className="text-[10px] leading-tight mt-0.5">Admin</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setActiveScreen('sheets-setup')}
-                className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
-                  effectiveScreen === 'sheets-setup'
-                    ? 'text-teal-900 font-bold'
-                    : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
-                }`}
-              >
-                <div
-                  className={`p-1 rounded-lg relative transition-colors ${
-                    effectiveScreen === 'sheets-setup' ? 'bg-teal-100/80 text-teal-800' : ''
-                  }`}
-                >
-                  <Download className="w-5 h-5" />
-                </div>
-                <span className="text-[10px] leading-tight mt-0.5">Downloads</span>
-              </button>
-            )}
+                <Package className="w-5 h-5" />
+              </div>
+              <span className="text-[10px] leading-tight mt-0.5">Stock</span>
+            </button>
           </div>
         </nav>
       )}
