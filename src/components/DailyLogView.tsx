@@ -54,19 +54,30 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
     return { schoolHours, night };
   }, [dailyEntries, settings]);
 
-  const sortedEntriesNewestFirst = useMemo(() => {
+  const filteredEntriesChronological = useMemo(() => {
     const filtered =
       shiftFilter === 'all'
         ? dailyEntries
         : dailyEntries.filter(
             (entry) => resolveVisitShiftPeriod(entry.visit, settings) === shiftFilter
           );
-    return [...filtered].sort((a, b) => {
+    return filtered.map((entry, idx) => ({ ...entry, visitNumber: idx + 1 }));
+  }, [dailyEntries, shiftFilter, settings]);
+
+  const sortedEntriesNewestFirst = useMemo(() => {
+    return [...filteredEntriesChronological].sort((a, b) => {
       const dtCmp = b.visit.visit_datetime.localeCompare(a.visit.visit_datetime);
       if (dtCmp !== 0) return dtCmp;
       return b.visit.created_at.localeCompare(a.visit.created_at);
     });
-  }, [dailyEntries, shiftFilter, settings]);
+  }, [filteredEntriesChronological]);
+
+  const printLabel =
+    shiftFilter === 'school_hours'
+      ? 'Print School Hours Log'
+      : shiftFilter === 'night'
+      ? 'Print Night Log'
+      : 'Print Daily Log (A4)';
 
   const shiftDate = (daysDelta: number) => {
     const parts = selectedDate.split('-').map(Number);
@@ -137,11 +148,11 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
 
           <button
             type="button"
-            onClick={() => onOpenPrintPreview(selectedDate, dailyEntries)}
-            className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+            onClick={() => onOpenPrintPreview(selectedDate, filteredEntriesChronological)}
+            className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Printer className="w-3.5 h-3.5" />
-            Print Daily Log (A4)
+            {printLabel}
           </button>
         </div>
       </div>
@@ -186,15 +197,17 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
 
         <div className="flex items-center justify-between gap-2 px-1 text-xs">
           <span className="text-zinc-500">
-            <span className="font-mono font-bold text-zinc-900">{dailyEntries.length}</span> visits on {selectedDate}
+            <span className="font-mono font-bold text-zinc-900">{dailyEntries.length}</span> visits ·{' '}
+            <span className="font-mono font-semibold text-teal-700">{shiftCounts.schoolHours}</span> School ·{' '}
+            <span className="font-mono font-semibold text-indigo-700">{shiftCounts.night}</span> Night
           </span>
           <button
             type="button"
-            onClick={() => onOpenPrintPreview(selectedDate, dailyEntries)}
-            className="text-xs font-bold text-teal-800 flex items-center gap-1 active:underline"
+            onClick={() => onOpenPrintPreview(selectedDate, filteredEntriesChronological)}
+            className="text-xs font-bold text-teal-800 flex items-center gap-1 active:underline whitespace-nowrap shrink-0"
           >
             <Printer className="w-3.5 h-3.5" />
-            <span>Print Log (A4)</span>
+            <span>{shiftFilter === 'all' ? 'Print Log' : shiftFilter === 'night' ? 'Print Night' : 'Print School'}</span>
           </button>
         </div>
       </div>
@@ -204,13 +217,17 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
         <div
           role="tablist"
           aria-label="Filter visits by shift"
-          className="inline-flex items-center gap-1 p-1 bg-stone-100 rounded-xl"
+          className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/70 rounded-xl w-full sm:w-auto"
         >
           {(
             [
-              { key: 'all', label: `All (${dailyEntries.length})` },
-              { key: 'school_hours', label: `School Hours (${shiftCounts.schoolHours})` },
-              { key: 'night', label: `Night (${shiftCounts.night})` },
+              { key: 'all', mobileLabel: `All (${dailyEntries.length})`, label: `All (${dailyEntries.length})` },
+              {
+                key: 'school_hours',
+                mobileLabel: `School (${shiftCounts.schoolHours})`,
+                label: `School Hours (${shiftCounts.schoolHours})`,
+              },
+              { key: 'night', mobileLabel: `Night (${shiftCounts.night})`, label: `Night (${shiftCounts.night})` },
             ] as const
           ).map((opt) => (
             <button
@@ -219,13 +236,14 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
               role="tab"
               aria-selected={shiftFilter === opt.key}
               onClick={() => setShiftFilter(opt.key)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+              className={`px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap text-center cursor-pointer ${
                 shiftFilter === opt.key
                   ? 'bg-white text-zinc-900 shadow-xs font-semibold'
                   : 'text-zinc-500 hover:text-zinc-900'
               }`}
             >
-              {opt.label}
+              <span className="sm:hidden">{opt.mobileLabel}</span>
+              <span className="hidden sm:inline">{opt.label}</span>
             </button>
           ))}
         </div>
@@ -285,7 +303,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                           shiftPeriod === 'night' ? 'text-indigo-700' : 'text-teal-700'
                         }`}
                       >
-                        {formatShiftPeriodLabel(shiftPeriod)}
+                        {formatShiftPeriodLabel(shiftPeriod, true)}
                       </span>
                     </div>
                     <span className="font-mono text-zinc-500">
@@ -305,7 +323,7 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
                           shiftPeriod === 'night' ? 'text-indigo-700' : 'text-teal-700'
                         }`}
                       >
-                        {formatShiftPeriodLabel(shiftPeriod)}
+                        {formatShiftPeriodLabel(shiftPeriod, true)}
                       </span>
                     </div>
 

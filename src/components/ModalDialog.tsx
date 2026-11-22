@@ -56,10 +56,15 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`modal-panel-animate bg-white w-full ${maxWidthClass} max-h-[90vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border border-stone-200/90 shadow-[0_24px_64px_-16px_rgba(24,24,27,0.32),0_8px_24px_-8px_rgba(24,24,27,0.12)] overflow-hidden`}
+        className={`modal-panel-animate bg-white w-full ${maxWidthClass} max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border border-stone-200/90 shadow-[0_24px_64px_-16px_rgba(24,24,27,0.32),0_8px_24px_-8px_rgba(24,24,27,0.12)] overflow-hidden`}
       >
+        {/* Mobile bottom-sheet drag handle */}
+        <div className="sm:hidden flex justify-center pt-2.5 pb-0.5 bg-stone-50/70 shrink-0" aria-hidden="true">
+          <div className="w-10 h-1 rounded-full bg-stone-300/90" />
+        </div>
+
         {/* Header */}
-        <div className="px-5 sm:px-6 py-4 border-b border-stone-100 flex items-start justify-between gap-3 bg-gradient-to-b from-stone-50/70 to-white shrink-0">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-stone-100 flex items-start justify-between gap-3 bg-gradient-to-b from-stone-50/70 to-white shrink-0">
           <div className="flex items-start gap-3 min-w-0">
             {icon && (
               <div className="w-9 h-9 rounded-xl bg-stone-100/90 border border-stone-200/70 flex items-center justify-center shrink-0 mt-0.5">
@@ -85,18 +90,18 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-zinc-400 hover:text-zinc-800 hover:bg-stone-100 active:scale-95 transition-all shrink-0 cursor-pointer"
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center text-zinc-400 hover:text-zinc-800 hover:bg-stone-100 active:scale-95 transition-all shrink-0 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-5 sm:px-6 py-5 overflow-y-auto smooth-scroll-list flex-1">{children}</div>
+        <div className="px-4 sm:px-6 py-4 sm:py-5 overflow-y-auto smooth-scroll-list flex-1">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="px-5 sm:px-6 py-3.5 border-t border-stone-100 bg-stone-50/70 flex items-center justify-end gap-2.5 shrink-0">
+          <div className="px-4 sm:px-6 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom,0px))] sm:py-3.5 border-t border-stone-100 bg-stone-50/70 flex items-center justify-end gap-2.5 shrink-0">
             {footer}
           </div>
         )}

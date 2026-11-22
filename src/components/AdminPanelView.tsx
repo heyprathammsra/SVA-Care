@@ -426,13 +426,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      {/* Top Action Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+      {/* Desktop Top Action Strip (Mobile already has dedicated Back + Sheets buttons in header) */}
+      <div className="hidden sm:flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
           onClick={onBackToHome}
-          className="px-3.5 py-2 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors hidden sm:inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          className="px-3.5 py-2 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to Infirmary Desk
@@ -449,21 +449,22 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       </div>
 
       {/* Page Heading */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-stone-200/80 pb-4">
-        <div>
-          <p className="text-xs font-semibold text-teal-700 flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Administrator Portal · {currentUser.displayName}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 sm:gap-3 border-b border-stone-200/80 pb-3.5 sm:pb-4">
+        <div className="min-w-0">
+          <p className="text-[11px] sm:text-xs font-semibold text-teal-700 flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Administrator Portal · {currentUser.displayName}</span>
           </p>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5">
-            Users, Classes &amp; Student Management
+          <h1 className="text-xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-tight">
+            <span className="sm:hidden">Admin Console</span>
+            <span className="hidden sm:inline">Users, Classes &amp; Student Management</span>
           </h1>
-          <p className="text-sm text-zinc-500 mt-1">
+          <p className="hidden sm:block text-sm text-zinc-500 mt-1">
             Create staff accounts with roles, manage classes by section name, and add or edit student records.
           </p>
         </div>
 
-        <div className="flex items-center gap-4 text-xs font-mono tabular-nums text-zinc-500 shrink-0">
+        <div className="flex items-center gap-3 sm:gap-4 text-xs font-mono tabular-nums text-zinc-500 shrink-0">
           <span>{effectiveUsers.length} users</span>
           <span className="text-stone-300">·</span>
           <span>{classes.length} classes</span>
@@ -501,11 +502,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         </div>
       )}
 
-      {/* Sub-navigation Tabs */}
+      {/* Sub-navigation Tabs (Single row on mobile & desktop) */}
       <div
         role="tablist"
         aria-label="Admin management sections"
-        className="flex flex-wrap items-center gap-1.5"
+        className={`grid ${onUpdateSchoolHours ? 'grid-cols-4' : 'grid-cols-3'} sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/70 rounded-xl w-full sm:w-auto`}
       >
         <button
           type="button"
@@ -515,15 +516,16 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             setActiveTab('users');
             setFeedback(null);
           }}
-          className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'users'
-              ? 'bg-zinc-900 text-white shadow-xs'
-              : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+              ? 'bg-white text-zinc-900 shadow-xs'
+              : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <UserPlus className="w-4 h-4" />
-          <span>Staff Users &amp; Roles</span>
-          <span className="font-mono text-[11px] opacity-75">({effectiveUsers.length})</span>
+          <UserPlus className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
+          <span className="sm:hidden">Users</span>
+          <span className="hidden sm:inline">Staff Users &amp; Roles</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({effectiveUsers.length})</span>
         </button>
 
         <button
@@ -534,15 +536,16 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             setActiveTab('classes');
             setFeedback(null);
           }}
-          className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'classes'
-              ? 'bg-zinc-900 text-white shadow-xs'
-              : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+              ? 'bg-white text-zinc-900 shadow-xs'
+              : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Layers className="w-4 h-4" />
-          <span>Classes (Sections)</span>
-          <span className="font-mono text-[11px] opacity-75">({classes.length})</span>
+          <Layers className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
+          <span className="sm:hidden">Classes</span>
+          <span className="hidden sm:inline">Classes (Sections)</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({classes.length})</span>
         </button>
 
         <button
@@ -553,15 +556,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             setActiveTab('students');
             setFeedback(null);
           }}
-          className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'students'
-              ? 'bg-zinc-900 text-white shadow-xs'
-              : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+              ? 'bg-white text-zinc-900 shadow-xs'
+              : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <GraduationCap className="w-4 h-4" />
+          <GraduationCap className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span>Students</span>
-          <span className="font-mono text-[11px] opacity-75">({students.length})</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({students.length})</span>
         </button>
 
         {onUpdateSchoolHours && (
@@ -579,14 +582,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               setActiveTab('hours');
               setFeedback(null);
             }}
-            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'hours'
-                ? 'bg-zinc-900 text-white shadow-xs'
-                : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+                ? 'bg-white text-zinc-900 shadow-xs'
+                : 'text-zinc-600 hover:text-zinc-900'
             }`}
           >
-            <Clock className="w-4 h-4" />
-            <span>Infirmary Hours</span>
+            <Clock className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
+            <span className="sm:hidden">Hours</span>
+            <span className="hidden sm:inline">Infirmary Hours</span>
           </button>
         )}
       </div>
@@ -1284,21 +1288,56 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           TAB 4: INFIRMARY HOURS (SCHOOL HOURS VS NIGHT CLASSIFICATION)
       ======================================================================== */}
       {activeTab === 'hours' && onUpdateSchoolHours && (
-        <div className="max-w-xl bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
+        <div className="max-w-xl bg-white border border-stone-200/90 rounded-2xl p-4 sm:p-6 shadow-2xs space-y-5">
           <div className="pb-3 border-b border-stone-100">
             <h2 className="text-base font-semibold text-zinc-900 font-display">
               School Hours vs. Night Visit Timings
             </h2>
-            <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-              Visits recorded within this window are automatically tagged as{' '}
-              <strong className="text-teal-800">School Hours</strong>. Visits outside this window are tagged as{' '}
-              <strong className="text-indigo-700">Night / After-Hours</strong>. Staff can still manually override the tag on any visit.
+            <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+              Visits recorded within this window are tagged as{' '}
+              <strong className="text-teal-800">School Hours</strong>; visits outside it are tagged as{' '}
+              <strong className="text-indigo-700">Night</strong>. Staff can still manually override on any visit.
             </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="block text-[11px] font-semibold text-zinc-500">Quick Timings</span>
+            <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5">
+              {[
+                { short: '7:30 – 3:30', label: '7:30 AM – 3:30 PM', start: '07:30', end: '15:30' },
+                { short: '8:00 – 2:30', label: '8:00 AM – 2:30 PM', start: '08:00', end: '14:30' },
+                { short: '8:00 – 4:00', label: '8:00 AM – 4:00 PM', start: '08:00', end: '16:00' },
+              ].map((preset) => {
+                const isSelected = hoursStart === preset.start && hoursEnd === preset.end;
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      setHoursStart(preset.start);
+                      setHoursEnd(preset.end);
+                    }}
+                    className={`h-9 sm:h-8 px-2 sm:px-3 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap text-center font-mono sm:font-sans cursor-pointer ${
+                      isSelected
+                        ? 'bg-zinc-900 text-white border-zinc-900 font-semibold'
+                        : 'bg-white text-zinc-700 border-stone-200 hover:bg-stone-50'
+                    }`}
+                  >
+                    <span className="sm:hidden">{preset.short}</span>
+                    <span className="hidden sm:inline">{preset.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              if (!hoursStart || !hoursEnd || hoursEnd <= hoursStart) {
+                showToast({ ok: false, message: 'School Hours End must be later than Start.' });
+                return;
+              }
               setBusy(true);
               try {
                 const res = await onUpdateSchoolHours(hoursStart, hoursEnd);
@@ -1309,7 +1348,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             }}
             className="space-y-4"
           >
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <div>
                 <label htmlFor="school-hours-start" className="block text-xs font-semibold text-zinc-700 mb-1.5">
                   School Hours Start
@@ -1320,7 +1359,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   required
                   value={hoursStart}
                   onChange={(e) => setHoursStart(e.target.value)}
-                  className="w-full h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                  className="w-full h-11 sm:h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
                 />
               </div>
               <div>
@@ -1333,23 +1372,31 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   required
                   value={hoursEnd}
                   onChange={(e) => setHoursEnd(e.target.value)}
-                  className="w-full h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                  className="w-full h-11 sm:h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
                 />
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200/70 text-xs text-zinc-600 space-y-1">
-              <p>
-                <span className="font-semibold text-teal-800">School Hours:</span>{' '}
-                <span className="font-mono text-zinc-900">
-                  {formatHHMMTo12h(hoursStart)} – {formatHHMMTo12h(hoursEnd)}
-                </span>
-              </p>
-              <p>
-                <span className="font-semibold text-indigo-700">Night / After-Hours:</span>{' '}
-                All visits recorded before {formatHHMMTo12h(hoursStart)} or after {formatHHMMTo12h(hoursEnd)}
-              </p>
-            </div>
+            {hoursStart && hoursEnd && hoursEnd <= hoursStart ? (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-medium text-red-700">
+                School Hours End must be later than School Hours Start.
+              </div>
+            ) : (
+              <div className="rounded-xl bg-stone-50/90 border border-stone-200/70 grid grid-cols-2 divide-x divide-stone-200/80">
+                <div className="p-3 sm:p-3.5 min-w-0">
+                  <span className="block text-[11px] font-semibold text-teal-800">School Hours</span>
+                  <span className="block text-xs font-mono tabular-nums font-semibold text-zinc-900 mt-0.5">
+                    {formatHHMMTo12h(hoursStart)} – {formatHHMMTo12h(hoursEnd)}
+                  </span>
+                </div>
+                <div className="p-3 sm:p-3.5 min-w-0">
+                  <span className="block text-[11px] font-semibold text-indigo-700">Night / After-Hours</span>
+                  <span className="block text-xs text-zinc-600 mt-0.5">
+                    Before {formatHHMMTo12h(hoursStart)} or after {formatHHMMTo12h(hoursEnd)}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-between gap-3 pt-1">
               <button
@@ -1358,14 +1405,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   setHoursStart(DEFAULT_INFIRMARY_SETTINGS.school_hours_start);
                   setHoursEnd(DEFAULT_INFIRMARY_SETTINGS.school_hours_end);
                 }}
-                className="text-xs font-medium text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                className="h-10 px-2 text-xs font-medium text-zinc-500 hover:text-zinc-900 cursor-pointer"
               >
-                Reset to 7:30 AM – 3:30 PM
+                Reset default
               </button>
               <button
                 type="submit"
-                disabled={busy}
-                className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
+                disabled={busy || !hoursStart || !hoursEnd || hoursEnd <= hoursStart}
+                className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 disabled:opacity-60 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <Check className="w-4 h-4" />
                 <span>{busy ? 'Saving...' : 'Save School Hours'}</span>

@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
   AlertCircle,
   Package,
+  Stethoscope,
 } from 'lucide-react';
 import {
   generatePermanentId,
@@ -53,6 +54,13 @@ import {
   type MedicineInventoryRecord,
   type ItemInventoryRecord,
   type BillRecord,
+  type DoctorVisitSession,
+  type DoctorVisitCase,
+  type OpdRecord,
+  type MedicalCampRecord,
+  type CampScreeningRecord,
+  type AnnualCheckupRecord,
+  type MenstrualLogRecord,
 } from './utils/nurseLogic';
 import {
   getTodayLocalDateString,
@@ -75,6 +83,10 @@ import {
   type OperationsActionResult,
   type BillRestockLine,
 } from './components/OperationsWorkspaceView';
+import {
+  ProgramsWorkspaceView,
+  type ProgramsActionResult,
+} from './components/ProgramsWorkspaceView';
 import { PrintableReport, type PrintReportConfig } from './components/PrintableReport';
 import { AuthScreen, type LoginSuccessPayload } from './components/AuthScreen';
 import { WardenPortalView } from './components/WardenPortalView';
@@ -88,6 +100,7 @@ type ActiveScreen =
   | 'students'
   | 'daily-log'
   | 'operations'
+  | 'programs'
   | 'sheets-setup'
   | 'admin-panel';
 type RosterFilterMode = 'all' | 'visited-today' | 'health-notes';
@@ -104,6 +117,11 @@ const EMPTY_DB: NurseDatabase = {
   items: [],
   stockTransactions: [],
   bills: [],
+  doctorVisits: [],
+  doctorVisitCases: [],
+  opdRecords: [],
+  medicalCamps: [],
+  campScreenings: [],
   settings: DEFAULT_INFIRMARY_SETTINGS,
 };
 
@@ -199,6 +217,13 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
     ? inputDb.stockTransactions
     : [];
   const bills = Array.isArray(inputDb.bills) ? inputDb.bills : [];
+  const doctorVisits = Array.isArray(inputDb.doctorVisits) ? inputDb.doctorVisits : [];
+  const doctorVisitCases = Array.isArray(inputDb.doctorVisitCases)
+    ? inputDb.doctorVisitCases
+    : [];
+  const opdRecords = Array.isArray(inputDb.opdRecords) ? inputDb.opdRecords : [];
+  const medicalCamps = Array.isArray(inputDb.medicalCamps) ? inputDb.medicalCamps : [];
+  const campScreenings = Array.isArray(inputDb.campScreenings) ? inputDb.campScreenings : [];
   const settings = inputDb.settings
     ? {
         school_hours_start:
@@ -222,6 +247,11 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
     items,
     stockTransactions,
     bills,
+    doctorVisits,
+    doctorVisitCases,
+    opdRecords,
+    medicalCamps,
+    campScreenings,
     settings,
   };
 }
@@ -972,15 +1002,15 @@ export default function App() {
     return postAdminMutation(
       { action: 'createBill', bill, restockLines: restockLines || [] },
       restockLines && restockLines.length > 0
-        ? `Recorded bill from ${bill.vendor_name} and restocked ${restockLines.length} inventory item(s).`
-        : `Recorded bill from ${bill.vendor_name}.`
+        ? `Uploaded bill copy from ${bill.vendor_name} and restocked ${restockLines.length} supply item(s).`
+        : `Uploaded bill copy from ${bill.vendor_name}.`
     );
   };
 
   const handleUpdateBill = async (bill: Partial<BillRecord>): Promise<OperationsActionResult> => {
     return postAdminMutation(
       { action: 'updateBill', bill },
-      `Updated bill from ${bill.vendor_name}.`
+      `Updated bill record from ${bill.vendor_name}.`
     );
   };
 
@@ -988,6 +1018,147 @@ export default function App() {
     return postAdminMutation(
       { action: 'deleteBill', bill_id: billId },
       'Deleted bill record.'
+    );
+  };
+
+  // ---- PHASE 2: WEEKLY DOCTOR VISITS, EXTERNAL OPD & MEDICAL CAMPS HANDLERS ----
+  const handleUpsertDoctorVisit = async (
+    doctorVisit: Partial<DoctorVisitSession>
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertDoctorVisit', doctorVisit },
+      doctorVisit.doctor_visit_id
+        ? `Updated doctor visit session (${doctorVisit.doctor_name}).`
+        : `Logged doctor visit session (${doctorVisit.doctor_name}).`
+    );
+  };
+
+  const handleDeleteDoctorVisit = async (
+    doctorVisitId: string
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteDoctorVisit', doctor_visit_id: doctorVisitId },
+      'Deleted doctor visit session.'
+    );
+  };
+
+  const handleUpsertDoctorVisitCase = async (
+    doctorVisitCase: Partial<DoctorVisitCase>
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertDoctorVisitCase', doctorVisitCase },
+      doctorVisitCase.case_id
+        ? 'Updated student doctor consultation.'
+        : 'Added student consultation to doctor visit.'
+    );
+  };
+
+  const handleDeleteDoctorVisitCase = async (
+    caseId: string
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteDoctorVisitCase', case_id: caseId },
+      'Deleted student consultation record.'
+    );
+  };
+
+  const handleCreateOpd = async (opd: Partial<OpdRecord>): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'createOpd', opd },
+      `Recorded external OPD referral (${opd.hospital_or_clinic || 'Hospital'}).`
+    );
+  };
+
+  const handleUpdateOpd = async (opd: Partial<OpdRecord>): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'updateOpd', opd },
+      `Updated external OPD record (${opd.hospital_or_clinic || 'Hospital'}).`
+    );
+  };
+
+  const handleDeleteOpd = async (opdId: string): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteOpd', opd_id: opdId },
+      'Deleted external OPD record.'
+    );
+  };
+
+  const handleUpsertMedicalCamp = async (
+    medicalCamp: Partial<MedicalCampRecord>
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertMedicalCamp', medicalCamp },
+      medicalCamp.camp_id
+        ? `Updated medical camp (${medicalCamp.camp_title}).`
+        : `Created medical camp (${medicalCamp.camp_title}).`
+    );
+  };
+
+  const handleDeleteMedicalCamp = async (campId: string): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteMedicalCamp', camp_id: campId },
+      'Deleted medical camp.'
+    );
+  };
+
+  const handleUpsertCampScreening = async (
+    campScreening: Partial<CampScreeningRecord>
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertCampScreening', campScreening },
+      campScreening.screening_id
+        ? 'Updated student camp screening.'
+        : 'Saved student camp screening.'
+    );
+  };
+
+  const handleDeleteCampScreening = async (
+    screeningId: string
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteCampScreening', screening_id: screeningId },
+      'Deleted camp screening record.'
+    );
+  };
+
+  // ---- PHASE 3: ANNUAL HEALTH CHECKUPS & PRIVATE MENSTRUAL LOG HANDLERS ----
+  const handleUpsertAnnualCheckup = async (
+    annualCheckup: Partial<AnnualCheckupRecord>
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertAnnualCheckup', annualCheckup },
+      annualCheckup.checkup_id
+        ? 'Updated annual health checkup record.'
+        : 'Saved annual health checkup record.'
+    );
+  };
+
+  const handleDeleteAnnualCheckup = async (
+    checkupId: string
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteAnnualCheckup', checkup_id: checkupId },
+      'Deleted annual health checkup record.'
+    );
+  };
+
+  const handleUpsertMenstrualLog = async (
+    menstrualLog: Partial<MenstrualLogRecord>
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'upsertMenstrualLog', menstrualLog },
+      menstrualLog.menstrual_id
+        ? 'Updated menstrual care entry.'
+        : 'Saved confidential menstrual care entry.'
+    );
+  };
+
+  const handleDeleteMenstrualLog = async (
+    menstrualId: string
+  ): Promise<ProgramsActionResult> => {
+    return postAdminMutation(
+      { action: 'deleteMenstrualLog', menstrual_id: menstrualId },
+      'Deleted menstrual care entry.'
     );
   };
 
@@ -1335,10 +1506,10 @@ export default function App() {
           <span className="truncate">{SCHOOL_NAME}</span>
         </a>
 
-        {/* Zone 2: Navigation Links (clean 5-link single-line bar) */}
+        {/* Zone 2: Navigation Links (clean single-line bar) */}
         <nav
           aria-label="Primary navigation"
-          className="flex items-center justify-center gap-6 text-sm font-medium text-zinc-500"
+          className="flex items-center justify-center gap-5 text-sm font-medium text-zinc-500"
         >
           <a
             href="#home"
@@ -1396,6 +1567,20 @@ export default function App() {
             }`}
           >
             Stock &amp; Bills
+          </a>
+          <a
+            href="#programs"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveScreen('programs');
+            }}
+            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+              effectiveScreen === 'programs'
+                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
+                : ''
+            }`}
+          >
+            Programs
           </a>
           {isAdmin ? (
             <a
@@ -1593,13 +1778,13 @@ export default function App() {
                 onClick={() => setShowIncomingDispatches(true)}
                 aria-label="Hostel passes"
                 title="Hostel passes"
-                className={`relative h-8 px-2 rounded-lg border shadow-2xs flex items-center gap-1 text-xs font-medium transition-colors ${
+                className={`relative h-9 min-w-[36px] px-2 rounded-xl border shadow-2xs flex items-center justify-center gap-1 text-xs font-medium transition-colors ${
                   activeDispatches.length > 0
                     ? 'bg-amber-50 text-amber-900 border-amber-300'
                     : 'bg-white text-zinc-600 border-stone-200/90'
                 }`}
               >
-                <Bell className={`w-3.5 h-3.5 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-500'}`} />
+                <Bell className={`w-4 h-4 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-500'}`} />
                 {activeDispatches.length > 0 && (
                   <span className="w-4 h-4 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">
                     {activeDispatches.length}
@@ -1612,9 +1797,9 @@ export default function App() {
                   onClick={() => setActiveScreen('admin-panel')}
                   aria-label="Admin Console"
                   title="Admin Console"
-                  className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-teal-800 active:bg-teal-50 transition-colors"
+                  className="h-9 w-9 rounded-xl bg-white border border-stone-200/90 shadow-2xs flex items-center justify-center text-teal-800 active:bg-teal-50 transition-colors"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <ShieldCheck className="w-4 h-4" />
                 </button>
               ) : (
                 <button
@@ -1622,26 +1807,9 @@ export default function App() {
                   onClick={() => setActiveScreen('sheets-setup')}
                   aria-label="Download Protected Sheets"
                   title="Download Protected Sheets"
-                  className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-teal-800 active:bg-teal-50 transition-colors"
+                  className="h-9 w-9 rounded-xl bg-white border border-stone-200/90 shadow-2xs flex items-center justify-center text-teal-800 active:bg-teal-50 transition-colors"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                </button>
-              )}
-              {effectiveScreen !== 'home' && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPrintReportConfig({
-                      type: 'daily-log',
-                      date: todayDate,
-                      entries: todayEntries,
-                    })
-                  }
-                  aria-label="Print today's visit log"
-                  title="Print today's visit log"
-                  className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-zinc-700 active:bg-stone-100 transition-colors"
-                >
-                  <Printer className="w-3.5 h-3.5 text-zinc-600" />
+                  <Download className="w-4 h-4" />
                 </button>
               )}
               <button
@@ -1649,10 +1817,9 @@ export default function App() {
                 onClick={handleLogout}
                 aria-label="Lock infirmary"
                 title="Lock infirmary"
-                className="h-8 px-2 rounded-lg bg-white border border-stone-200/90 shadow-2xs flex items-center gap-1 text-xs font-medium text-zinc-700 active:bg-rose-50 active:text-rose-700 transition-colors"
+                className="h-9 w-9 rounded-xl bg-white border border-stone-200/90 shadow-2xs flex items-center justify-center text-zinc-600 active:bg-rose-50 active:text-rose-700 transition-colors"
               >
-                <LogOut className="w-3.5 h-3.5 text-zinc-500" />
-                <span className="text-[11px] font-semibold text-zinc-700">Lock</span>
+                <LogOut className="w-4 h-4" />
               </button>
             </div>
           </>
@@ -1716,31 +1883,43 @@ export default function App() {
             <div className="sm:hidden bg-gradient-to-br from-white to-stone-50 border border-stone-200/90 rounded-2xl p-3.5 shadow-2xs space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse" />
-                    Infirmary Desk · Live Sync
+                  <span className="text-[11px] font-semibold text-teal-700">
+                    Infirmary Desk
                   </span>
                   <h2 className="text-base font-bold text-zinc-900 font-display truncate">
                     {todayEntries.length === 0
-                      ? 'No visits recorded yet today'
-                      : `${todayEntries.length} student visit${todayEntries.length === 1 ? '' : 's'} today`}
+                      ? '0 visits today'
+                      : `${todayEntries.length} visit${todayEntries.length === 1 ? '' : 's'} today`}
                   </h2>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPrintReportConfig({
-                      type: 'daily-log',
-                      date: todayDate,
-                      entries: todayEntries,
-                    })
-                  }
-                  className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 shrink-0 shadow-2xs active:bg-stone-100"
-                >
-                  <Printer className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>Log ({todayEntries.length})</span>
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProfileStudentId(null);
+                      setActiveScreen('students');
+                    }}
+                    className="h-8 px-2.5 text-xs font-medium text-teal-800 bg-teal-50/70 border border-teal-200/80 rounded-lg flex items-center gap-1 shrink-0 shadow-2xs active:bg-teal-100 whitespace-nowrap"
+                  >
+                    <Users className="w-3.5 h-3.5 text-teal-700" />
+                    <span>Directory</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPrintReportConfig({
+                        type: 'daily-log',
+                        date: todayDate,
+                        entries: todayEntries,
+                      })
+                    }
+                    className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 shrink-0 shadow-2xs active:bg-stone-100 whitespace-nowrap"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Log ({todayEntries.length})</span>
+                  </button>
+                </div>
               </div>
 
               {/* Segmented Switcher: Today's Activity vs Class Roster */}
@@ -2063,7 +2242,7 @@ export default function App() {
                                   : 'text-teal-700'
                               }`}
                             >
-                              {formatShiftPeriodLabel(resolveVisitShiftPeriod(visit, db.settings))}
+                              {formatShiftPeriodLabel(resolveVisitShiftPeriod(visit, db.settings), true)}
                             </span>
                           </div>
 
@@ -2277,6 +2456,39 @@ export default function App() {
           />
         )}
 
+        {/* SCREEN 4C: CLINICAL PROGRAMS (DOCTOR, OPD, CAMPS, ANNUAL CHECKUPS, MENSTRUAL, INSIGHTS) */}
+        {effectiveScreen === 'programs' && (
+          <ProgramsWorkspaceView
+            students={db.students}
+            classes={homeAvailableSections}
+            visits={db.visits}
+            items={db.items || []}
+            doctorVisits={db.doctorVisits || []}
+            doctorVisitCases={db.doctorVisitCases || []}
+            opdRecords={db.opdRecords || []}
+            medicalCamps={db.medicalCamps || []}
+            campScreenings={db.campScreenings || []}
+            annualCheckups={db.annualCheckups || []}
+            menstrualLogs={db.menstrualLogs || []}
+            onUpsertDoctorVisit={handleUpsertDoctorVisit}
+            onDeleteDoctorVisit={handleDeleteDoctorVisit}
+            onUpsertDoctorVisitCase={handleUpsertDoctorVisitCase}
+            onDeleteDoctorVisitCase={handleDeleteDoctorVisitCase}
+            onCreateOpd={handleCreateOpd}
+            onUpdateOpd={handleUpdateOpd}
+            onDeleteOpd={handleDeleteOpd}
+            onUpsertMedicalCamp={handleUpsertMedicalCamp}
+            onDeleteMedicalCamp={handleDeleteMedicalCamp}
+            onUpsertCampScreening={handleUpsertCampScreening}
+            onDeleteCampScreening={handleDeleteCampScreening}
+            onUpsertAnnualCheckup={handleUpsertAnnualCheckup}
+            onDeleteAnnualCheckup={handleDeleteAnnualCheckup}
+            onUpsertMenstrualLog={handleUpsertMenstrualLog}
+            onDeleteMenstrualLog={handleDeleteMenstrualLog}
+            onSelectStudent={(student) => openStudentProfile(student.student_id)}
+          />
+        )}
+
         {/* SCREEN 5: GOOGLE SHEETS (ADMIN) OR PROTECTED EXCEL DOWNLOADS (NURSE) */}
         {effectiveScreen === 'sheets-setup' && (
           <SheetsSetupView
@@ -2371,61 +2583,22 @@ export default function App() {
               type="button"
               onClick={() => setActiveScreen('home')}
               className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all ${
-                activeScreen === 'home'
+                activeScreen === 'home' || activeScreen === 'students'
                   ? 'text-teal-900 font-bold'
                   : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
               }`}
             >
               <div
                 className={`p-1 rounded-lg transition-colors ${
-                  activeScreen === 'home' ? 'bg-teal-100/80 text-teal-800' : ''
+                  activeScreen === 'home' || activeScreen === 'students'
+                    ? 'bg-teal-100/80 text-teal-800'
+                    : ''
                 }`}
               >
                 <Home className="w-5 h-5" />
               </div>
-              <span className="text-[10px] leading-tight mt-0.5">Infirmary</span>
+              <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Infirmary</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedProfileStudentId(null);
-                setActiveScreen('students');
-              }}
-              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all ${
-                activeScreen === 'students'
-                  ? 'text-teal-900 font-bold'
-                  : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
-              }`}
-            >
-              <div
-                className={`p-1 rounded-lg transition-colors ${
-                  activeScreen === 'students' ? 'bg-teal-100/80 text-teal-800' : ''
-                }`}
-              >
-                <Users className="w-5 h-5" />
-              </div>
-              <span className="text-[10px] leading-tight mt-0.5">Students</span>
-            </button>
-
-            {/* Central Prominent Record Visit Action Button */}
-            <div className="flex flex-col items-center justify-center py-0.5 px-0.5">
-              <button
-                type="button"
-                onClick={() =>
-                  startNewVisitForStudent(
-                    activeScreen === 'students' && selectedProfileStudentId
-                      ? selectedProfileStudentId
-                      : ''
-                  )
-                }
-                aria-label="Record visit"
-                className="w-11 h-11 rounded-full bg-zinc-900 text-white shadow-md flex items-center justify-center active:scale-95 transition-all hover:bg-zinc-800 border border-zinc-700/60"
-              >
-                <Plus className="w-5 h-5 stroke-[2.5]" />
-              </button>
-              <span className="text-[10px] font-semibold text-zinc-900 leading-tight mt-0.5">Record</span>
-            </div>
 
             <button
               type="button"
@@ -2448,7 +2621,47 @@ export default function App() {
                   </span>
                 )}
               </div>
-              <span className="text-[10px] leading-tight mt-0.5">Daily Log</span>
+              <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Daily Log</span>
+            </button>
+
+            {/* Central Prominent Record Visit Action Button */}
+            <div className="flex flex-col items-center justify-center py-0.5 px-0.5">
+              <button
+                type="button"
+                onClick={() =>
+                  startNewVisitForStudent(
+                    activeScreen === 'students' && selectedProfileStudentId
+                      ? selectedProfileStudentId
+                      : ''
+                  )
+                }
+                aria-label="Record visit"
+                className="w-11 h-11 rounded-full bg-zinc-900 text-white shadow-md flex items-center justify-center active:scale-95 transition-all hover:bg-zinc-800 border border-zinc-700/60"
+              >
+                <Plus className="w-5 h-5 stroke-[2.5]" />
+              </button>
+              <span className="text-[10px] font-semibold text-zinc-900 leading-tight mt-0.5 whitespace-nowrap">
+                Record
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveScreen('programs')}
+              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
+                effectiveScreen === 'programs'
+                  ? 'text-teal-900 font-bold'
+                  : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
+              }`}
+            >
+              <div
+                className={`p-1 rounded-lg relative transition-colors ${
+                  effectiveScreen === 'programs' ? 'bg-teal-100/80 text-teal-800' : ''
+                }`}
+              >
+                <Stethoscope className="w-5 h-5" />
+              </div>
+              <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Programs</span>
             </button>
 
             <button
@@ -2467,7 +2680,7 @@ export default function App() {
               >
                 <Package className="w-5 h-5" />
               </div>
-              <span className="text-[10px] leading-tight mt-0.5">Stock</span>
+              <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Stock</span>
             </button>
           </div>
         </nav>

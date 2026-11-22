@@ -407,6 +407,13 @@ export function sanitizeDbForRole(db: NurseDatabase, role: AuthRole): NurseDatab
       items: db.items || [],
       stockTransactions: db.stockTransactions || [],
       bills: db.bills || [],
+      doctorVisits: db.doctorVisits || [],
+      doctorVisitCases: db.doctorVisitCases || [],
+      opdRecords: db.opdRecords || [],
+      medicalCamps: db.medicalCamps || [],
+      campScreenings: db.campScreenings || [],
+      annualCheckups: db.annualCheckups || [],
+      menstrualLogs: db.menstrualLogs || [],
       settings: db.settings,
       users: (db.users || []).map((u) => ({
         ...u,
@@ -426,11 +433,18 @@ export function sanitizeDbForRole(db: NurseDatabase, role: AuthRole): NurseDatab
       items: db.items || [],
       stockTransactions: db.stockTransactions || [],
       bills: db.bills || [],
+      doctorVisits: db.doctorVisits || [],
+      doctorVisitCases: db.doctorVisitCases || [],
+      opdRecords: db.opdRecords || [],
+      medicalCamps: db.medicalCamps || [],
+      campScreenings: db.campScreenings || [],
+      annualCheckups: db.annualCheckups || [],
+      menstrualLogs: db.menstrualLogs || [],
       settings: db.settings,
       users: [],
     };
   }
-  // Hostel Warden: strictly excluded from Inventory, Stock Transactions, Bills, and Staff Users
+  // Hostel Warden: strictly excluded from Inventory, Stock Transactions, Bills, Clinical Programs (Doctor Visits, OPD, Camps, Annual Checkups, Menstrual Log), and Staff Users
   return {
     students: db.students,
     classes: db.classes,
@@ -442,6 +456,13 @@ export function sanitizeDbForRole(db: NurseDatabase, role: AuthRole): NurseDatab
     items: [],
     stockTransactions: [],
     bills: [],
+    doctorVisits: [],
+    doctorVisitCases: [],
+    opdRecords: [],
+    medicalCamps: [],
+    campScreenings: [],
+    annualCheckups: [],
+    menstrualLogs: [],
     settings: db.settings,
     users: [],
   };
@@ -498,6 +519,21 @@ const NURSE_ALLOWED_MUTATIONS = new Set([
   'createBill',
   'updateBill',
   'deleteBill',
+  'upsertDoctorVisit',
+  'deleteDoctorVisit',
+  'upsertDoctorVisitCase',
+  'deleteDoctorVisitCase',
+  'createOpd',
+  'updateOpd',
+  'deleteOpd',
+  'upsertMedicalCamp',
+  'deleteMedicalCamp',
+  'upsertCampScreening',
+  'deleteCampScreening',
+  'upsertAnnualCheckup',
+  'deleteAnnualCheckup',
+  'upsertMenstrualLog',
+  'deleteMenstrualLog',
 ]);
 
 const WARDEN_ALLOWED_MUTATIONS = new Set([

@@ -64,7 +64,7 @@ export interface StockTransactionRecord {
 }
 
 export type BillCategory = 'Medicines' | 'Items' | 'Equipment' | 'Camp' | 'Other';
-export type BillPaymentStatus = 'Paid' | 'Pending' | 'Reimbursed';
+export type BillPaymentStatus = 'Recorded' | 'Paid' | 'Pending' | 'Reimbursed';
 
 export interface BillRecord {
   bill_id: string;
@@ -73,7 +73,7 @@ export interface BillRecord {
   bill_date: string; // YYYY-MM-DD
   category: BillCategory;
   total_amount: number;
-  payment_status: BillPaymentStatus;
+  payment_status?: BillPaymentStatus;
   notes?: string;
   drive_file_id?: string;
   image_url?: string;
@@ -157,6 +157,158 @@ export interface AppUserRecord {
   updated_at?: string;
 }
 
+export interface DoctorVisitSession {
+  doctor_visit_id: string;
+  visit_date: string; // YYYY-MM-DD
+  session_time?: string; // e.g., "10:00 AM – 12:30 PM"
+  doctor_name: string;
+  specialization?: string;
+  campus_notes?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export interface DoctorVisitCase {
+  case_id: string;
+  doctor_visit_id: string;
+  student_id: string;
+  student_name?: string;
+  section?: string;
+  roll_number?: string;
+  complaint: string;
+  findings?: string;
+  prescription_or_advice?: string;
+  follow_up_needed?: boolean;
+  notes?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export type OpdStatus = 'Referred' | 'Returned' | 'Follow-up';
+
+export interface OpdRecord {
+  opd_id: string;
+  student_id: string;
+  student_name?: string;
+  section?: string;
+  roll_number?: string;
+  referral_datetime: string; // YYYY-MM-DDTHH:mm
+  hospital_or_clinic: string;
+  doctor_name?: string;
+  reason: string;
+  escort_or_parent?: string;
+  diagnosis_and_advice?: string;
+  follow_up_date?: string; // YYYY-MM-DD
+  status: OpdStatus;
+  drive_file_id?: string;
+  image_url?: string;
+  image_data_url?: string; // Compressed local fallback preview
+  notes?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export interface MedicalCampRecord {
+  camp_id: string;
+  camp_title: string;
+  camp_type: string; // e.g. Dental, Eye, General Health, Vaccination, ENT, Skin
+  organizer?: string;
+  camp_date: string; // YYYY-MM-DD
+  target_classes?: string; // e.g. "All Classes" or "Sparkle, Twinkle"
+  doctor_team?: string;
+  summary?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export interface CampScreeningRecord {
+  screening_id: string;
+  camp_id: string;
+  student_id: string;
+  student_name?: string;
+  section?: string;
+  roll_number?: string;
+  findings: string;
+  referral_needed?: boolean;
+  notes?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export type AnnualCheckupFitness = 'Fit' | 'Needs Follow-up' | 'Referred';
+
+export interface AnnualCheckupRecord {
+  checkup_id: string;
+  academic_year: string; // e.g. "2026-27"
+  student_id: string;
+  student_name?: string;
+  section?: string;
+  roll_number?: string;
+  checkup_date: string; // YYYY-MM-DD
+  height_cm?: number;
+  weight_kg?: number;
+  bmi?: number;
+  vision_left?: string;
+  vision_right?: string;
+  dental_status?: string;
+  ent_notes?: string;
+  blood_group?: string;
+  hemoglobin?: string;
+  general_fitness?: AnnualCheckupFitness;
+  parent_referral?: boolean;
+  doctor_remarks?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export interface MenstrualLogRecord {
+  menstrual_id: string;
+  student_id: string;
+  student_name?: string;
+  section?: string;
+  roll_number?: string;
+  cycle_start_date: string; // YYYY-MM-DD
+  cycle_end_date?: string; // YYYY-MM-DD
+  flow_or_pain_notes?: string;
+  pads_issued?: number;
+  item_id?: string;
+  item_name?: string;
+  irregular_flag?: boolean;
+  private_notes?: string;
+  recorded_by?: string;
+  created_at: string;
+}
+
+export type HealthInsightsTimeframe = '7d' | '30d' | 'term' | 'all';
+
+export interface FrequentVisitorInsight {
+  student: StudentRecord;
+  totalVisits: number;
+  visitCount: number;
+  doctorCaseCount: number;
+  opdCount: number;
+  lastVisitDate: string;
+  topReasons: Array<{ label: string; count: number }>;
+  recentReasons: string[];
+}
+
+export interface CommonIssueAffectedStudent {
+  student: StudentRecord;
+  count: number;
+  lastDate: string;
+  sampleReasons: string[];
+}
+
+export interface CommonIssueInsight {
+  issueKey: string;
+  label: string;
+  totalCases: number;
+  uniqueStudentCount: number;
+  recent7dCount: number;
+  classBreakdown: Array<{ section: string; count: number }>;
+  affectedStudents: CommonIssueAffectedStudent[];
+}
+
 export interface NurseDatabase {
   students: StudentRecord[];
   visits: VisitRecord[];
@@ -169,6 +321,13 @@ export interface NurseDatabase {
   items?: ItemInventoryRecord[];
   stockTransactions?: StockTransactionRecord[];
   bills?: BillRecord[];
+  doctorVisits?: DoctorVisitSession[];
+  doctorVisitCases?: DoctorVisitCase[];
+  opdRecords?: OpdRecord[];
+  medicalCamps?: MedicalCampRecord[];
+  campScreenings?: CampScreeningRecord[];
+  annualCheckups?: AnnualCheckupRecord[];
+  menstrualLogs?: MenstrualLogRecord[];
   settings?: InfirmarySettings;
 }
 
@@ -265,8 +424,8 @@ export function resolveVisitShiftPeriod(
   return classifyVisitShift(visit.visit_datetime, settings);
 }
 
-export function formatShiftPeriodLabel(shift: VisitShiftPeriod): string {
-  return shift === 'night' ? 'Night / After-Hours' : 'School Hours';
+export function formatShiftPeriodLabel(shift: VisitShiftPeriod, short = false): string {
+  return shift === 'night' ? (short ? 'Night' : 'Night / After-Hours') : 'School Hours';
 }
 
 export function getStockStatus(currentStock: number, minStockAlert: number): 'out' | 'low' | 'ok' {
@@ -292,11 +451,49 @@ export function getExpiryStatus(
   return 'valid';
 }
 
+export function calculateBmi(
+  heightCm?: number | string | null,
+  weightKg?: number | string | null
+): number | undefined {
+  const h = Number(heightCm);
+  const w = Number(weightKg);
+  if (!Number.isFinite(h) || !Number.isFinite(w) || h <= 0 || w <= 0) return undefined;
+  const hMeters = h / 100;
+  return Number((w / (hMeters * hMeters)).toFixed(1));
+}
+
+export function getCurrentAcademicYear(referenceDate: string = new Date().toISOString().slice(0, 10)): string {
+  const clean = String(referenceDate || '').slice(0, 10);
+  const parts = clean.split('-');
+  const year = parseInt(parts[0] || '', 10) || new Date().getFullYear();
+  const month = parseInt(parts[1] || '', 10) || new Date().getMonth() + 1;
+  // Indian academic session runs April -> March
+  const startYear = month >= 4 ? year : year - 1;
+  const endTwoDigit = String((startYear + 1) % 100).padStart(2, '0');
+  return `${startYear}-${endTwoDigit}`;
+}
+
 /**
  * Generates a permanent internal ID (never using spreadsheet row numbers).
  */
 export function generatePermanentId(
-  prefix: 'STU' | 'VIS' | 'MSR' | 'HPR' | 'DSP' | 'MED' | 'ITM' | 'TXN' | 'BIL',
+  prefix:
+    | 'STU'
+    | 'VIS'
+    | 'MSR'
+    | 'HPR'
+    | 'DSP'
+    | 'MED'
+    | 'ITM'
+    | 'TXN'
+    | 'BIL'
+    | 'DOC'
+    | 'DC'
+    | 'OPD'
+    | 'CMP'
+    | 'SCR'
+    | 'CHK'
+    | 'MNS',
   existingIds: string[],
   year: number = 2026
 ): string {
@@ -1042,6 +1239,13 @@ export function normalizeSheetSyncPayload(
     items?: Array<Partial<ItemInventoryRecord> & Record<string, any>>;
     stockTransactions?: Array<Partial<StockTransactionRecord> & Record<string, any>>;
     bills?: Array<Partial<BillRecord> & Record<string, any>>;
+    doctorVisits?: Array<Partial<DoctorVisitSession> & Record<string, any>>;
+    doctorVisitCases?: Array<Partial<DoctorVisitCase> & Record<string, any>>;
+    opdRecords?: Array<Partial<OpdRecord> & Record<string, any>>;
+    medicalCamps?: Array<Partial<MedicalCampRecord> & Record<string, any>>;
+    campScreenings?: Array<Partial<CampScreeningRecord> & Record<string, any>>;
+    annualCheckups?: Array<Partial<AnnualCheckupRecord> & Record<string, any>>;
+    menstrualLogs?: Array<Partial<MenstrualLogRecord> & Record<string, any>>;
     settings?: Partial<InfirmarySettings> | Array<{ setting_key?: string; setting_value?: string; key?: string; value?: string }>;
   },
   currentDb: NurseDatabase,
@@ -1614,9 +1818,9 @@ export function normalizeSheetSyncPayload(
       rawCat === 'Items' || rawCat === 'Equipment' || rawCat === 'Camp' || rawCat === 'Other'
         ? rawCat
         : 'Medicines';
-    const rawPay = String(row?.payment_status || 'Paid').trim();
+    const rawPay = String(row?.payment_status || 'Recorded').trim();
     const paymentStatus: BillPaymentStatus =
-      rawPay === 'Pending' || rawPay === 'Reimbursed' ? rawPay : 'Paid';
+      rawPay === 'Paid' || rawPay === 'Pending' || rawPay === 'Reimbursed' ? rawPay : 'Recorded';
     const prevLocal = localBillById.get(id);
     normalizedRemoteBills.push({
       bill_id: id,
@@ -1628,7 +1832,12 @@ export function normalizeSheetSyncPayload(
       payment_status: paymentStatus,
       notes: String(row?.notes || '').trim() || undefined,
       drive_file_id: String(row?.drive_file_id || '').trim() || prevLocal?.drive_file_id || undefined,
-      image_url: String(row?.image_url || '').trim() || prevLocal?.image_url || undefined,
+      image_url:
+        (/^https:\/\/[^\s]+$/i.test(String(row?.image_url || '').trim())
+          ? String(row?.image_url || '').trim()
+          : undefined) ||
+        prevLocal?.image_url ||
+        undefined,
       image_data_url: prevLocal?.image_data_url,
       recorded_by: String(row?.recorded_by || '').trim() || undefined,
       created_at: String(row?.created_at || '').trim() || nowIso,
@@ -1639,6 +1848,299 @@ export function normalizeSheetSyncPayload(
     const remoteIds = new Set(normalizedRemoteBills.map((b) => b.bill_id));
     const localOnly = finalBills.filter((b) => !remoteIds.has(b.bill_id));
     finalBills = [...localOnly, ...normalizedRemoteBills];
+  }
+
+  const studentByIdMap = new Map(finalStudents.map((s) => [s.student_id, s]));
+  const parseTruthyFlag = (val: unknown): boolean => {
+    if (typeof val === 'boolean') return val;
+    const s = String(val ?? '').trim().toLowerCase();
+    return s === 'true' || s === 'yes' || s === '1';
+  };
+
+  // Normalize & merge Weekly Doctor Visits
+  const rawDoctorVisits = Array.isArray(payload.doctorVisits) ? payload.doctorVisits : [];
+  const normalizedRemoteDoctorVisits: DoctorVisitSession[] = [];
+  const seenRemoteDocVisitIds = new Set<string>();
+  rawDoctorVisits.forEach((row) => {
+    const id = String(row?.doctor_visit_id || '').trim();
+    const docName = String(row?.doctor_name || '').trim();
+    if (!id || !docName || seenRemoteDocVisitIds.has(id)) return;
+    seenRemoteDocVisitIds.add(id);
+    normalizedRemoteDoctorVisits.push({
+      doctor_visit_id: id,
+      visit_date: normalizeDateOnlyString(String(row?.visit_date || ''), nowIso.slice(0, 10)),
+      session_time: String(row?.session_time || '').trim() || undefined,
+      doctor_name: docName,
+      specialization: String(row?.specialization || '').trim() || undefined,
+      campus_notes: String(row?.campus_notes || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalDoctorVisits: DoctorVisitSession[] = Array.isArray(currentDb.doctorVisits)
+    ? currentDb.doctorVisits
+    : [];
+  if (normalizedRemoteDoctorVisits.length > 0) {
+    const remoteIds = new Set(normalizedRemoteDoctorVisits.map((d) => d.doctor_visit_id));
+    const localOnly = finalDoctorVisits.filter((d) => !remoteIds.has(d.doctor_visit_id));
+    finalDoctorVisits = [...localOnly, ...normalizedRemoteDoctorVisits];
+  }
+
+  // Normalize & merge Doctor Visit Cases
+  const rawDoctorVisitCases = Array.isArray(payload.doctorVisitCases) ? payload.doctorVisitCases : [];
+  const normalizedRemoteDocCases: DoctorVisitCase[] = [];
+  const seenRemoteDocCaseIds = new Set<string>();
+  rawDoctorVisitCases.forEach((row) => {
+    const id = String(row?.case_id || '').trim();
+    const visitId = String(row?.doctor_visit_id || '').trim();
+    const stuId = String(row?.student_id || '').trim();
+    const complaint = String(row?.complaint || '').trim();
+    if (!id || !visitId || !stuId || !complaint || seenRemoteDocCaseIds.has(id)) return;
+    seenRemoteDocCaseIds.add(id);
+    const stu = studentByIdMap.get(stuId);
+    normalizedRemoteDocCases.push({
+      case_id: id,
+      doctor_visit_id: visitId,
+      student_id: stuId,
+      student_name: String(row?.student_name || stu?.full_name || '').trim() || undefined,
+      section: String(row?.section || row?.class || stu?.section || '').trim() || undefined,
+      roll_number: String(row?.roll_number || row?.roll_no || stu?.roll_number || '').trim() || undefined,
+      complaint,
+      findings: String(row?.findings || '').trim() || undefined,
+      prescription_or_advice: String(row?.prescription_or_advice || '').trim() || undefined,
+      follow_up_needed: parseTruthyFlag(row?.follow_up_needed),
+      notes: String(row?.notes || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalDoctorVisitCases: DoctorVisitCase[] = Array.isArray(currentDb.doctorVisitCases)
+    ? currentDb.doctorVisitCases
+    : [];
+  if (normalizedRemoteDocCases.length > 0) {
+    const remoteIds = new Set(normalizedRemoteDocCases.map((c) => c.case_id));
+    const localOnly = finalDoctorVisitCases.filter((c) => !remoteIds.has(c.case_id));
+    finalDoctorVisitCases = [...localOnly, ...normalizedRemoteDocCases];
+  }
+
+  // Normalize & merge External OPD Records (preserving local image_data_url fallback)
+  const rawOpd = Array.isArray(payload.opdRecords) ? payload.opdRecords : [];
+  const localOpdById = new Map((currentDb.opdRecords || []).map((o) => [o.opd_id, o]));
+  const normalizedRemoteOpd: OpdRecord[] = [];
+  const seenRemoteOpdIds = new Set<string>();
+  rawOpd.forEach((row) => {
+    const id = String(row?.opd_id || '').trim();
+    const stuId = String(row?.student_id || '').trim();
+    const hospital = String(row?.hospital_or_clinic || '').trim();
+    if (!id || !stuId || !hospital || seenRemoteOpdIds.has(id)) return;
+    seenRemoteOpdIds.add(id);
+    const stu = studentByIdMap.get(stuId);
+    const rawStatus = String(row?.status || 'Referred').trim();
+    const status: OpdStatus =
+      rawStatus === 'Returned' || rawStatus === 'Follow-up' ? rawStatus : 'Referred';
+    const prevLocal = localOpdById.get(id);
+    const rawFollowUp = String(row?.follow_up_date || '').trim();
+    normalizedRemoteOpd.push({
+      opd_id: id,
+      student_id: stuId,
+      student_name: String(row?.student_name || stu?.full_name || '').trim() || undefined,
+      section: String(row?.section || row?.class || stu?.section || '').trim() || undefined,
+      roll_number: String(row?.roll_number || row?.roll_no || stu?.roll_number || '').trim() || undefined,
+      referral_datetime: normalizeDatetimeString(
+        String(row?.referral_datetime || ''),
+        nowIso.slice(0, 16)
+      ),
+      hospital_or_clinic: hospital,
+      doctor_name: String(row?.doctor_name || '').trim() || undefined,
+      reason: String(row?.reason || '').trim() || 'External consultation',
+      escort_or_parent: String(row?.escort_or_parent || '').trim() || undefined,
+      diagnosis_and_advice: String(row?.diagnosis_and_advice || '').trim() || undefined,
+      follow_up_date: rawFollowUp ? normalizeDateOnlyString(rawFollowUp, '') : undefined,
+      status,
+      drive_file_id: String(row?.drive_file_id || '').trim() || prevLocal?.drive_file_id || undefined,
+      image_url:
+        (/^https:\/\/[^\s]+$/i.test(String(row?.image_url || '').trim())
+          ? String(row?.image_url || '').trim()
+          : undefined) ||
+        prevLocal?.image_url ||
+        undefined,
+      image_data_url: prevLocal?.image_data_url,
+      notes: String(row?.notes || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalOpdRecords: OpdRecord[] = Array.isArray(currentDb.opdRecords)
+    ? currentDb.opdRecords
+    : [];
+  if (normalizedRemoteOpd.length > 0) {
+    const remoteIds = new Set(normalizedRemoteOpd.map((o) => o.opd_id));
+    const localOnly = finalOpdRecords.filter((o) => !remoteIds.has(o.opd_id));
+    finalOpdRecords = [...localOnly, ...normalizedRemoteOpd];
+  }
+
+  // Normalize & merge Medical Camps
+  const rawCamps = Array.isArray(payload.medicalCamps) ? payload.medicalCamps : [];
+  const normalizedRemoteCamps: MedicalCampRecord[] = [];
+  const seenRemoteCampIds = new Set<string>();
+  rawCamps.forEach((row) => {
+    const id = String(row?.camp_id || '').trim();
+    const title = String(row?.camp_title || '').trim();
+    if (!id || !title || seenRemoteCampIds.has(id)) return;
+    seenRemoteCampIds.add(id);
+    normalizedRemoteCamps.push({
+      camp_id: id,
+      camp_title: title,
+      camp_type: String(row?.camp_type || 'General Health').trim(),
+      organizer: String(row?.organizer || '').trim() || undefined,
+      camp_date: normalizeDateOnlyString(String(row?.camp_date || ''), nowIso.slice(0, 10)),
+      target_classes: String(row?.target_classes || '').trim() || undefined,
+      doctor_team: String(row?.doctor_team || '').trim() || undefined,
+      summary: String(row?.summary || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalMedicalCamps: MedicalCampRecord[] = Array.isArray(currentDb.medicalCamps)
+    ? currentDb.medicalCamps
+    : [];
+  if (normalizedRemoteCamps.length > 0) {
+    const remoteIds = new Set(normalizedRemoteCamps.map((c) => c.camp_id));
+    const localOnly = finalMedicalCamps.filter((c) => !remoteIds.has(c.camp_id));
+    finalMedicalCamps = [...localOnly, ...normalizedRemoteCamps];
+  }
+
+  // Normalize & merge Camp Screenings
+  const rawScreenings = Array.isArray(payload.campScreenings) ? payload.campScreenings : [];
+  const normalizedRemoteScreenings: CampScreeningRecord[] = [];
+  const seenRemoteScreeningIds = new Set<string>();
+  rawScreenings.forEach((row) => {
+    const id = String(row?.screening_id || '').trim();
+    const campId = String(row?.camp_id || '').trim();
+    const stuId = String(row?.student_id || '').trim();
+    const findings = String(row?.findings || '').trim();
+    if (!id || !campId || !stuId || !findings || seenRemoteScreeningIds.has(id)) return;
+    seenRemoteScreeningIds.add(id);
+    const stu = studentByIdMap.get(stuId);
+    normalizedRemoteScreenings.push({
+      screening_id: id,
+      camp_id: campId,
+      student_id: stuId,
+      student_name: String(row?.student_name || stu?.full_name || '').trim() || undefined,
+      section: String(row?.section || row?.class || stu?.section || '').trim() || undefined,
+      roll_number: String(row?.roll_number || row?.roll_no || stu?.roll_number || '').trim() || undefined,
+      findings,
+      referral_needed: parseTruthyFlag(row?.referral_needed),
+      notes: String(row?.notes || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalCampScreenings: CampScreeningRecord[] = Array.isArray(currentDb.campScreenings)
+    ? currentDb.campScreenings
+    : [];
+  if (normalizedRemoteScreenings.length > 0) {
+    const remoteIds = new Set(normalizedRemoteScreenings.map((s) => s.screening_id));
+    const localOnly = finalCampScreenings.filter((s) => !remoteIds.has(s.screening_id));
+    finalCampScreenings = [...localOnly, ...normalizedRemoteScreenings];
+  }
+
+  // Normalize & merge Annual Health Checkups (Phase 3)
+  const rawCheckups = Array.isArray(payload.annualCheckups) ? payload.annualCheckups : [];
+  const normalizedRemoteCheckups: AnnualCheckupRecord[] = [];
+  const seenRemoteCheckupIds = new Set<string>();
+  rawCheckups.forEach((row) => {
+    const id = String(row?.checkup_id || '').trim();
+    const stuId = String(row?.student_id || '').trim();
+    if (!id || !stuId || seenRemoteCheckupIds.has(id)) return;
+    seenRemoteCheckupIds.add(id);
+    const stu = studentByIdMap.get(stuId);
+    const hVal = Number(row?.height_cm);
+    const wVal = Number(row?.weight_kg);
+    const heightCm = Number.isFinite(hVal) && hVal > 0 ? hVal : undefined;
+    const weightKg = Number.isFinite(wVal) && wVal > 0 ? wVal : undefined;
+    const rawBmi = Number(row?.bmi);
+    const bmi =
+      Number.isFinite(rawBmi) && rawBmi > 0
+        ? Number(rawBmi.toFixed(1))
+        : calculateBmi(heightCm, weightKg);
+    const rawFitness = String(row?.general_fitness || 'Fit').trim();
+    const generalFitness: AnnualCheckupFitness =
+      rawFitness === 'Needs Follow-up' || rawFitness === 'Referred' ? rawFitness : 'Fit';
+    const checkupDate = normalizeDateOnlyString(String(row?.checkup_date || ''), nowIso.slice(0, 10));
+    normalizedRemoteCheckups.push({
+      checkup_id: id,
+      academic_year: String(row?.academic_year || '').trim() || getCurrentAcademicYear(checkupDate),
+      student_id: stuId,
+      student_name: String(row?.student_name || stu?.full_name || '').trim() || undefined,
+      section: String(row?.section || row?.class || stu?.section || '').trim() || undefined,
+      roll_number: String(row?.roll_number || row?.roll_no || stu?.roll_number || '').trim() || undefined,
+      checkup_date: checkupDate,
+      height_cm: heightCm,
+      weight_kg: weightKg,
+      bmi,
+      vision_left: String(row?.vision_left || '').trim() || undefined,
+      vision_right: String(row?.vision_right || '').trim() || undefined,
+      dental_status: String(row?.dental_status || '').trim() || undefined,
+      ent_notes: String(row?.ent_notes || '').trim() || undefined,
+      blood_group: String(row?.blood_group || '').trim() || undefined,
+      hemoglobin: String(row?.hemoglobin || '').trim() || undefined,
+      general_fitness: generalFitness,
+      parent_referral: parseTruthyFlag(row?.parent_referral),
+      doctor_remarks: String(row?.doctor_remarks || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalAnnualCheckups: AnnualCheckupRecord[] = Array.isArray(currentDb.annualCheckups)
+    ? currentDb.annualCheckups
+    : [];
+  if (normalizedRemoteCheckups.length > 0) {
+    const remoteIds = new Set(normalizedRemoteCheckups.map((c) => c.checkup_id));
+    const localOnly = finalAnnualCheckups.filter((c) => !remoteIds.has(c.checkup_id));
+    finalAnnualCheckups = [...localOnly, ...normalizedRemoteCheckups];
+  }
+
+  // Normalize & merge Private Menstrual Log (Phase 3 — Nurse & Admin only)
+  const rawMenstrual = Array.isArray(payload.menstrualLogs) ? payload.menstrualLogs : [];
+  const normalizedRemoteMenstrual: MenstrualLogRecord[] = [];
+  const seenRemoteMenstrualIds = new Set<string>();
+  rawMenstrual.forEach((row) => {
+    const id = String(row?.menstrual_id || '').trim();
+    const stuId = String(row?.student_id || '').trim();
+    if (!id || !stuId || seenRemoteMenstrualIds.has(id)) return;
+    seenRemoteMenstrualIds.add(id);
+    const stu = studentByIdMap.get(stuId);
+    const rawEnd = String(row?.cycle_end_date || '').trim();
+    const padsNum = Number(row?.pads_issued);
+    normalizedRemoteMenstrual.push({
+      menstrual_id: id,
+      student_id: stuId,
+      student_name: String(row?.student_name || stu?.full_name || '').trim() || undefined,
+      section: String(row?.section || row?.class || stu?.section || '').trim() || undefined,
+      roll_number: String(row?.roll_number || row?.roll_no || stu?.roll_number || '').trim() || undefined,
+      cycle_start_date: normalizeDateOnlyString(
+        String(row?.cycle_start_date || ''),
+        nowIso.slice(0, 10)
+      ),
+      cycle_end_date: rawEnd ? normalizeDateOnlyString(rawEnd, '') : undefined,
+      flow_or_pain_notes: String(row?.flow_or_pain_notes || '').trim() || undefined,
+      pads_issued: Number.isFinite(padsNum) && padsNum > 0 ? Math.floor(padsNum) : undefined,
+      item_id: String(row?.item_id || '').trim() || undefined,
+      item_name: String(row?.item_name || '').trim() || undefined,
+      irregular_flag: parseTruthyFlag(row?.irregular_flag),
+      private_notes: String(row?.private_notes || '').trim() || undefined,
+      recorded_by: String(row?.recorded_by || '').trim() || undefined,
+      created_at: String(row?.created_at || '').trim() || nowIso,
+    });
+  });
+  let finalMenstrualLogs: MenstrualLogRecord[] = Array.isArray(currentDb.menstrualLogs)
+    ? currentDb.menstrualLogs
+    : [];
+  if (normalizedRemoteMenstrual.length > 0) {
+    const remoteIds = new Set(normalizedRemoteMenstrual.map((m) => m.menstrual_id));
+    const localOnly = finalMenstrualLogs.filter((m) => !remoteIds.has(m.menstrual_id));
+    finalMenstrualLogs = [...localOnly, ...normalizedRemoteMenstrual];
   }
 
   return {
@@ -1653,6 +2155,13 @@ export function normalizeSheetSyncPayload(
     items: finalItems,
     stockTransactions: finalTxns,
     bills: finalBills,
+    doctorVisits: finalDoctorVisits,
+    doctorVisitCases: finalDoctorVisitCases,
+    opdRecords: finalOpdRecords,
+    medicalCamps: finalMedicalCamps,
+    campScreenings: finalCampScreenings,
+    annualCheckups: finalAnnualCheckups,
+    menstrualLogs: finalMenstrualLogs,
     settings: resolvedSettings,
   };
 }
@@ -1748,5 +2257,382 @@ export function downloadCSVFile(csvContent: string, filename: string): void {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+// ---- PHASE 3: HEALTH TRENDS & INSIGHTS (FREQUENT VISITORS + COMMON ISSUES/ILLNESSES) ----
+
+const ISSUE_CATEGORY_RULES: Array<{ key: string; label: string; pattern: RegExp }> = [
+  { key: 'fever', label: 'Fever / High Temperature', pattern: /\b(fevers?|pyrexia|temp|temperature|chills?|viral)\b/i },
+  { key: 'headache', label: 'Headache / Migraine', pattern: /\b(headaches?|head\s*aches?|migraines?|head\s*pain)\b/i },
+  { key: 'stomach', label: 'Stomach Ache / Gastric', pattern: /\b(stomach|abdomen|abdominal|tummy|gastric|acidity|indigestion|diarrhea|diarrhoea|loose\s*motions?|constipation|cramps?\s*stomach)\b/i },
+  { key: 'cold_cough', label: 'Cold / Cough / Sore Throat', pattern: /\b(colds?|coughs?|coughing|sore\s*throat|throat|flu|runny\s*nose|sneez\w*|nasal|congestion|sinus\w*|tonsillitis)\b/i },
+  { key: 'injury', label: 'Injury / Wound / Sprain', pattern: /\b(injur\w*|cuts?|wounds?|bruis\w*|sprain\w*|scrap\w*|abrasions?|bleed\w*|fall\w*|fell|fractur\w*|burns?|burned|blisters?|twist\w*|bandage\w*|dressing|sports?\s*injur\w*)\b/i },
+  { key: 'vomiting', label: 'Vomiting / Nausea', pattern: /\b(vomit\w*|nausea\w*|throwing\s*up|motion\s*sickness)\b/i },
+  { key: 'dizziness', label: 'Dizziness / Weakness / Fainting', pattern: /\b(dizz\w*|faint\w*|weakness|fatigue|tired\w*|giddiness|dehydrat\w*|heat\s*exhaustion|low\s*bp)\b/i },
+  { key: 'skin', label: 'Skin Rash / Allergy / Itching', pattern: /\b(rash\w*|allerg\w*|itch\w*|skin|hives?|insect\s*bites?|mosquito\s*bites?|fungal|boils?|eczema|redness)\b/i },
+  { key: 'eye_ear_dental', label: 'Eye / Ear / Toothache', pattern: /\b(eyes?|conjunctivitis|ear\s*aches?|ear\s*pain|earaches?|tooth\w*|teeth|dental|gums?|jaw)\b/i },
+  { key: 'body_pain', label: 'Body / Joint / Back Pain', pattern: /\b(body\s*aches?|body\s*pain|back\s*pain|neck\s*pain|leg\s*pain|knee\s*pain|joint\s*pain|muscles?|cramps?)\b/i },
+  { key: 'breathing', label: 'Breathing / Asthma / Wheezing', pattern: /\b(asthma\w*|wheez\w*|breath\w*|inhaler|chest\s*tight\w*|shortness\s*of\s*breath)\b/i },
+  { key: 'menstrual', label: 'Menstrual Discomfort / Cramps', pattern: /\b(periods?|menstrual|dysmenorrhea|menstruation)\b/i },
+];
+
+export function normalizeIssueCategory(rawReason: string): { key: string; label: string } {
+  const clean = String(rawReason || '').trim();
+  if (!clean) return { key: 'other', label: 'General / Unspecified' };
+  for (const rule of ISSUE_CATEGORY_RULES) {
+    if (rule.pattern.test(clean)) {
+      return { key: rule.key, label: rule.label };
+    }
+  }
+  const normalizedTitle = clean
+    .replace(/\s+/g, ' ')
+    .slice(0, 42)
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const slug = normalizedTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return {
+    key: slug || 'other',
+    label: normalizedTitle,
+  };
+}
+
+function getTimeframeStartDate(
+  timeframe: HealthInsightsTimeframe,
+  referenceDate: string
+): string | null {
+  if (timeframe === 'all') return null;
+  const cleanRef = String(referenceDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const parts = cleanRef.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+  const refDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  if (timeframe === '7d') {
+    refDate.setUTCDate(refDate.getUTCDate() - 6);
+    return refDate.toISOString().slice(0, 10);
+  }
+  if (timeframe === '30d') {
+    refDate.setUTCDate(refDate.getUTCDate() - 29);
+    return refDate.toISOString().slice(0, 10);
+  }
+  // 'term' -> Last 120 days (approx 1 school term)
+  refDate.setUTCDate(refDate.getUTCDate() - 119);
+  return refDate.toISOString().slice(0, 10);
+}
+
+interface UnifiedClinicalEvent {
+  source: 'visit' | 'doctor' | 'opd';
+  studentId: string;
+  studentName?: string;
+  section?: string;
+  rollNumber?: string;
+  date: string;
+  reason: string;
+}
+
+function collectUnifiedClinicalEvents(params: {
+  visits: VisitRecord[];
+  doctorVisits?: DoctorVisitSession[];
+  doctorVisitCases?: DoctorVisitCase[];
+  opdRecords?: OpdRecord[];
+  includePrograms?: boolean;
+  timeframe: HealthInsightsTimeframe;
+  referenceDate: string;
+}): UnifiedClinicalEvent[] {
+  const startDate = getTimeframeStartDate(params.timeframe, params.referenceDate);
+  const inRange = (dateStr: string) => {
+    if (!dateStr) return false;
+    if (!startDate) return true;
+    return dateStr >= startDate;
+  };
+
+  const events: UnifiedClinicalEvent[] = [];
+  for (const v of params.visits) {
+    const d = extractDatePart(v.visit_datetime);
+    if (!inRange(d)) continue;
+    events.push({
+      source: 'visit',
+      studentId: v.student_id,
+      studentName: v.student_name,
+      section: v.section || v.class,
+      rollNumber: v.roll_number || v.roll_no,
+      date: d,
+      reason: v.reason || '',
+    });
+  }
+
+  if (params.includePrograms) {
+    const sessDateById = new Map(
+      (params.doctorVisits || []).map((s) => [s.doctor_visit_id, extractDatePart(s.visit_date)])
+    );
+    for (const c of params.doctorVisitCases || []) {
+      const d = sessDateById.get(c.doctor_visit_id) || extractDatePart(c.created_at);
+      if (!inRange(d)) continue;
+      events.push({
+        source: 'doctor',
+        studentId: c.student_id,
+        studentName: c.student_name,
+        section: c.section,
+        rollNumber: c.roll_number,
+        date: d,
+        reason: c.complaint || '',
+      });
+    }
+
+    for (const o of params.opdRecords || []) {
+      const d = extractDatePart(o.referral_datetime);
+      if (!inRange(d)) continue;
+      events.push({
+        source: 'opd',
+        studentId: o.student_id,
+        studentName: o.student_name,
+        section: o.section,
+        rollNumber: o.roll_number,
+        date: d,
+        reason: o.reason || '',
+      });
+    }
+  }
+
+  return events;
+}
+
+export function computeFrequentVisitors(params: {
+  students: StudentRecord[];
+  visits: VisitRecord[];
+  doctorVisits?: DoctorVisitSession[];
+  doctorVisitCases?: DoctorVisitCase[];
+  opdRecords?: OpdRecord[];
+  timeframe?: HealthInsightsTimeframe;
+  sectionFilter?: string;
+  includePrograms?: boolean;
+  minVisits?: number;
+  referenceDate?: string;
+}): FrequentVisitorInsight[] {
+  const timeframe = params.timeframe || '30d';
+  const refDate = params.referenceDate || new Date().toISOString().slice(0, 10);
+  const secFilter = (params.sectionFilter || 'ALL').trim().toLowerCase();
+  const minVisits = Math.max(1, params.minVisits ?? 1);
+
+  const studentMap = new Map(params.students.map((s) => [s.student_id, s]));
+  const events = collectUnifiedClinicalEvents({
+    visits: params.visits,
+    doctorVisits: params.doctorVisits,
+    doctorVisitCases: params.doctorVisitCases,
+    opdRecords: params.opdRecords,
+    includePrograms: params.includePrograms ?? true,
+    timeframe,
+    referenceDate: refDate,
+  });
+
+  const buckets = new Map<
+    string,
+    {
+      student: StudentRecord;
+      visitCount: number;
+      doctorCaseCount: number;
+      opdCount: number;
+      lastVisitDate: string;
+      reasonCounts: Map<string, number>;
+      recentReasons: Array<{ date: string; reason: string }>;
+    }
+  >();
+
+  for (const ev of events) {
+    const stu: StudentRecord = studentMap.get(ev.studentId) ?? {
+      student_id: ev.studentId,
+      full_name: ev.studentName || 'Unknown Student',
+      section: normalizeSectionName(ev.section || 'Unassigned'),
+      roll_number: ev.rollNumber || '-',
+      active_status: 'Active',
+      created_at: ev.date,
+      updated_at: ev.date,
+    };
+
+    if (secFilter !== 'all' && stu.section.toLowerCase() !== secFilter) {
+      continue;
+    }
+
+    let bucket = buckets.get(stu.student_id);
+    if (!bucket) {
+      bucket = {
+        student: stu,
+        visitCount: 0,
+        doctorCaseCount: 0,
+        opdCount: 0,
+        lastVisitDate: ev.date,
+        reasonCounts: new Map(),
+        recentReasons: [],
+      };
+      buckets.set(stu.student_id, bucket);
+    }
+
+    if (ev.source === 'visit') bucket.visitCount++;
+    else if (ev.source === 'doctor') bucket.doctorCaseCount++;
+    else if (ev.source === 'opd') bucket.opdCount++;
+
+    if (ev.date > bucket.lastVisitDate) {
+      bucket.lastVisitDate = ev.date;
+    }
+    const cat = normalizeIssueCategory(ev.reason);
+    bucket.reasonCounts.set(cat.label, (bucket.reasonCounts.get(cat.label) || 0) + 1);
+    if (ev.reason.trim()) {
+      bucket.recentReasons.push({ date: ev.date, reason: ev.reason.trim() });
+    }
+  }
+
+  return Array.from(buckets.values())
+    .map((b) => {
+      const totalVisits = b.visitCount + b.doctorCaseCount + b.opdCount;
+      const topReasons = Array.from(b.reasonCounts.entries())
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, c) => c.count - a.count || a.label.localeCompare(c.label))
+        .slice(0, 3);
+      const recentReasons = b.recentReasons
+        .sort((a, c) => c.date.localeCompare(a.date))
+        .map((r) => r.reason)
+        .filter((r, i, arr) => arr.indexOf(r) === i)
+        .slice(0, 4);
+
+      return {
+        student: b.student,
+        totalVisits,
+        visitCount: b.visitCount,
+        doctorCaseCount: b.doctorCaseCount,
+        opdCount: b.opdCount,
+        lastVisitDate: b.lastVisitDate,
+        topReasons,
+        recentReasons,
+      };
+    })
+    .filter((item) => item.totalVisits >= minVisits)
+    .sort((a, b) => {
+      if (b.totalVisits !== a.totalVisits) return b.totalVisits - a.totalVisits;
+      if (b.lastVisitDate !== a.lastVisitDate) return b.lastVisitDate.localeCompare(a.lastVisitDate);
+      return a.student.full_name.localeCompare(b.student.full_name);
+    });
+}
+
+export function computeCommonIssues(params: {
+  students: StudentRecord[];
+  visits: VisitRecord[];
+  doctorVisits?: DoctorVisitSession[];
+  doctorVisitCases?: DoctorVisitCase[];
+  opdRecords?: OpdRecord[];
+  timeframe?: HealthInsightsTimeframe;
+  sectionFilter?: string;
+  includePrograms?: boolean;
+  referenceDate?: string;
+}): CommonIssueInsight[] {
+  const timeframe = params.timeframe || '30d';
+  const refDate = params.referenceDate || new Date().toISOString().slice(0, 10);
+  const recent7dCutoff = getTimeframeStartDate('7d', refDate) || '';
+  const secFilter = (params.sectionFilter || 'ALL').trim().toLowerCase();
+
+  const studentMap = new Map(params.students.map((s) => [s.student_id, s]));
+  const events = collectUnifiedClinicalEvents({
+    visits: params.visits,
+    doctorVisits: params.doctorVisits,
+    doctorVisitCases: params.doctorVisitCases,
+    opdRecords: params.opdRecords,
+    includePrograms: params.includePrograms ?? true,
+    timeframe,
+    referenceDate: refDate,
+  });
+
+  const issueBuckets = new Map<
+    string,
+    {
+      issueKey: string;
+      label: string;
+      totalCases: number;
+      recent7dCount: number;
+      classCounts: Map<string, number>;
+      studentsMap: Map<
+        string,
+        {
+          student: StudentRecord;
+          count: number;
+          lastDate: string;
+          sampleReasons: string[];
+        }
+      >;
+    }
+  >();
+
+  for (const ev of events) {
+    const stu: StudentRecord = studentMap.get(ev.studentId) ?? {
+      student_id: ev.studentId,
+      full_name: ev.studentName || 'Unknown Student',
+      section: normalizeSectionName(ev.section || 'Unassigned'),
+      roll_number: ev.rollNumber || '-',
+      active_status: 'Active',
+      created_at: ev.date,
+      updated_at: ev.date,
+    };
+
+    if (secFilter !== 'all' && stu.section.toLowerCase() !== secFilter) {
+      continue;
+    }
+
+    const cat = normalizeIssueCategory(ev.reason);
+    let bucket = issueBuckets.get(cat.key);
+    if (!bucket) {
+      bucket = {
+        issueKey: cat.key,
+        label: cat.label,
+        totalCases: 0,
+        recent7dCount: 0,
+        classCounts: new Map(),
+        studentsMap: new Map(),
+      };
+      issueBuckets.set(cat.key, bucket);
+    }
+
+    bucket.totalCases++;
+    if (recent7dCutoff && ev.date >= recent7dCutoff) {
+      bucket.recent7dCount++;
+    }
+    const secName = stu.section || 'Unassigned';
+    bucket.classCounts.set(secName, (bucket.classCounts.get(secName) || 0) + 1);
+
+    let stuEntry = bucket.studentsMap.get(stu.student_id);
+    if (!stuEntry) {
+      stuEntry = {
+        student: stu,
+        count: 0,
+        lastDate: ev.date,
+        sampleReasons: [],
+      };
+      bucket.studentsMap.set(stu.student_id, stuEntry);
+    }
+    stuEntry.count++;
+    if (ev.date > stuEntry.lastDate) stuEntry.lastDate = ev.date;
+    const trimmedReason = ev.reason.trim();
+    if (trimmedReason && !stuEntry.sampleReasons.includes(trimmedReason) && stuEntry.sampleReasons.length < 3) {
+      stuEntry.sampleReasons.push(trimmedReason);
+    }
+  }
+
+  return Array.from(issueBuckets.values())
+    .map((b) => ({
+      issueKey: b.issueKey,
+      label: b.label,
+      totalCases: b.totalCases,
+      uniqueStudentCount: b.studentsMap.size,
+      recent7dCount: b.recent7dCount,
+      classBreakdown: Array.from(b.classCounts.entries())
+        .map(([section, count]) => ({ section, count }))
+        .sort((a, c) => c.count - a.count || a.section.localeCompare(c.section)),
+      affectedStudents: Array.from(b.studentsMap.values()).sort(
+        (a, c) =>
+          c.count - a.count ||
+          c.lastDate.localeCompare(a.lastDate) ||
+          a.student.full_name.localeCompare(c.student.full_name)
+      ),
+    }))
+    .sort((a, b) => {
+      if (b.totalCases !== a.totalCases) return b.totalCases - a.totalCases;
+      if (b.uniqueStudentCount !== a.uniqueStudentCount) return b.uniqueStudentCount - a.uniqueStudentCount;
+      return a.label.localeCompare(b.label);
+    });
+}
+
 
 

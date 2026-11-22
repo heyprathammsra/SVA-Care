@@ -57,6 +57,8 @@ import {
   classifyVisitShift,
   resolveVisitShiftPeriod,
   generatePermanentId,
+  calculateBmi,
+  getCurrentAcademicYear,
   DEFAULT_INFIRMARY_SETTINGS,
   PURGED_TEST_VISIT_IDS,
   PURGED_TEST_MEASUREMENT_IDS,
@@ -71,6 +73,15 @@ import {
   type ItemInventoryRecord,
   type StockTransactionRecord,
   type BillRecord,
+  type DoctorVisitSession,
+  type DoctorVisitCase,
+  type OpdRecord,
+  type OpdStatus,
+  type MedicalCampRecord,
+  type CampScreeningRecord,
+  type AnnualCheckupRecord,
+  type AnnualCheckupFitness,
+  type MenstrualLogRecord,
   type InfirmarySettings,
 } from './src/utils/nurseLogic.ts';
 
@@ -208,6 +219,11 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
   const items = Array.isArray(db.items) ? db.items : [];
   const stockTransactions = Array.isArray(db.stockTransactions) ? db.stockTransactions : [];
   const bills = Array.isArray(db.bills) ? db.bills : [];
+  const doctorVisits = Array.isArray(db.doctorVisits) ? db.doctorVisits : [];
+  const doctorVisitCases = Array.isArray(db.doctorVisitCases) ? db.doctorVisitCases : [];
+  const opdRecords = Array.isArray(db.opdRecords) ? db.opdRecords : [];
+  const medicalCamps = Array.isArray(db.medicalCamps) ? db.medicalCamps : [];
+  const campScreenings = Array.isArray(db.campScreenings) ? db.campScreenings : [];
   const settings: InfirmarySettings = {
     school_hours_start: normalizeHHMM(
       db.settings?.school_hours_start,
@@ -232,6 +248,11 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
     items,
     stockTransactions,
     bills,
+    doctorVisits,
+    doctorVisitCases,
+    opdRecords,
+    medicalCamps,
+    campScreenings,
     settings,
   };
 }
@@ -467,6 +488,13 @@ function computeDbSignature(db: NurseDatabase): string {
     items: db.items || [],
     stockTransactions: db.stockTransactions || [],
     bills: db.bills || [],
+    doctorVisits: db.doctorVisits || [],
+    doctorVisitCases: db.doctorVisitCases || [],
+    opdRecords: db.opdRecords || [],
+    medicalCamps: db.medicalCamps || [],
+    campScreenings: db.campScreenings || [],
+    annualCheckups: db.annualCheckups || [],
+    menstrualLogs: db.menstrualLogs || [],
     settings: db.settings || DEFAULT_INFIRMARY_SETTINGS,
   });
 }
@@ -746,6 +774,13 @@ async function pullFromAppsScript(waitForPush: boolean = false): Promise<{ ok: b
         items: data.items as Array<Partial<ItemInventoryRecord>>,
         stockTransactions: data.stockTransactions as Array<Partial<StockTransactionRecord>>,
         bills: data.bills as Array<Partial<BillRecord>>,
+        doctorVisits: data.doctorVisits as Array<Partial<DoctorVisitSession>>,
+        doctorVisitCases: data.doctorVisitCases as Array<Partial<DoctorVisitCase>>,
+        opdRecords: data.opdRecords as Array<Partial<OpdRecord>>,
+        medicalCamps: data.medicalCamps as Array<Partial<MedicalCampRecord>>,
+        campScreenings: data.campScreenings as Array<Partial<CampScreeningRecord>>,
+        annualCheckups: data.annualCheckups as Array<Partial<AnnualCheckupRecord>>,
+        menstrualLogs: data.menstrualLogs as Array<Partial<MenstrualLogRecord>>,
         settings: data.settings as
           | Partial<InfirmarySettings>
           | Array<{ setting_key?: string; setting_value?: string }>,
@@ -758,6 +793,13 @@ async function pullFromAppsScript(waitForPush: boolean = false): Promise<{ ok: b
         items: rawRemotePayload.items,
         stockTransactions: rawRemotePayload.stockTransactions,
         bills: rawRemotePayload.bills,
+        doctorVisits: rawRemotePayload.doctorVisits,
+        doctorVisitCases: rawRemotePayload.doctorVisitCases,
+        opdRecords: rawRemotePayload.opdRecords,
+        medicalCamps: rawRemotePayload.medicalCamps,
+        campScreenings: rawRemotePayload.campScreenings,
+        annualCheckups: rawRemotePayload.annualCheckups,
+        menstrualLogs: rawRemotePayload.menstrualLogs,
         settings: rawRemotePayload.settings,
       };
 
@@ -1391,6 +1433,56 @@ async function startServer() {
                 roll_number: updatedStudent.roll_number,
               }
             : d
+        );
+        serverState.db.doctorVisitCases = (serverState.db.doctorVisitCases || []).map((c) =>
+          c.student_id === updatedStudent.student_id
+            ? {
+                ...c,
+                student_name: updatedStudent.full_name,
+                section: updatedStudent.section,
+                roll_number: updatedStudent.roll_number,
+              }
+            : c
+        );
+        serverState.db.opdRecords = (serverState.db.opdRecords || []).map((o) =>
+          o.student_id === updatedStudent.student_id
+            ? {
+                ...o,
+                student_name: updatedStudent.full_name,
+                section: updatedStudent.section,
+                roll_number: updatedStudent.roll_number,
+              }
+            : o
+        );
+        serverState.db.campScreenings = (serverState.db.campScreenings || []).map((sc) =>
+          sc.student_id === updatedStudent.student_id
+            ? {
+                ...sc,
+                student_name: updatedStudent.full_name,
+                section: updatedStudent.section,
+                roll_number: updatedStudent.roll_number,
+              }
+            : sc
+        );
+        serverState.db.annualCheckups = (serverState.db.annualCheckups || []).map((chk) =>
+          chk.student_id === updatedStudent.student_id
+            ? {
+                ...chk,
+                student_name: updatedStudent.full_name,
+                section: updatedStudent.section,
+                roll_number: updatedStudent.roll_number,
+              }
+            : chk
+        );
+        serverState.db.menstrualLogs = (serverState.db.menstrualLogs || []).map((m) =>
+          m.student_id === updatedStudent.student_id
+            ? {
+                ...m,
+                student_name: updatedStudent.full_name,
+                section: updatedStudent.section,
+                roll_number: updatedStudent.roll_number,
+              }
+            : m
         );
         serverState.db.classes = getAllClassSections(serverState.db.students, [
           ...(serverState.db.classes || []),
@@ -2058,9 +2150,13 @@ async function startServer() {
         if (!vendorName) {
           return res.status(400).json({ status: 'error', message: 'Vendor or pharmacy name is required.' });
         }
-        const totalAmount = Number(raw.total_amount);
+        const rawAmount = raw.total_amount;
+        const totalAmount =
+          rawAmount === undefined || rawAmount === null || String(rawAmount).trim() === ''
+            ? 0
+            : Number(rawAmount);
         if (Number.isNaN(totalAmount) || totalAmount < 0) {
-          return res.status(400).json({ status: 'error', message: 'Enter a valid bill amount.' });
+          return res.status(400).json({ status: 'error', message: 'Enter a valid bill amount (or leave blank).' });
         }
         const nowIso = new Date().toISOString();
         const existingBills = serverState.db.bills || [];
@@ -2073,9 +2169,11 @@ async function startServer() {
           rawCat === 'Items' || rawCat === 'Equipment' || rawCat === 'Camp' || rawCat === 'Other'
             ? rawCat
             : 'Medicines';
-        const rawPay = String(raw.payment_status || 'Paid').trim();
+        const rawPay = String(raw.payment_status || 'Recorded').trim();
         const paymentStatus =
-          rawPay === 'Pending' || rawPay === 'Reimbursed' ? rawPay : 'Paid';
+          rawPay === 'Paid' || rawPay === 'Pending' || rawPay === 'Reimbursed'
+            ? rawPay
+            : 'Recorded';
 
         // Validate optional uploaded photo payload (JPEG/PNG/WebP data URL)
         const imageDataUrl =
@@ -2248,17 +2346,72 @@ async function startServer() {
           rawCat === 'Items' || rawCat === 'Equipment' || rawCat === 'Camp' || rawCat === 'Other'
             ? rawCat
             : 'Medicines';
-        const rawPay = String(raw.payment_status || existing.payment_status).trim();
+        const rawPay = String(raw.payment_status || existing.payment_status || 'Recorded').trim();
         const paymentStatus =
-          rawPay === 'Pending' || rawPay === 'Reimbursed' ? rawPay : 'Paid';
+          rawPay === 'Paid' || rawPay === 'Pending' || rawPay === 'Reimbursed'
+            ? rawPay
+            : 'Recorded';
+        const vendorName = raw.vendor_name
+          ? String(raw.vendor_name).trim().slice(0, 120)
+          : existing.vendor_name;
+
+        let driveFileId = existing.drive_file_id;
+        let imageUrl = existing.image_url;
+        let imageDataUrl = existing.image_data_url;
+
+        // Allow attaching or replacing the bill receipt photo while editing
+        const incomingImageDataUrl =
+          typeof raw.image_data_url === 'string' &&
+          /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.image_data_url) &&
+          raw.image_data_url.length <= 2_500_000
+            ? raw.image_data_url
+            : undefined;
+
+        if (incomingImageDataUrl && incomingImageDataUrl !== existing.image_data_url) {
+          imageDataUrl = incomingImageDataUrl;
+          const commaIdx = incomingImageDataUrl.indexOf(',');
+          const header = incomingImageDataUrl.slice(0, commaIdx);
+          const mimeMatch = header.match(/data:(image\/[a-z+]+);base64/i);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const base64Data = incomingImageDataUrl.slice(commaIdx + 1);
+          const safeVendorSlug = vendorName.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 28) || 'Bill';
+          const filename = `${billId}_${safeVendorSlug}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
+          const driveUpload = await forwardToAppsScriptWithData(
+            {
+              action: 'uploadBillImage',
+              bill_id: billId,
+              filename,
+              mimeType,
+              base64Data,
+            },
+            20000
+          );
+          if (driveUpload.ok && driveUpload.data) {
+            if (typeof driveUpload.data.drive_file_id === 'string' && driveUpload.data.drive_file_id) {
+              driveFileId = driveUpload.data.drive_file_id;
+            }
+            if (typeof driveUpload.data.image_url === 'string' && driveUpload.data.image_url) {
+              imageUrl = driveUpload.data.image_url;
+            }
+          }
+        }
+
+        const parsedAmount =
+          raw.total_amount === undefined || raw.total_amount === null || String(raw.total_amount).trim() === ''
+            ? existing.total_amount || 0
+            : Math.max(0, Number(raw.total_amount) || 0);
+
         const updated: BillRecord = {
           ...existing,
           bill_number: raw.bill_number !== undefined ? String(raw.bill_number).trim().slice(0, 60) : existing.bill_number,
-          vendor_name: raw.vendor_name ? String(raw.vendor_name).trim().slice(0, 120) : existing.vendor_name,
+          vendor_name: vendorName,
           bill_date: raw.bill_date ? normalizeDateOnlyString(String(raw.bill_date), existing.bill_date) : existing.bill_date,
           category,
-          total_amount: raw.total_amount !== undefined ? Math.max(0, Number(raw.total_amount) || 0) : existing.total_amount,
+          total_amount: Number(parsedAmount.toFixed(2)),
           payment_status: paymentStatus,
+          drive_file_id: driveFileId,
+          image_url: imageUrl,
+          image_data_url: imageDataUrl,
           notes: raw.notes !== undefined ? String(raw.notes).trim().slice(0, 300) || undefined : existing.notes,
         };
         serverState.db.bills = (serverState.db.bills || []).map((b) =>
@@ -2283,6 +2436,826 @@ async function startServer() {
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
         const sheetSynced = await forwardToAppsScript({ action: 'deleteBill', bill_id: billId });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      // ---- PHASE 2: WEEKLY DOCTOR VISITS, EXTERNAL OPD & MEDICAL CAMPS (NURSE + ADMIN ONLY) ----
+      if (action === 'upsertDoctorVisit' && body.doctorVisit) {
+        const raw = body.doctorVisit as Partial<DoctorVisitSession>;
+        const doctorName = String(raw.doctor_name || '').trim().slice(0, 120);
+        if (!doctorName) {
+          return res.status(400).json({ status: 'error', message: 'Doctor name is required.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.doctorVisits || [];
+        const incomingId = String(raw.doctor_visit_id || '').trim();
+        const existing = incomingId
+          ? existingList.find((d) => d.doctor_visit_id === incomingId)
+          : undefined;
+        const visitId =
+          existing?.doctor_visit_id ||
+          generatePermanentId(
+            'DOC',
+            existingList.map((d) => d.doctor_visit_id)
+          );
+        const sessionRecord: DoctorVisitSession = {
+          doctor_visit_id: visitId,
+          visit_date: normalizeDateOnlyString(
+            String(raw.visit_date || existing?.visit_date || ''),
+            nowIso.slice(0, 10)
+          ),
+          session_time: String(raw.session_time || '').trim().slice(0, 60) || undefined,
+          doctor_name: doctorName,
+          specialization: String(raw.specialization || '').trim().slice(0, 80) || undefined,
+          campus_notes: String(raw.campus_notes || '').trim().slice(0, 500) || undefined,
+          recorded_by: existing?.recorded_by || req.authUser!.displayName,
+          created_at: existing?.created_at || nowIso,
+        };
+        serverState.db.doctorVisits = existing
+          ? existingList.map((d) => (d.doctor_visit_id === visitId ? sessionRecord : d))
+          : [sessionRecord, ...existingList];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertDoctorVisit',
+          doctorVisit: sessionRecord,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          doctorVisit: sessionRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteDoctorVisit' && body.doctor_visit_id) {
+        const visitId = String(body.doctor_visit_id).trim();
+        serverState.db.doctorVisits = (serverState.db.doctorVisits || []).filter(
+          (d) => d.doctor_visit_id !== visitId
+        );
+        serverState.db.doctorVisitCases = (serverState.db.doctorVisitCases || []).filter(
+          (c) => c.doctor_visit_id !== visitId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'deleteDoctorVisit',
+          doctor_visit_id: visitId,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'upsertDoctorVisitCase' && body.doctorVisitCase) {
+        const raw = body.doctorVisitCase as Partial<DoctorVisitCase>;
+        const doctorVisitId = String(raw.doctor_visit_id || '').trim();
+        const studentId = String(raw.student_id || '').trim();
+        const complaint = String(raw.complaint || '').trim().slice(0, 240);
+        if (!doctorVisitId || !studentId || !complaint) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Doctor session, student, and complaint are required.',
+          });
+        }
+        const parentSession = (serverState.db.doctorVisits || []).find(
+          (d) => d.doctor_visit_id === doctorVisitId
+        );
+        if (!parentSession) {
+          return res.status(404).json({ status: 'error', message: 'Doctor visit session not found.' });
+        }
+        const student = serverState.db.students.find((s) => s.student_id === studentId);
+        if (!student) {
+          return res.status(404).json({ status: 'error', message: 'Selected student not found.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.doctorVisitCases || [];
+        const incomingId = String(raw.case_id || '').trim();
+        const existing = incomingId ? existingList.find((c) => c.case_id === incomingId) : undefined;
+        const caseId =
+          existing?.case_id ||
+          generatePermanentId(
+            'DC',
+            existingList.map((c) => c.case_id)
+          );
+        const caseRecord: DoctorVisitCase = {
+          case_id: caseId,
+          doctor_visit_id: doctorVisitId,
+          student_id: student.student_id,
+          student_name: student.full_name,
+          section: student.section,
+          roll_number: student.roll_number,
+          complaint,
+          findings: String(raw.findings || '').trim().slice(0, 400) || undefined,
+          prescription_or_advice:
+            String(raw.prescription_or_advice || '').trim().slice(0, 400) || undefined,
+          follow_up_needed: Boolean(raw.follow_up_needed),
+          notes: String(raw.notes || '').trim().slice(0, 300) || undefined,
+          recorded_by: existing?.recorded_by || req.authUser!.displayName,
+          created_at: existing?.created_at || nowIso,
+        };
+        serverState.db.doctorVisitCases = existing
+          ? existingList.map((c) => (c.case_id === caseId ? caseRecord : c))
+          : [caseRecord, ...existingList];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertDoctorVisitCase',
+          doctorVisitCase: caseRecord,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          doctorVisitCase: caseRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteDoctorVisitCase' && body.case_id) {
+        const caseId = String(body.case_id).trim();
+        serverState.db.doctorVisitCases = (serverState.db.doctorVisitCases || []).filter(
+          (c) => c.case_id !== caseId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'deleteDoctorVisitCase',
+          case_id: caseId,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'createOpd' && body.opd) {
+        const raw = body.opd as Partial<OpdRecord>;
+        const studentId = String(raw.student_id || '').trim();
+        const hospital = String(raw.hospital_or_clinic || '').trim().slice(0, 140);
+        const reason = String(raw.reason || '').trim().slice(0, 260);
+        if (!studentId || !hospital || !reason) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Student, hospital/clinic, and reason for referral are required.',
+          });
+        }
+        const student = serverState.db.students.find((s) => s.student_id === studentId);
+        if (!student) {
+          return res.status(404).json({ status: 'error', message: 'Selected student not found.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.opdRecords || [];
+        const opdId = generatePermanentId(
+          'OPD',
+          existingList.map((o) => o.opd_id)
+        );
+        const rawStatus = String(raw.status || 'Referred').trim();
+        const status: OpdStatus =
+          rawStatus === 'Returned' || rawStatus === 'Follow-up' ? rawStatus : 'Referred';
+
+        // Strict validation of compressed OPD slip photo data URL (max ~2.5MB)
+        let driveFileId = String(raw.drive_file_id || '').trim() || undefined;
+        let imageUrl =
+          typeof raw.image_url === 'string' && /^https:\/\/[^\s]+$/i.test(raw.image_url.trim())
+            ? raw.image_url.trim().slice(0, 400)
+            : undefined;
+        const imageDataUrl =
+          typeof raw.image_data_url === 'string' &&
+          /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.image_data_url) &&
+          raw.image_data_url.length <= 2_500_000
+            ? raw.image_data_url
+            : undefined;
+
+        if (imageDataUrl) {
+          const commaIdx = imageDataUrl.indexOf(',');
+          const header = imageDataUrl.slice(0, commaIdx);
+          const mimeMatch = header.match(/data:(image\/[a-z+]+);base64/i);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const base64Data = imageDataUrl.slice(commaIdx + 1);
+          const safeStuSlug = student.full_name.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 24) || 'Student';
+          const filename = `${opdId}_${safeStuSlug}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
+          const driveUpload = await forwardToAppsScriptWithData(
+            {
+              action: 'uploadOpdImage',
+              opd_id: opdId,
+              filename,
+              mimeType,
+              base64Data,
+            },
+            20000
+          );
+          if (driveUpload.ok && driveUpload.data) {
+            if (typeof driveUpload.data.drive_file_id === 'string' && driveUpload.data.drive_file_id) {
+              driveFileId = driveUpload.data.drive_file_id;
+            }
+            if (typeof driveUpload.data.image_url === 'string' && driveUpload.data.image_url) {
+              imageUrl = driveUpload.data.image_url;
+            }
+          }
+        }
+
+        const rawFollowUp = String(raw.follow_up_date || '').trim();
+        const opdRecord: OpdRecord = {
+          opd_id: opdId,
+          student_id: student.student_id,
+          student_name: student.full_name,
+          section: student.section,
+          roll_number: student.roll_number,
+          referral_datetime: normalizeDatetimeString(
+            String(raw.referral_datetime || ''),
+            nowIso.slice(0, 16)
+          ),
+          hospital_or_clinic: hospital,
+          doctor_name: String(raw.doctor_name || '').trim().slice(0, 100) || undefined,
+          reason,
+          escort_or_parent: String(raw.escort_or_parent || '').trim().slice(0, 120) || undefined,
+          diagnosis_and_advice:
+            String(raw.diagnosis_and_advice || '').trim().slice(0, 500) || undefined,
+          follow_up_date: rawFollowUp ? normalizeDateOnlyString(rawFollowUp, '') : undefined,
+          status,
+          drive_file_id: driveFileId,
+          image_url: imageUrl,
+          image_data_url: imageDataUrl,
+          notes: String(raw.notes || '').trim().slice(0, 400) || undefined,
+          recorded_by: req.authUser!.displayName,
+          created_at: nowIso,
+        };
+
+        serverState.db.opdRecords = [opdRecord, ...existingList];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+
+        const { image_data_url: _omitOpdImg, ...opdForSheet } = opdRecord;
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertOpd',
+          opd: opdForSheet,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          driveUploaded: Boolean(driveFileId || imageUrl),
+          opd: opdRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'updateOpd' && body.opd && body.opd.opd_id) {
+        const raw = body.opd as Partial<OpdRecord>;
+        const opdId = String(raw.opd_id).trim();
+        const existingList = serverState.db.opdRecords || [];
+        const existing = existingList.find((o) => o.opd_id === opdId);
+        if (!existing) {
+          return res.status(404).json({ status: 'error', message: 'OPD record not found.' });
+        }
+        const studentId = raw.student_id ? String(raw.student_id).trim() : existing.student_id;
+        const student = serverState.db.students.find((s) => s.student_id === studentId);
+        const hospital = raw.hospital_or_clinic
+          ? String(raw.hospital_or_clinic).trim().slice(0, 140)
+          : existing.hospital_or_clinic;
+        const reason = raw.reason ? String(raw.reason).trim().slice(0, 260) : existing.reason;
+        const rawStatus = String(raw.status || existing.status).trim();
+        const status: OpdStatus =
+          rawStatus === 'Returned' || rawStatus === 'Follow-up' ? rawStatus : 'Referred';
+
+        let driveFileId = existing.drive_file_id;
+        let imageUrl = existing.image_url;
+        let imageDataUrl = existing.image_data_url;
+
+        const incomingImageDataUrl =
+          typeof raw.image_data_url === 'string' &&
+          /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.image_data_url) &&
+          raw.image_data_url.length <= 2_500_000
+            ? raw.image_data_url
+            : undefined;
+
+        if (incomingImageDataUrl && incomingImageDataUrl !== existing.image_data_url) {
+          imageDataUrl = incomingImageDataUrl;
+          const commaIdx = incomingImageDataUrl.indexOf(',');
+          const header = incomingImageDataUrl.slice(0, commaIdx);
+          const mimeMatch = header.match(/data:(image\/[a-z+]+);base64/i);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const base64Data = incomingImageDataUrl.slice(commaIdx + 1);
+          const safeStuSlug =
+            (student?.full_name || existing.student_name || 'Student')
+              .replace(/[^a-zA-Z0-9]+/g, '_')
+              .slice(0, 24) || 'Student';
+          const filename = `${opdId}_${safeStuSlug}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
+          const driveUpload = await forwardToAppsScriptWithData(
+            {
+              action: 'uploadOpdImage',
+              opd_id: opdId,
+              filename,
+              mimeType,
+              base64Data,
+            },
+            20000
+          );
+          if (driveUpload.ok && driveUpload.data) {
+            if (typeof driveUpload.data.drive_file_id === 'string' && driveUpload.data.drive_file_id) {
+              driveFileId = driveUpload.data.drive_file_id;
+            }
+            if (typeof driveUpload.data.image_url === 'string' && driveUpload.data.image_url) {
+              imageUrl = driveUpload.data.image_url;
+            }
+          }
+        }
+
+        const rawFollowUp =
+          raw.follow_up_date !== undefined ? String(raw.follow_up_date || '').trim() : undefined;
+
+        const updated: OpdRecord = {
+          ...existing,
+          student_id: student?.student_id || existing.student_id,
+          student_name: student?.full_name || existing.student_name,
+          section: student?.section || existing.section,
+          roll_number: student?.roll_number || existing.roll_number,
+          referral_datetime: raw.referral_datetime
+            ? normalizeDatetimeString(String(raw.referral_datetime), existing.referral_datetime)
+            : existing.referral_datetime,
+          hospital_or_clinic: hospital,
+          doctor_name:
+            raw.doctor_name !== undefined
+              ? String(raw.doctor_name).trim().slice(0, 100) || undefined
+              : existing.doctor_name,
+          reason,
+          escort_or_parent:
+            raw.escort_or_parent !== undefined
+              ? String(raw.escort_or_parent).trim().slice(0, 120) || undefined
+              : existing.escort_or_parent,
+          diagnosis_and_advice:
+            raw.diagnosis_and_advice !== undefined
+              ? String(raw.diagnosis_and_advice).trim().slice(0, 500) || undefined
+              : existing.diagnosis_and_advice,
+          follow_up_date:
+            rawFollowUp !== undefined
+              ? rawFollowUp
+                ? normalizeDateOnlyString(rawFollowUp, '')
+                : undefined
+              : existing.follow_up_date,
+          status,
+          drive_file_id: driveFileId,
+          image_url: imageUrl,
+          image_data_url: imageDataUrl,
+          notes:
+            raw.notes !== undefined
+              ? String(raw.notes).trim().slice(0, 400) || undefined
+              : existing.notes,
+        };
+
+        serverState.db.opdRecords = existingList.map((o) => (o.opd_id === opdId ? updated : o));
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+
+        const { image_data_url: _omitOpdImg, ...opdForSheet } = updated;
+        const sheetSynced = await forwardToAppsScript({ action: 'upsertOpd', opd: opdForSheet });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          opd: updated,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteOpd' && body.opd_id) {
+        const opdId = String(body.opd_id).trim();
+        serverState.db.opdRecords = (serverState.db.opdRecords || []).filter(
+          (o) => o.opd_id !== opdId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({ action: 'deleteOpd', opd_id: opdId });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'upsertMedicalCamp' && body.medicalCamp) {
+        const raw = body.medicalCamp as Partial<MedicalCampRecord>;
+        const campTitle = String(raw.camp_title || '').trim().slice(0, 140);
+        if (!campTitle) {
+          return res.status(400).json({ status: 'error', message: 'Camp title is required.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.medicalCamps || [];
+        const incomingId = String(raw.camp_id || '').trim();
+        const existing = incomingId ? existingList.find((c) => c.camp_id === incomingId) : undefined;
+        const campId =
+          existing?.camp_id ||
+          generatePermanentId(
+            'CMP',
+            existingList.map((c) => c.camp_id)
+          );
+        const campRecord: MedicalCampRecord = {
+          camp_id: campId,
+          camp_title: campTitle,
+          camp_type: String(raw.camp_type || 'General Health').trim().slice(0, 60) || 'General Health',
+          organizer: String(raw.organizer || '').trim().slice(0, 140) || undefined,
+          camp_date: normalizeDateOnlyString(
+            String(raw.camp_date || existing?.camp_date || ''),
+            nowIso.slice(0, 10)
+          ),
+          target_classes: String(raw.target_classes || '').trim().slice(0, 140) || undefined,
+          doctor_team: String(raw.doctor_team || '').trim().slice(0, 180) || undefined,
+          summary: String(raw.summary || '').trim().slice(0, 500) || undefined,
+          recorded_by: existing?.recorded_by || req.authUser!.displayName,
+          created_at: existing?.created_at || nowIso,
+        };
+        serverState.db.medicalCamps = existing
+          ? existingList.map((c) => (c.camp_id === campId ? campRecord : c))
+          : [campRecord, ...existingList];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertMedicalCamp',
+          medicalCamp: campRecord,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          medicalCamp: campRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteMedicalCamp' && body.camp_id) {
+        const campId = String(body.camp_id).trim();
+        serverState.db.medicalCamps = (serverState.db.medicalCamps || []).filter(
+          (c) => c.camp_id !== campId
+        );
+        serverState.db.campScreenings = (serverState.db.campScreenings || []).filter(
+          (s) => s.camp_id !== campId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'deleteMedicalCamp',
+          camp_id: campId,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'upsertCampScreening' && body.campScreening) {
+        const raw = body.campScreening as Partial<CampScreeningRecord>;
+        const campId = String(raw.camp_id || '').trim();
+        const studentId = String(raw.student_id || '').trim();
+        const findings = String(raw.findings || '').trim().slice(0, 400);
+        if (!campId || !studentId || !findings) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Medical camp, student, and screening findings are required.',
+          });
+        }
+        const parentCamp = (serverState.db.medicalCamps || []).find((c) => c.camp_id === campId);
+        if (!parentCamp) {
+          return res.status(404).json({ status: 'error', message: 'Medical camp not found.' });
+        }
+        const student = serverState.db.students.find((s) => s.student_id === studentId);
+        if (!student) {
+          return res.status(404).json({ status: 'error', message: 'Selected student not found.' });
+        }
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.campScreenings || [];
+        const incomingId = String(raw.screening_id || '').trim();
+        const existing = incomingId
+          ? existingList.find((s) => s.screening_id === incomingId)
+          : undefined;
+        const screeningId =
+          existing?.screening_id ||
+          generatePermanentId(
+            'SCR',
+            existingList.map((s) => s.screening_id)
+          );
+        const screeningRecord: CampScreeningRecord = {
+          screening_id: screeningId,
+          camp_id: campId,
+          student_id: student.student_id,
+          student_name: student.full_name,
+          section: student.section,
+          roll_number: student.roll_number,
+          findings,
+          referral_needed: Boolean(raw.referral_needed),
+          notes: String(raw.notes || '').trim().slice(0, 300) || undefined,
+          recorded_by: existing?.recorded_by || req.authUser!.displayName,
+          created_at: existing?.created_at || nowIso,
+        };
+        serverState.db.campScreenings = existing
+          ? existingList.map((s) => (s.screening_id === screeningId ? screeningRecord : s))
+          : [screeningRecord, ...existingList];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertCampScreening',
+          campScreening: screeningRecord,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          campScreening: screeningRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteCampScreening' && body.screening_id) {
+        const screeningId = String(body.screening_id).trim();
+        serverState.db.campScreenings = (serverState.db.campScreenings || []).filter(
+          (s) => s.screening_id !== screeningId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'deleteCampScreening',
+          screening_id: screeningId,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      // ---- PHASE 3: ANNUAL HEALTH CHECKUPS & PRIVATE MENSTRUAL LOG ----
+      if (action === 'upsertAnnualCheckup' && body.annualCheckup) {
+        const raw = body.annualCheckup as Partial<AnnualCheckupRecord>;
+        const studentId = String(raw.student_id || '').trim();
+        if (!studentId) {
+          return res.status(400).json({ status: 'error', message: 'Please select a student.' });
+        }
+        const student = serverState.db.students.find((s) => s.student_id === studentId);
+        if (!student) {
+          return res.status(404).json({ status: 'error', message: 'Selected student not found.' });
+        }
+
+        const nowIso = new Date().toISOString();
+        const checkupDate = normalizeDateOnlyString(
+          String(raw.checkup_date || ''),
+          nowIso.slice(0, 10)
+        );
+        const academicYear =
+          String(raw.academic_year || '').trim().slice(0, 20) || getCurrentAcademicYear(checkupDate);
+
+        const parsePositiveBounded = (
+          val: unknown,
+          min: number,
+          max: number
+        ): number | undefined => {
+          if (val === '' || val === null || val === undefined) return undefined;
+          const n = Number(val);
+          if (!Number.isFinite(n) || n < min || n > max) return undefined;
+          return Number(n.toFixed(1));
+        };
+
+        const heightCm = parsePositiveBounded(raw.height_cm, 40, 250);
+        const weightKg = parsePositiveBounded(raw.weight_kg, 8, 200);
+        const bmi = calculateBmi(heightCm, weightKg);
+
+        const rawFitness = String(raw.general_fitness || 'Fit').trim();
+        const generalFitness: AnnualCheckupFitness =
+          rawFitness === 'Needs Follow-up' || rawFitness === 'Referred' ? rawFitness : 'Fit';
+
+        const existingList = serverState.db.annualCheckups || [];
+        const incomingId = String(raw.checkup_id || '').trim();
+        const existing =
+          (incomingId ? existingList.find((c) => c.checkup_id === incomingId) : undefined) ||
+          existingList.find(
+            (c) => c.student_id === student.student_id && c.academic_year === academicYear
+          );
+
+        const checkupId =
+          existing?.checkup_id ||
+          generatePermanentId(
+            'CHK',
+            existingList.map((c) => c.checkup_id)
+          );
+
+        const checkupRecord: AnnualCheckupRecord = {
+          checkup_id: checkupId,
+          academic_year: academicYear,
+          student_id: student.student_id,
+          student_name: student.full_name,
+          section: student.section,
+          roll_number: student.roll_number,
+          checkup_date: checkupDate,
+          height_cm: heightCm,
+          weight_kg: weightKg,
+          bmi,
+          vision_left: String(raw.vision_left || '').trim().slice(0, 30) || undefined,
+          vision_right: String(raw.vision_right || '').trim().slice(0, 30) || undefined,
+          dental_status: String(raw.dental_status || '').trim().slice(0, 120) || undefined,
+          ent_notes: String(raw.ent_notes || '').trim().slice(0, 160) || undefined,
+          blood_group: String(raw.blood_group || '').trim().slice(0, 16) || undefined,
+          hemoglobin: String(raw.hemoglobin || '').trim().slice(0, 24) || undefined,
+          general_fitness: generalFitness,
+          parent_referral: Boolean(raw.parent_referral),
+          doctor_remarks: String(raw.doctor_remarks || '').trim().slice(0, 400) || undefined,
+          recorded_by: existing?.recorded_by || req.authUser!.displayName,
+          created_at: existing?.created_at || nowIso,
+        };
+
+        serverState.db.annualCheckups = existing
+          ? existingList.map((c) => (c.checkup_id === checkupId ? checkupRecord : c))
+          : [checkupRecord, ...existingList];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertAnnualCheckup',
+          annualCheckup: checkupRecord,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          annualCheckup: checkupRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteAnnualCheckup' && body.checkup_id) {
+        const checkupId = String(body.checkup_id).trim();
+        serverState.db.annualCheckups = (serverState.db.annualCheckups || []).filter(
+          (c) => c.checkup_id !== checkupId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'deleteAnnualCheckup',
+          checkup_id: checkupId,
+        });
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'upsertMenstrualLog' && body.menstrualLog) {
+        const raw = body.menstrualLog as Partial<MenstrualLogRecord>;
+        const studentId = String(raw.student_id || '').trim();
+        if (!studentId) {
+          return res.status(400).json({ status: 'error', message: 'Please select a student.' });
+        }
+        const student = serverState.db.students.find((s) => s.student_id === studentId);
+        if (!student) {
+          return res.status(404).json({ status: 'error', message: 'Selected student not found.' });
+        }
+
+        const nowIso = new Date().toISOString();
+        const existingList = serverState.db.menstrualLogs || [];
+        const incomingId = String(raw.menstrual_id || '').trim();
+        const existing = incomingId
+          ? existingList.find((m) => m.menstrual_id === incomingId)
+          : undefined;
+        const menstrualId =
+          existing?.menstrual_id ||
+          generatePermanentId(
+            'MNS',
+            existingList.map((m) => m.menstrual_id)
+          );
+
+        const rawPads = Number(raw.pads_issued);
+        const padsIssued =
+          Number.isFinite(rawPads) && rawPads > 0 ? Math.min(50, Math.floor(rawPads)) : undefined;
+
+        const requestedItemId = String(raw.item_id || '').trim();
+        let linkedItemId = existing?.item_id;
+        let linkedItemName = existing?.item_name;
+        let updatedItemRecord: ItemInventoryRecord | null = null;
+        let stockTxnRecord: StockTransactionRecord | null = null;
+
+        // Atomically deduct sanitary pads from Items inventory ONLY on creation (never double-deduct on edits)
+        if (!existing && padsIssued && padsIssued > 0 && requestedItemId) {
+          const invItems = serverState.db.items || [];
+          const matchedItem = invItems.find((it) => it.item_id === requestedItemId);
+          if (!matchedItem) {
+            return res.status(404).json({
+              status: 'error',
+              message: 'Selected sanitary supply item was not found in inventory.',
+            });
+          }
+          if (matchedItem.current_stock < padsIssued) {
+            return res.status(400).json({
+              status: 'error',
+              message: `Insufficient stock for ${matchedItem.name} (available: ${matchedItem.current_stock} ${matchedItem.unit}).`,
+            });
+          }
+          const nextStock = matchedItem.current_stock - padsIssued;
+          updatedItemRecord = {
+            ...matchedItem,
+            current_stock: nextStock,
+            updated_at: nowIso,
+          };
+          serverState.db.items = invItems.map((it) =>
+            it.item_id === matchedItem.item_id ? updatedItemRecord! : it
+          );
+          const txnId = generatePermanentId(
+            'TXN',
+            (serverState.db.stockTransactions || []).map((t) => t.txn_id)
+          );
+          // Privacy safeguard: stock audit trail keeps neutral label and never copies student name or private clinical notes
+          stockTxnRecord = {
+            txn_id: txnId,
+            target_type: 'item',
+            target_id: matchedItem.item_id,
+            target_name: matchedItem.name,
+            change_qty: -padsIssued,
+            balance_after: nextStock,
+            reason: 'menstrual',
+            reference_id: menstrualId,
+            notes: 'Issued via Menstrual Health Care',
+            recorded_by: req.authUser!.displayName,
+            created_at: nowIso,
+          };
+          serverState.db.stockTransactions = [
+            stockTxnRecord,
+            ...(serverState.db.stockTransactions || []),
+          ];
+          linkedItemId = matchedItem.item_id;
+          linkedItemName = matchedItem.name;
+        }
+
+        const rawEnd = String(raw.cycle_end_date || '').trim();
+        const menstrualRecord: MenstrualLogRecord = {
+          menstrual_id: menstrualId,
+          student_id: student.student_id,
+          student_name: student.full_name,
+          section: student.section,
+          roll_number: student.roll_number,
+          cycle_start_date: normalizeDateOnlyString(
+            String(raw.cycle_start_date || existing?.cycle_start_date || ''),
+            nowIso.slice(0, 10)
+          ),
+          cycle_end_date: rawEnd ? normalizeDateOnlyString(rawEnd, '') : undefined,
+          flow_or_pain_notes: String(raw.flow_or_pain_notes || '').trim().slice(0, 240) || undefined,
+          pads_issued: padsIssued,
+          item_id: linkedItemId,
+          item_name: linkedItemName,
+          irregular_flag: Boolean(raw.irregular_flag),
+          private_notes: String(raw.private_notes || '').trim().slice(0, 400) || undefined,
+          recorded_by: existing?.recorded_by || req.authUser!.displayName,
+          created_at: existing?.created_at || nowIso,
+        };
+
+        serverState.db.menstrualLogs = existing
+          ? existingList.map((m) => (m.menstrual_id === menstrualId ? menstrualRecord : m))
+          : [menstrualRecord, ...existingList];
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+
+        const sheetSynced = await forwardToAppsScript({
+          action: 'upsertMenstrualLog',
+          menstrualLog: menstrualRecord,
+        });
+        if (updatedItemRecord) {
+          void forwardToAppsScript({ action: 'upsertItem', item: updatedItemRecord });
+        }
+        if (stockTxnRecord) {
+          void forwardToAppsScript({ action: 'addStockTransaction', transaction: stockTxnRecord });
+        }
+        return res.json({
+          status: 'ok',
+          sheetSynced,
+          menstrualLog: menstrualRecord,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'deleteMenstrualLog' && body.menstrual_id) {
+        const menstrualId = String(body.menstrual_id).trim();
+        serverState.db.menstrualLogs = (serverState.db.menstrualLogs || []).filter(
+          (m) => m.menstrual_id !== menstrualId
+        );
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+        const sheetSynced = await forwardToAppsScript({
+          action: 'deleteMenstrualLog',
+          menstrual_id: menstrualId,
+        });
         return res.json({
           status: 'ok',
           sheetSynced,
@@ -2352,11 +3325,13 @@ async function startServer() {
     if (serverState.appsScriptUrl && body.triggerSync) {
       if (body.pushBackup) {
         const billsForSheet = (serverState.db.bills || []).map(({ image_data_url: _omit, ...rest }) => rest);
+        const opdForSheet = (serverState.db.opdRecords || []).map(({ image_data_url: _omit, ...rest }) => rest);
         await forwardToAppsScript({
           action: 'syncFullDatabase',
           db: {
             ...serverState.db,
             bills: billsForSheet,
+            opdRecords: opdForSheet,
             users: ensureUsersHashed(serverState.db.users || []).users,
           },
         });
@@ -2394,11 +3369,13 @@ async function startServer() {
   // 6. Push full shared database in plain readable format to Google Sheets (Admin ONLY)
   app.post('/api/sheets-push', requireAuth, requireAdmin, async (_req: AuthedRequest, res) => {
     const billsForSheet = (serverState.db.bills || []).map(({ image_data_url: _omit, ...rest }) => rest);
+    const opdForSheet = (serverState.db.opdRecords || []).map(({ image_data_url: _omit, ...rest }) => rest);
     const pushedFull = await forwardToAppsScript({
       action: 'syncFullDatabase',
       db: {
         ...serverState.db,
         bills: billsForSheet,
+        opdRecords: opdForSheet,
         users: ensureUsersHashed(serverState.db.users || []).users,
       },
     });
@@ -2438,7 +3415,7 @@ async function startServer() {
       return res.status(400).json({
         status: 'error',
         message:
-          'Invalid sheet requested. Allowed sheets: Students, Visits, Measurements, Health Profiles, Medicines, Items, Bills, or All.',
+          'Invalid sheet requested. Allowed sheets: Students, Visits, Measurements, Health Profiles, Medicines, Items, Bills, Doctor Visits, External OPD, Medical Camps, Annual Checkups, Menstrual Log, or All.',
       });
     }
 

@@ -336,6 +336,21 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
     });
   };
 
+  const findMatchingInventoryMedicine = (targetName: string): string => {
+    const clean = targetName.trim().toLowerCase();
+    if (!clean || medicines.length === 0) return '';
+    const firstToken = clean.split(/[\s-]+/)[0] || clean;
+    const exact = medicines.find(
+      (m) => m.name.toLowerCase() === clean || clean.includes(m.name.toLowerCase()) || m.name.toLowerCase().includes(clean)
+    );
+    if (exact) return exact.medicine_id;
+    if (firstToken.length >= 3) {
+      const tokenMatch = medicines.find((m) => m.name.toLowerCase().includes(firstToken));
+      if (tokenMatch) return tokenMatch.medicine_id;
+    }
+    return '';
+  };
+
   const applyClinicalTemplate = (tpl: ClinicalTemplate) => {
     setActiveTemplateId(tpl.id);
     setReason(tpl.reason);
@@ -347,11 +362,15 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
       setDosage(tpl.dosage);
       setDosageUnit(tpl.dosageUnit);
       setRoute(tpl.route);
+      const matchedId = findMatchingInventoryMedicine(tpl.medicineName);
+      setSelectedMedicineId(matchedId);
+      if (matchedId) setMedicineQty('1');
       if (!adminTime && visitDatetime.length >= 16) {
         setAdminTime(visitDatetime.slice(11, 16));
       }
     } else {
       setMedicineName('');
+      setSelectedMedicineId('');
       setDosage('');
     }
     setErrors({});
@@ -986,10 +1005,11 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                 <div className="mt-3 p-3.5 sm:p-4 bg-stone-50/80 border border-stone-200/80 rounded-xl space-y-3">
                   {/* Optional Inventory Stock Link (auto-deducts from Medicines Inventory) */}
                   {medicines.length > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-6 gap-2.5 pb-3 border-b border-stone-200/70">
-                      <div className="sm:col-span-4">
-                        <label htmlFor="medicine-inventory-link" className="block text-xs text-zinc-600 mb-1">
-                          Pick from Medicines Inventory (Auto-deducts stock)
+                    <div className="grid grid-cols-12 sm:grid-cols-6 gap-2.5 pb-3 border-b border-stone-200/70">
+                      <div className="col-span-8 sm:col-span-4">
+                        <label htmlFor="medicine-inventory-link" className="block text-xs text-zinc-600 mb-1 truncate">
+                          <span className="sm:hidden">Inventory Medicine</span>
+                          <span className="hidden sm:inline">Pick from Medicines Inventory (Auto-deducts stock)</span>
                         </label>
                         <CustomSelect
                           id="medicine-inventory-link"
@@ -1023,9 +1043,9 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                           className="w-full"
                         />
                       </div>
-                      <div className="sm:col-span-2">
-                        <label htmlFor="medicine-deduct-qty" className="block text-xs text-zinc-600 mb-1">
-                          Stock Qty Used
+                      <div className="col-span-4 sm:col-span-2">
+                        <label htmlFor="medicine-deduct-qty" className="block text-xs text-zinc-600 mb-1 truncate">
+                          Qty Used
                         </label>
                         <input
                           id="medicine-deduct-qty"
@@ -1038,7 +1058,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                           className="w-full h-9 px-2.5 text-xs font-mono bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900 disabled:opacity-50"
                         />
                         {selectedMedicineRecord && (
-                          <p className="text-[11px] font-mono text-teal-700 mt-1">
+                          <p className="text-[11px] font-mono text-teal-700 mt-1 truncate">
                             In stock: {selectedMedicineRecord.current_stock} {selectedMedicineRecord.unit}
                           </p>
                         )}
@@ -1061,6 +1081,11 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                             setDosage(med.dosage);
                             setDosageUnit(med.unit);
                             setRoute(med.route);
+                            const matchedId = findMatchingInventoryMedicine(med.name);
+                            if (matchedId) {
+                              setSelectedMedicineId(matchedId);
+                              setMedicineQty('1');
+                            }
                             if (!adminTime && visitDatetime.length >= 16) {
                               setAdminTime(visitDatetime.slice(11, 16));
                             }
@@ -1068,7 +1093,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                               setErrors((prev) => ({ ...prev, medicine_name: '' }));
                             }
                           }}
-                          className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100/80 border border-teal-200/60 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                          className="px-2.5 py-1 text-xs font-medium text-teal-800 bg-teal-50 hover:bg-teal-100/80 border border-teal-200/60 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                         >
                           {med.label}
                         </button>
@@ -1165,10 +1190,11 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
 
             {/* OPTIONAL INFIRMARY ITEM USED (BANDAGE, GAUZE, ICE PACK, ETC.) */}
             {items.length > 0 && (
-              <div className="pt-3 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-6 gap-3">
-                <div className="sm:col-span-4">
-                  <label htmlFor="visit-item-used" className="block text-xs text-zinc-500 mb-1">
-                    Infirmary Item Used (Optional · Auto-deducts stock)
+              <div className="pt-3 border-t border-stone-100 grid grid-cols-12 sm:grid-cols-6 gap-2.5 sm:gap-3">
+                <div className="col-span-8 sm:col-span-4">
+                  <label htmlFor="visit-item-used" className="block text-xs text-zinc-500 mb-1 truncate">
+                    <span className="sm:hidden">Supplies / Item Used</span>
+                    <span className="hidden sm:inline">Supplies / Item Used (Optional · Auto-deducts stock)</span>
                   </label>
                   <CustomSelect
                     id="visit-item-used"
@@ -1186,8 +1212,8 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                     className="w-full"
                   />
                 </div>
-                <div className="sm:col-span-2">
-                  <label htmlFor="visit-item-qty" className="block text-xs text-zinc-500 mb-1">
+                <div className="col-span-4 sm:col-span-2">
+                  <label htmlFor="visit-item-qty" className="block text-xs text-zinc-500 mb-1 truncate">
                     Item Qty
                   </label>
                   <input
@@ -1201,7 +1227,7 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                     className="w-full h-9 px-2.5 text-xs font-mono bg-stone-50/60 border border-stone-200 rounded-lg focus:bg-white focus:outline-none focus:border-zinc-900 disabled:opacity-50"
                   />
                   {selectedItemRecord && (
-                    <p className="text-[11px] font-mono text-teal-700 mt-1">
+                    <p className="text-[11px] font-mono text-teal-700 mt-1 truncate">
                       In stock: {selectedItemRecord.current_stock} {selectedItemRecord.unit}
                     </p>
                   )}
@@ -1226,19 +1252,9 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1 gap-2">
-                  <label htmlFor="visit-datetime" className="block text-xs text-zinc-500">
-                    Visit Date &amp; Time *
-                  </label>
-                  <span
-                    className={`text-[11px] font-semibold ${
-                      effectiveShiftPeriod === 'night' ? 'text-indigo-700' : 'text-teal-700'
-                    }`}
-                  >
-                    {formatShiftPeriodLabel(effectiveShiftPeriod)}
-                    {shiftMode === 'auto' ? ' (Auto)' : ' (Manual)'}
-                  </span>
-                </div>
+                <label htmlFor="visit-datetime" className="block text-xs text-zinc-500 mb-1">
+                  Visit Date &amp; Time *
+                </label>
                 <input
                   id="visit-datetime"
                   type="datetime-local"
@@ -1246,32 +1262,53 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                   onChange={(e) => setVisitDatetime(e.target.value)}
                   className="w-full h-9 px-3 text-xs font-mono tabular-nums bg-stone-50/60 border border-stone-200 rounded-lg focus:bg-white focus:outline-none focus:border-zinc-900"
                 />
-                <div className="mt-1.5 flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-zinc-400">
-                    School hrs: {formatHHMMTo12h(settings.school_hours_start)} – {formatHHMMTo12h(settings.school_hours_end)}
-                  </span>
-                  <div className="inline-flex items-center gap-1 text-[11px]">
-                    {(
-                      [
-                        { key: 'auto', label: 'Auto' },
-                        { key: 'school_hours', label: 'School' },
-                        { key: 'night', label: 'Night' },
-                      ] as const
-                    ).map((opt) => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => setShiftMode(opt.key)}
-                        className={`px-1.5 py-0.5 rounded font-medium transition-colors cursor-pointer ${
-                          shiftMode === opt.key
-                            ? 'bg-zinc-900 text-white'
-                            : 'text-zinc-500 hover:bg-stone-100'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+              </div>
+
+              <div className="sm:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl bg-stone-50/80 border border-stone-200/70">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-zinc-600">Visit Shift</span>
+                    <span
+                      className={`font-semibold ${
+                        effectiveShiftPeriod === 'night' ? 'text-indigo-700' : 'text-teal-700'
+                      }`}
+                    >
+                      {formatShiftPeriodLabel(effectiveShiftPeriod, true)}
+                    </span>
+                    <span className="text-[11px] text-zinc-400">
+                      {shiftMode === 'auto' ? '· Auto-detected' : '· Manual override'}
+                    </span>
                   </div>
+                  <p className="text-[11px] text-zinc-400 mt-0.5 font-mono tabular-nums">
+                    School hrs: {formatHHMMTo12h(settings.school_hours_start)} – {formatHHMMTo12h(settings.school_hours_end)}
+                  </p>
+                </div>
+                <div
+                  role="group"
+                  aria-label="Visit shift period"
+                  className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-white border border-stone-200/80 rounded-xl shrink-0"
+                >
+                  {(
+                    [
+                      { key: 'auto', mobileLabel: 'Auto', label: 'Auto' },
+                      { key: 'school_hours', mobileLabel: 'School', label: 'School Hours' },
+                      { key: 'night', mobileLabel: 'Night', label: 'Night' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setShiftMode(opt.key)}
+                      className={`h-9 sm:h-8 px-2 sm:px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap text-center cursor-pointer ${
+                        shiftMode === opt.key
+                          ? 'bg-zinc-900 text-white font-semibold'
+                          : 'text-zinc-600 hover:bg-stone-100 hover:text-zinc-900'
+                      }`}
+                    >
+                      <span className="sm:hidden">{opt.mobileLabel}</span>
+                      <span className="hidden sm:inline">{opt.label}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 

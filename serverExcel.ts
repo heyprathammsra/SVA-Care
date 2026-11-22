@@ -9,6 +9,13 @@ import type {
   MedicineInventoryRecord,
   ItemInventoryRecord,
   BillRecord,
+  DoctorVisitSession,
+  DoctorVisitCase,
+  OpdRecord,
+  MedicalCampRecord,
+  CampScreeningRecord,
+  AnnualCheckupRecord,
+  MenstrualLogRecord,
   InfirmarySettings,
 } from './src/utils/nurseLogic.ts';
 import {
@@ -18,6 +25,7 @@ import {
   resolveVisitShiftPeriod,
   formatShiftPeriodLabel,
   getStockStatus,
+  calculateBmi,
 } from './src/utils/nurseLogic.ts';
 
 const officeCrypto =
@@ -35,6 +43,11 @@ export type ClinicalExcelTab =
   | 'Medicines'
   | 'Items'
   | 'Bills'
+  | 'Doctor Visits'
+  | 'External OPD'
+  | 'Medical Camps'
+  | 'Annual Checkups'
+  | 'Menstrual Log'
   | 'All';
 
 export const ALLOWED_EXCEL_TABS = new Set<ClinicalExcelTab>([
@@ -45,6 +58,11 @@ export const ALLOWED_EXCEL_TABS = new Set<ClinicalExcelTab>([
   'Medicines',
   'Items',
   'Bills',
+  'Doctor Visits',
+  'External OPD',
+  'Medical Camps',
+  'Annual Checkups',
+  'Menstrual Log',
   'All',
 ]);
 
@@ -504,7 +522,6 @@ function addBillsWorksheet(
     { header: 'Vendor / Pharmacy', key: 'vendor_name', width: 28 },
     { header: 'Category', key: 'category', width: 15, alignment: { horizontal: 'center' as const } },
     { header: 'Total Amount (INR)', key: 'total_amount', width: 18, alignment: { horizontal: 'right' as const } },
-    { header: 'Payment Status', key: 'payment_status', width: 15, alignment: { horizontal: 'center' as const } },
     { header: 'Bill Photo Link', key: 'image_url', width: 34 },
     { header: 'Notes', key: 'notes', width: 28 },
   ];
@@ -519,11 +536,363 @@ function addBillsWorksheet(
       vendor_name: sanitizeExcelText(b.vendor_name),
       category: sanitizeExcelText(b.category),
       total_amount: Number(b.total_amount) || 0,
-      payment_status: sanitizeExcelText(b.payment_status),
       image_url: sanitizeExcelText(b.image_url || (b.image_data_url ? 'Attached in App' : '-')),
       notes: sanitizeExcelText(b.notes || '-'),
     });
     styleDataRow(row, idx, columns);
+  });
+}
+
+function addDoctorVisitsWorksheet(
+  workbook: ExcelJS.Workbook,
+  sessions: DoctorVisitSession[],
+  cases: DoctorVisitCase[],
+  studentMap: Map<string, StudentRecord>
+): void {
+  const sessionById = new Map(sessions.map((s) => [s.doctor_visit_id, s]));
+  const sortedCases = [...cases].sort((a, b) => {
+    const dA = sessionById.get(a.doctor_visit_id)?.visit_date || a.created_at || '';
+    const dB = sessionById.get(b.doctor_visit_id)?.visit_date || b.created_at || '';
+    return dB.localeCompare(dA);
+  });
+
+  // Include sessions that don't yet have student cases so every doctor visit appears in the workbook
+  const sessionsWithCases = new Set(sortedCases.map((c) => c.doctor_visit_id));
+  const emptySessions = [...sessions]
+    .filter((s) => !sessionsWithCases.has(s.doctor_visit_id))
+    .sort((a, b) => (b.visit_date || '').localeCompare(a.visit_date || ''));
+
+  const totalRows = sortedCases.length + emptySessions.length;
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Visit Date', key: 'visit_date', width: 13, alignment: { horizontal: 'center' as const } },
+    { header: 'Session Time', key: 'session_time', width: 18, alignment: { horizontal: 'center' as const } },
+    { header: 'Visiting Doctor', key: 'doctor_name', width: 24 },
+    { header: 'Specialization', key: 'specialization', width: 18 },
+    { header: 'Student Name', key: 'student_name', width: 24 },
+    { header: 'Class', key: 'section', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Roll No', key: 'roll_no', width: 10, alignment: { horizontal: 'center' as const } },
+    { header: 'Complaint / Reason', key: 'complaint', width: 26 },
+    { header: 'Clinical Findings', key: 'findings', width: 28 },
+    { header: 'Prescription / Advice', key: 'prescription_or_advice', width: 32 },
+    { header: 'Follow-up', key: 'follow_up', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Notes', key: 'notes', width: 24 },
+  ];
+
+  const ws = setupStyledSheet(
+    workbook,
+    'Doctor Visits',
+    'Weekly Visiting Doctor Consultations',
+    totalRows,
+    columns
+  );
+
+  let idx = 0;
+  sortedCases.forEach((c) => {
+    const sess = sessionById.get(c.doctor_visit_id);
+    const stu = studentMap.get(c.student_id);
+    const row = ws.addRow({
+      sr: idx + 1,
+      visit_date: extractDatePart(sess?.visit_date || c.created_at),
+      session_time: sanitizeExcelText(sess?.session_time || '-'),
+      doctor_name: sanitizeExcelText(sess?.doctor_name || '-'),
+      specialization: sanitizeExcelText(sess?.specialization || '-'),
+      student_name: sanitizeExcelText(c.student_name || stu?.full_name || c.student_id),
+      section: sanitizeExcelText(c.section || stu?.section || '-'),
+      roll_no: sanitizeExcelText(c.roll_number || stu?.roll_number || '-'),
+      complaint: sanitizeExcelText(c.complaint),
+      findings: sanitizeExcelText(c.findings || '-'),
+      prescription_or_advice: sanitizeExcelText(c.prescription_or_advice || '-'),
+      follow_up: c.follow_up_needed ? 'Yes' : 'No',
+      notes: sanitizeExcelText(c.notes || sess?.campus_notes || '-'),
+    });
+    styleDataRow(row, idx, columns, 11);
+    idx++;
+  });
+
+  emptySessions.forEach((sess) => {
+    const row = ws.addRow({
+      sr: idx + 1,
+      visit_date: extractDatePart(sess.visit_date),
+      session_time: sanitizeExcelText(sess.session_time || '-'),
+      doctor_name: sanitizeExcelText(sess.doctor_name),
+      specialization: sanitizeExcelText(sess.specialization || '-'),
+      student_name: '— No cases logged yet —',
+      section: '-',
+      roll_no: '-',
+      complaint: '-',
+      findings: '-',
+      prescription_or_advice: '-',
+      follow_up: 'No',
+      notes: sanitizeExcelText(sess.campus_notes || '-'),
+    });
+    styleDataRow(row, idx, columns);
+    idx++;
+  });
+}
+
+function addOpdWorksheet(
+  workbook: ExcelJS.Workbook,
+  opdRecords: OpdRecord[],
+  studentMap: Map<string, StudentRecord>
+): void {
+  const sorted = [...opdRecords].sort((a, b) =>
+    (b.referral_datetime || '').localeCompare(a.referral_datetime || '')
+  );
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'OPD ID', key: 'opd_id', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Date', key: 'date', width: 13, alignment: { horizontal: 'center' as const } },
+    { header: 'Time', key: 'time', width: 11, alignment: { horizontal: 'center' as const } },
+    { header: 'Student Name', key: 'student_name', width: 24 },
+    { header: 'Class', key: 'section', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Roll No', key: 'roll_no', width: 10, alignment: { horizontal: 'center' as const } },
+    { header: 'Hospital / Clinic', key: 'hospital_or_clinic', width: 26 },
+    { header: 'Doctor', key: 'doctor_name', width: 20 },
+    { header: 'Reason for Referral', key: 'reason', width: 26 },
+    { header: 'Escort / Parent', key: 'escort_or_parent', width: 20 },
+    { header: 'Diagnosis & Advice', key: 'diagnosis_and_advice', width: 32 },
+    { header: 'Follow-up Date', key: 'follow_up_date', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Status', key: 'status', width: 13, alignment: { horizontal: 'center' as const } },
+    { header: 'OPD Slip Photo Link', key: 'image_url', width: 32 },
+    { header: 'Notes', key: 'notes', width: 24 },
+  ];
+
+  const ws = setupStyledSheet(
+    workbook,
+    'External OPD',
+    'External OPD & Hospital Referral Register',
+    sorted.length,
+    columns
+  );
+
+  sorted.forEach((o, idx) => {
+    const stu = studentMap.get(o.student_id);
+    const row = ws.addRow({
+      sr: idx + 1,
+      opd_id: sanitizeExcelText(o.opd_id),
+      date: extractDatePart(o.referral_datetime),
+      time: formatTimeFromDatetime(o.referral_datetime),
+      student_name: sanitizeExcelText(o.student_name || stu?.full_name || o.student_id),
+      section: sanitizeExcelText(o.section || stu?.section || '-'),
+      roll_no: sanitizeExcelText(o.roll_number || stu?.roll_number || '-'),
+      hospital_or_clinic: sanitizeExcelText(o.hospital_or_clinic),
+      doctor_name: sanitizeExcelText(o.doctor_name || '-'),
+      reason: sanitizeExcelText(o.reason),
+      escort_or_parent: sanitizeExcelText(o.escort_or_parent || '-'),
+      diagnosis_and_advice: sanitizeExcelText(o.diagnosis_and_advice || '-'),
+      follow_up_date: o.follow_up_date ? extractDatePart(o.follow_up_date) : '-',
+      status: sanitizeExcelText(o.status || 'Referred'),
+      image_url: sanitizeExcelText(o.image_url || (o.image_data_url ? 'Attached in App' : '-')),
+      notes: sanitizeExcelText(o.notes || '-'),
+    });
+    styleDataRow(row, idx, columns, 12);
+  });
+}
+
+function addMedicalCampsWorksheet(
+  workbook: ExcelJS.Workbook,
+  camps: MedicalCampRecord[],
+  screenings: CampScreeningRecord[],
+  studentMap: Map<string, StudentRecord>
+): void {
+  const campById = new Map(camps.map((c) => [c.camp_id, c]));
+  const sortedScreenings = [...screenings].sort((a, b) => {
+    const dA = campById.get(a.camp_id)?.camp_date || a.created_at || '';
+    const dB = campById.get(b.camp_id)?.camp_date || b.created_at || '';
+    return dB.localeCompare(dA);
+  });
+
+  const campsWithScreenings = new Set(sortedScreenings.map((s) => s.camp_id));
+  const emptyCamps = [...camps]
+    .filter((c) => !campsWithScreenings.has(c.camp_id))
+    .sort((a, b) => (b.camp_date || '').localeCompare(a.camp_date || ''));
+
+  const totalRows = sortedScreenings.length + emptyCamps.length;
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Camp Date', key: 'camp_date', width: 13, alignment: { horizontal: 'center' as const } },
+    { header: 'Camp Title', key: 'camp_title', width: 28 },
+    { header: 'Camp Type', key: 'camp_type', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Organizer / Team', key: 'organizer', width: 24 },
+    { header: 'Student Name', key: 'student_name', width: 24 },
+    { header: 'Class', key: 'section', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Roll No', key: 'roll_no', width: 10, alignment: { horizontal: 'center' as const } },
+    { header: 'Screening Findings', key: 'findings', width: 34 },
+    { header: 'Referral Needed', key: 'referral', width: 15, alignment: { horizontal: 'center' as const } },
+    { header: 'Notes', key: 'notes', width: 24 },
+  ];
+
+  const ws = setupStyledSheet(
+    workbook,
+    'Medical Camps',
+    'School Medical Camps & Student Screenings',
+    totalRows,
+    columns
+  );
+
+  let idx = 0;
+  sortedScreenings.forEach((sc) => {
+    const camp = campById.get(sc.camp_id);
+    const stu = studentMap.get(sc.student_id);
+    const orgLabel = [camp?.organizer, camp?.doctor_team].filter(Boolean).join(' · ');
+    const row = ws.addRow({
+      sr: idx + 1,
+      camp_date: extractDatePart(camp?.camp_date || sc.created_at),
+      camp_title: sanitizeExcelText(camp?.camp_title || sc.camp_id),
+      camp_type: sanitizeExcelText(camp?.camp_type || 'General Health'),
+      organizer: sanitizeExcelText(orgLabel || '-'),
+      student_name: sanitizeExcelText(sc.student_name || stu?.full_name || sc.student_id),
+      section: sanitizeExcelText(sc.section || stu?.section || '-'),
+      roll_no: sanitizeExcelText(sc.roll_number || stu?.roll_number || '-'),
+      findings: sanitizeExcelText(sc.findings),
+      referral: sc.referral_needed ? 'Yes' : 'No',
+      notes: sanitizeExcelText(sc.notes || '-'),
+    });
+    styleDataRow(row, idx, columns, 9);
+    idx++;
+  });
+
+  emptyCamps.forEach((camp) => {
+    const orgLabel = [camp.organizer, camp.doctor_team].filter(Boolean).join(' · ');
+    const row = ws.addRow({
+      sr: idx + 1,
+      camp_date: extractDatePart(camp.camp_date),
+      camp_title: sanitizeExcelText(camp.camp_title),
+      camp_type: sanitizeExcelText(camp.camp_type || 'General Health'),
+      organizer: sanitizeExcelText(orgLabel || '-'),
+      student_name: '— No screenings logged yet —',
+      section: sanitizeExcelText(camp.target_classes || '-'),
+      roll_no: '-',
+      findings: sanitizeExcelText(camp.summary || '-'),
+      referral: 'No',
+      notes: '-',
+    });
+    styleDataRow(row, idx, columns);
+    idx++;
+  });
+}
+
+function addAnnualCheckupsWorksheet(
+  workbook: ExcelJS.Workbook,
+  checkups: AnnualCheckupRecord[],
+  studentMap: Map<string, StudentRecord>
+): void {
+  const sorted = [...checkups].sort((a, b) => {
+    const yrCmp = (b.academic_year || '').localeCompare(a.academic_year || '');
+    if (yrCmp !== 0) return yrCmp;
+    return (b.checkup_date || '').localeCompare(a.checkup_date || '');
+  });
+
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Checkup ID', key: 'checkup_id', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Academic Year', key: 'academic_year', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Checkup Date', key: 'checkup_date', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Student Name', key: 'student_name', width: 26 },
+    { header: 'Class', key: 'section', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Roll No', key: 'roll_no', width: 10, alignment: { horizontal: 'center' as const } },
+    { header: 'Height (cm)', key: 'height_cm', width: 12, alignment: { horizontal: 'right' as const } },
+    { header: 'Weight (kg)', key: 'weight_kg', width: 12, alignment: { horizontal: 'right' as const } },
+    { header: 'BMI', key: 'bmi', width: 10, alignment: { horizontal: 'right' as const } },
+    { header: 'Vision (L / R)', key: 'vision', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Dental Status', key: 'dental_status', width: 18 },
+    { header: 'ENT Notes', key: 'ent_notes', width: 20 },
+    { header: 'Blood Group', key: 'blood_group', width: 13, alignment: { horizontal: 'center' as const } },
+    { header: 'Hemoglobin', key: 'hemoglobin', width: 13, alignment: { horizontal: 'center' as const } },
+    { header: 'General Fitness', key: 'general_fitness', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Parent Referral', key: 'parent_referral', width: 15, alignment: { horizontal: 'center' as const } },
+    { header: 'Doctor Remarks', key: 'doctor_remarks', width: 30 },
+  ];
+
+  const ws = setupStyledSheet(
+    workbook,
+    'Annual Checkups',
+    'Annual Student Physical Health Checkups',
+    sorted.length,
+    columns
+  );
+
+  sorted.forEach((c, idx) => {
+    const stu = studentMap.get(c.student_id);
+    const bmi = c.bmi ?? calculateBmi(c.height_cm, c.weight_kg);
+    const visionStr =
+      c.vision_left || c.vision_right
+        ? `${c.vision_left || '-'} / ${c.vision_right || '-'}`
+        : '-';
+    const row = ws.addRow({
+      sr: idx + 1,
+      checkup_id: sanitizeExcelText(c.checkup_id),
+      academic_year: sanitizeExcelText(c.academic_year),
+      checkup_date: extractDatePart(c.checkup_date),
+      student_name: sanitizeExcelText(c.student_name || stu?.full_name || c.student_id),
+      section: sanitizeExcelText(c.section || stu?.section || '-'),
+      roll_no: sanitizeExcelText(c.roll_number || stu?.roll_number || '-'),
+      height_cm: c.height_cm ?? '',
+      weight_kg: c.weight_kg ?? '',
+      bmi: bmi ?? '',
+      vision: sanitizeExcelText(visionStr),
+      dental_status: sanitizeExcelText(c.dental_status || '-'),
+      ent_notes: sanitizeExcelText(c.ent_notes || '-'),
+      blood_group: sanitizeExcelText(c.blood_group || '-'),
+      hemoglobin: sanitizeExcelText(c.hemoglobin || '-'),
+      general_fitness: sanitizeExcelText(c.general_fitness || 'Fit'),
+      parent_referral: c.parent_referral ? 'Yes' : 'No',
+      doctor_remarks: sanitizeExcelText(c.doctor_remarks || '-'),
+    });
+    styleDataRow(row, idx, columns, 15);
+  });
+}
+
+function addMenstrualLogWorksheet(
+  workbook: ExcelJS.Workbook,
+  logs: MenstrualLogRecord[],
+  studentMap: Map<string, StudentRecord>
+): void {
+  const sorted = [...logs].sort((a, b) =>
+    (b.cycle_start_date || '').localeCompare(a.cycle_start_date || '')
+  );
+
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Log ID', key: 'menstrual_id', width: 16, alignment: { horizontal: 'center' as const } },
+    { header: 'Cycle Start', key: 'cycle_start_date', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Cycle End', key: 'cycle_end_date', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Student Name', key: 'student_name', width: 26 },
+    { header: 'Class', key: 'section', width: 12, alignment: { horizontal: 'center' as const } },
+    { header: 'Roll No', key: 'roll_no', width: 10, alignment: { horizontal: 'center' as const } },
+    { header: 'Flow / Pain Notes', key: 'flow_or_pain_notes', width: 28 },
+    { header: 'Pads Issued', key: 'pads_issued', width: 13, alignment: { horizontal: 'right' as const } },
+    { header: 'Irregular Flag', key: 'irregular_flag', width: 14, alignment: { horizontal: 'center' as const } },
+    { header: 'Private Clinical Notes', key: 'private_notes', width: 32 },
+    { header: 'Recorded By', key: 'recorded_by', width: 20 },
+  ];
+
+  const ws = setupStyledSheet(
+    workbook,
+    'Menstrual Log',
+    'CONFIDENTIAL — Private Menstrual Health Register (Nurse & Admin Only)',
+    sorted.length,
+    columns
+  );
+
+  sorted.forEach((m, idx) => {
+    const stu = studentMap.get(m.student_id);
+    const row = ws.addRow({
+      sr: idx + 1,
+      menstrual_id: sanitizeExcelText(m.menstrual_id),
+      cycle_start_date: extractDatePart(m.cycle_start_date),
+      cycle_end_date: m.cycle_end_date ? extractDatePart(m.cycle_end_date) : '-',
+      student_name: sanitizeExcelText(m.student_name || stu?.full_name || m.student_id),
+      section: sanitizeExcelText(m.section || stu?.section || '-'),
+      roll_no: sanitizeExcelText(m.roll_number || stu?.roll_number || '-'),
+      flow_or_pain_notes: sanitizeExcelText(m.flow_or_pain_notes || '-'),
+      pads_issued: Number(m.pads_issued) || 0,
+      irregular_flag: m.irregular_flag ? 'Yes' : 'No',
+      private_notes: sanitizeExcelText(m.private_notes || '-'),
+      recorded_by: sanitizeExcelText(m.recorded_by || 'School Nurse'),
+    });
+    styleDataRow(row, idx, columns, 9);
   });
 }
 
@@ -559,6 +928,32 @@ export async function generateEncryptedExcelWorkbook(
   }
   if (tab === 'Bills' || tab === 'All') {
     addBillsWorksheet(workbook, db.bills || []);
+  }
+  if (tab === 'Doctor Visits' || tab === 'All') {
+    addDoctorVisitsWorksheet(
+      workbook,
+      db.doctorVisits || [],
+      db.doctorVisitCases || [],
+      studentMap
+    );
+  }
+  if (tab === 'External OPD' || tab === 'All') {
+    addOpdWorksheet(workbook, db.opdRecords || [], studentMap);
+  }
+  if (tab === 'Medical Camps' || tab === 'All') {
+    addMedicalCampsWorksheet(
+      workbook,
+      db.medicalCamps || [],
+      db.campScreenings || [],
+      studentMap
+    );
+  }
+  if (tab === 'Annual Checkups' || tab === 'All') {
+    addAnnualCheckupsWorksheet(workbook, db.annualCheckups || [], studentMap);
+  }
+  // Privacy Safeguard: Menstrual Log is strictly excluded from "All" exports and only generated on explicit opt-in
+  if (tab === 'Menstrual Log') {
+    addMenstrualLogWorksheet(workbook, db.menstrualLogs || [], studentMap);
   }
 
   const rawBuffer = Buffer.from(await workbook.xlsx.writeBuffer());

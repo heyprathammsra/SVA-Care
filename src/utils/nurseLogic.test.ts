@@ -1226,8 +1226,13 @@ test('generateEncryptedExcelWorkbook produces AES password-protected formatted w
     'Medicines',
     'Items',
     'Bills',
+    'Doctor Visits',
+    'External OPD',
+    'Medical Camps',
+    'Annual Checkups',
   ]);
   assert.ok(!sheetNames.includes('Users'));
+  assert.ok(!sheetNames.includes('Menstrual Log'));
 
   // Verify formula neutralization in Students sheet
   const studentsSheet = wb.getWorksheet('Students')!;
@@ -1357,6 +1362,8 @@ test('Phase 1 shift classification auto-tags School Hours vs Night and respects 
   );
   assert.equal(formatShiftPeriodLabel('school_hours'), 'School Hours');
   assert.equal(formatShiftPeriodLabel('night'), 'Night / After-Hours');
+  assert.equal(formatShiftPeriodLabel('night', true), 'Night');
+  assert.equal(formatShiftPeriodLabel('school_hours', true), 'School Hours');
 });
 
 test('Phase 1 normalizeSheetSyncPayload merges medicines, items, bills, stock transactions, and settings cleanly', () => {
@@ -1419,6 +1426,12 @@ test('Phase 1 normalizeSheetSyncPayload merges medicines, items, bills, stock tr
           drive_file_id: 'drive123',
           image_url: 'https://drive.google.com/uc?export=view&id=drive123',
         },
+        {
+          bill_id: 'BIL-2026-0002',
+          vendor_name: 'Local Medical Store',
+          bill_date: '2026-10-18',
+          category: 'First Aid & Supplies',
+        },
       ],
       settings: {
         school_hours_start: '08:00',
@@ -1432,9 +1445,13 @@ test('Phase 1 normalizeSheetSyncPayload merges medicines, items, bills, stock tr
   assert.equal(synced.medicines?.[0].current_stock, 12);
   assert.equal(synced.items?.length, 1);
   assert.equal(synced.items?.[0].current_stock, 8);
-  assert.equal(synced.bills?.length, 1);
-  assert.equal(synced.bills?.[0].image_url, 'https://drive.google.com/uc?export=view&id=drive123');
-  assert.equal(synced.bills?.[0].image_data_url, 'data:image/jpeg;base64,LOCALPREVIEW');
+  assert.equal(synced.bills?.length, 2);
+  const bill1 = synced.bills?.find((b) => b.bill_id === 'BIL-2026-0001');
+  const bill2 = synced.bills?.find((b) => b.bill_id === 'BIL-2026-0002');
+  assert.equal(bill1?.image_url, 'https://drive.google.com/uc?export=view&id=drive123');
+  assert.equal(bill1?.image_data_url, 'data:image/jpeg;base64,LOCALPREVIEW');
+  assert.equal(bill2?.total_amount, 0);
+  assert.equal(bill2?.payment_status, 'Recorded');
   assert.equal(synced.settings?.school_hours_start, '08:00');
   assert.equal(synced.settings?.school_hours_end, '15:00');
 });
@@ -1504,5 +1521,680 @@ test('Phase 1 RBAC blocks Warden from inventory, bills, and school hours while a
   assert.equal(isMutationAllowedForRole('updateSchoolHours', 'nurse'), false);
   assert.equal(isMutationAllowedForRole('updateSchoolHours', 'admin'), true);
 });
+
+test('Phase 2 normalizeSheetSyncPayload merges doctor visits, OPD records (preserving local preview), and medical camps', async () => {
+  const { normalizeSheetSyncPayload } = await import('./nurseLogic.ts');
+
+  const existingDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    opdRecords: [
+      {
+        opd_id: 'OPD-2026-0001',
+        student_id: 'STU-2026-0001',
+        referral_datetime: '2026-10-18T11:00',
+        hospital_or_clinic: 'District Hospital',
+        reason: 'Sprained ankle',
+        status: 'Referred',
+        image_data_url: 'data:image/jpeg;base64,LOCALOPDPREVIEW',
+        created_at: '2026-10-18T11:00:00Z',
+      },
+    ],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      doctorVisits: [
+        {
+          doctor_visit_id: 'DOC-2026-0001',
+          visit_date: '2026-10-18',
+          session_time: '10:00 AM – 12:30 PM',
+          doctor_name: 'Dr. Rajesh Sharma',
+          specialization: 'Pediatrician',
+        },
+      ],
+      doctorVisitCases: [
+        {
+          case_id: 'DC-2026-0001',
+          doctor_visit_id: 'DOC-2026-0001',
+          student_id: 'STU-2026-0001',
+          complaint: 'Dry cough',
+          findings: 'Clear chest',
+          prescription_or_advice: 'Warm saline gargles',
+          follow_up_needed: 'true',
+        },
+      ],
+      opdRecords: [
+        {
+          opd_id: 'OPD-2026-0001',
+          student_id: 'STU-2026-0001',
+          referral_datetime: '2026-10-18T11:00',
+          hospital_or_clinic: 'District Hospital',
+          reason: 'Sprained ankle',
+          status: 'Returned',
+          drive_file_id: 'opd_drive_1',
+          image_url: 'https://drive.google.com/uc?export=view&id=opd_drive_1',
+        },
+      ],
+      medicalCamps: [
+        {
+          camp_id: 'CMP-2026-0001',
+          camp_title: 'Annual Eye & Dental Camp',
+          camp_type: 'Eye / Vision',
+          camp_date: '2026-10-15',
+        },
+      ],
+      campScreenings: [
+        {
+          screening_id: 'SCR-2026-0001',
+          camp_id: 'CMP-2026-0001',
+          student_id: 'STU-2026-0002',
+          findings: 'Mild myopia (-0.75)',
+          referral_needed: 'yes',
+        },
+      ],
+    } as any,
+    existingDb
+  );
+
+  assert.equal(synced.doctorVisits?.length, 1);
+  assert.equal(synced.doctorVisits?.[0].doctor_name, 'Dr. Rajesh Sharma');
+  assert.equal(synced.doctorVisitCases?.length, 1);
+  assert.equal(synced.doctorVisitCases?.[0].student_name, sampleStudents[0].full_name);
+  assert.equal(synced.doctorVisitCases?.[0].follow_up_needed, true);
+
+  assert.equal(synced.opdRecords?.length, 1);
+  assert.equal(synced.opdRecords?.[0].status, 'Returned');
+  assert.equal(
+    synced.opdRecords?.[0].image_url,
+    'https://drive.google.com/uc?export=view&id=opd_drive_1'
+  );
+  assert.equal(synced.opdRecords?.[0].image_data_url, 'data:image/jpeg;base64,LOCALOPDPREVIEW');
+
+  assert.equal(synced.medicalCamps?.length, 1);
+  assert.equal(synced.campScreenings?.length, 1);
+  assert.equal(synced.campScreenings?.[0].student_name, sampleStudents[1].full_name);
+  assert.equal(synced.campScreenings?.[0].referral_needed, true);
+});
+
+test('Phase 2 RBAC hides Clinical Programs from Hostel Warden and allows Nurse & Admin', async () => {
+  const { sanitizeDbForRole, isMutationAllowedForRole } = await import('../../serverAuth.ts');
+  const dbWithPhase2: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    doctorVisits: [
+      {
+        doctor_visit_id: 'DOC-2026-0001',
+        visit_date: '2026-10-18',
+        doctor_name: 'Dr. Sharma',
+        created_at: '2026-10-18T10:00:00Z',
+      },
+    ],
+    doctorVisitCases: [
+      {
+        case_id: 'DC-2026-0001',
+        doctor_visit_id: 'DOC-2026-0001',
+        student_id: 'STU-2026-0001',
+        complaint: 'Fever',
+        created_at: '2026-10-18T10:15:00Z',
+      },
+    ],
+    opdRecords: [
+      {
+        opd_id: 'OPD-2026-0001',
+        student_id: 'STU-2026-0001',
+        referral_datetime: '2026-10-18T11:30',
+        hospital_or_clinic: 'City Care Hospital',
+        reason: 'X-Ray',
+        status: 'Referred',
+        created_at: '2026-10-18T11:30:00Z',
+      },
+    ],
+    medicalCamps: [
+      {
+        camp_id: 'CMP-2026-0001',
+        camp_title: 'Dental Camp',
+        camp_type: 'Dental',
+        camp_date: '2026-10-15',
+        created_at: '2026-10-15T09:00:00Z',
+      },
+    ],
+    campScreenings: [
+      {
+        screening_id: 'SCR-2026-0001',
+        camp_id: 'CMP-2026-0001',
+        student_id: 'STU-2026-0001',
+        findings: 'Healthy teeth',
+        referral_needed: false,
+        created_at: '2026-10-15T10:00:00Z',
+      },
+    ],
+  };
+
+  const wardenDb = sanitizeDbForRole(dbWithPhase2, 'warden');
+  assert.equal(wardenDb.doctorVisits?.length, 0);
+  assert.equal(wardenDb.doctorVisitCases?.length, 0);
+  assert.equal(wardenDb.opdRecords?.length, 0);
+  assert.equal(wardenDb.medicalCamps?.length, 0);
+  assert.equal(wardenDb.campScreenings?.length, 0);
+
+  const nurseDb = sanitizeDbForRole(dbWithPhase2, 'nurse');
+  assert.equal(nurseDb.doctorVisits?.length, 1);
+  assert.equal(nurseDb.doctorVisitCases?.length, 1);
+  assert.equal(nurseDb.opdRecords?.length, 1);
+  assert.equal(nurseDb.medicalCamps?.length, 1);
+  assert.equal(nurseDb.campScreenings?.length, 1);
+
+  const phase2Actions = [
+    'upsertDoctorVisit',
+    'deleteDoctorVisit',
+    'upsertDoctorVisitCase',
+    'deleteDoctorVisitCase',
+    'createOpd',
+    'updateOpd',
+    'deleteOpd',
+    'upsertMedicalCamp',
+    'deleteMedicalCamp',
+    'upsertCampScreening',
+    'deleteCampScreening',
+  ];
+
+  for (const act of phase2Actions) {
+    assert.equal(isMutationAllowedForRole(act, 'warden'), false);
+    assert.equal(isMutationAllowedForRole(act, 'nurse'), true);
+    assert.equal(isMutationAllowedForRole(act, 'admin'), true);
+  }
+});
+
+test('Phase 2 Google Apps Script template and encrypted Excel exporter include all new tabs', async () => {
+  const { GOOGLE_APPS_SCRIPT_CODE } = await import('./appsScriptTemplate.ts');
+  const { generateEncryptedExcelWorkbook, ALLOWED_EXCEL_TABS } = await import('../../serverExcel.ts');
+  const officeCryptoModule = await import('officecrypto-tool');
+  const officeCrypto = officeCryptoModule.default as unknown as {
+    isEncrypted: (buf: Buffer) => boolean;
+  };
+
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("'Doctor Visits':"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("'Doctor Visit Cases':"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("'OPD':"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("'Medical Camps':"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("'Camp Screenings':"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("action === 'uploadOpdImage'"));
+
+  assert.ok(ALLOWED_EXCEL_TABS.has('Doctor Visits'));
+  assert.ok(ALLOWED_EXCEL_TABS.has('External OPD'));
+  assert.ok(ALLOWED_EXCEL_TABS.has('Medical Camps'));
+
+  const dbForExcel: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    doctorVisits: [
+      {
+        doctor_visit_id: 'DOC-2026-0001',
+        visit_date: '2026-10-18',
+        doctor_name: 'Dr. Sharma',
+        created_at: '2026-10-18T10:00:00Z',
+      },
+    ],
+    doctorVisitCases: [
+      {
+        case_id: 'DC-2026-0001',
+        doctor_visit_id: 'DOC-2026-0001',
+        student_id: 'STU-2026-0001',
+        complaint: 'Throat pain',
+        prescription_or_advice: 'Warm gargles',
+        follow_up_needed: true,
+        created_at: '2026-10-18T10:20:00Z',
+      },
+    ],
+    opdRecords: [
+      {
+        opd_id: 'OPD-2026-0001',
+        student_id: 'STU-2026-0001',
+        referral_datetime: '2026-10-18T11:30',
+        hospital_or_clinic: 'District Hospital',
+        reason: 'Ear check',
+        status: 'Referred',
+        created_at: '2026-10-18T11:30:00Z',
+      },
+    ],
+    medicalCamps: [
+      {
+        camp_id: 'CMP-2026-0001',
+        camp_title: 'Dental Camp',
+        camp_type: 'Dental',
+        camp_date: '2026-10-15',
+        created_at: '2026-10-15T09:00:00Z',
+      },
+    ],
+    campScreenings: [
+      {
+        screening_id: 'SCR-2026-0001',
+        camp_id: 'CMP-2026-0001',
+        student_id: 'STU-2026-0001',
+        findings: 'Minor cavity',
+        referral_needed: true,
+        created_at: '2026-10-15T09:30:00Z',
+      },
+    ],
+  };
+
+  for (const tab of ['Doctor Visits', 'External OPD', 'Medical Camps'] as const) {
+    const out = await generateEncryptedExcelWorkbook(dbForExcel, tab);
+    assert.ok(out.buffer.length > 500);
+    assert.ok(officeCrypto.isEncrypted(out.buffer));
+  }
+});
+
+test('Phase 3 helpers compute BMI, academic year, and generate CHK/MNS IDs accurately', async () => {
+  const { calculateBmi, getCurrentAcademicYear } = await import('./nurseLogic.ts');
+
+  assert.equal(calculateBmi(150, 45), 20);
+  assert.equal(calculateBmi(160, 52.5), 20.5);
+  assert.equal(calculateBmi(0, 45), undefined);
+  assert.equal(calculateBmi(150, 0), undefined);
+  assert.equal(calculateBmi(undefined, 45), undefined);
+
+  // Academic year starts in April (month >= 4 -> YYYY-(YY+1), Jan-Mar -> (YYYY-1)-YY)
+  assert.equal(getCurrentAcademicYear('2026-06-15'), '2026-27');
+  assert.equal(getCurrentAcademicYear('2027-02-10'), '2026-27');
+  assert.equal(getCurrentAcademicYear('2027-04-01'), '2027-28');
+
+  assert.equal(generatePermanentId('CHK', ['CHK-2026-0001']), 'CHK-2026-0002');
+  assert.equal(generatePermanentId('MNS', []), 'MNS-2026-0001');
+});
+
+test('Phase 3 normalizeSheetSyncPayload normalizes annualCheckups and menstrualLogs', () => {
+  const currentDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    annualCheckups: [],
+    menstrualLogs: [],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: sampleStudents,
+      annualCheckups: [
+        {
+          checkup_id: 'CHK-2026-0001',
+          academic_year: '2026-27',
+          student_id: 'STU-2026-0001',
+          checkup_date: '2026-10-18',
+          height_cm: '152',
+          weight_kg: '46.2',
+          vision_left: '6/6',
+          vision_right: '6/9',
+          dental_status: 'Healthy',
+          blood_group: 'O+',
+          general_fitness: 'Needs Follow-up',
+          parent_referral: 'TRUE',
+          doctor_remarks: 'Eye re-check recommended',
+        },
+      ],
+      menstrualLogs: [
+        {
+          menstrual_id: 'MNS-2026-0001',
+          student_id: 'STU-2026-0002',
+          cycle_start_date: '2026-10-15',
+          cycle_end_date: '2026-10-19',
+          flow_or_pain_notes: 'Mild cramps on day 1',
+          pads_issued: '4',
+          item_id: 'ITM-2026-0005',
+          item_name: 'Sanitary Pads',
+          irregular_flag: 'false',
+          private_notes: 'Advised rest & warm water',
+        },
+      ],
+    } as any,
+    currentDb,
+    '2026-10-20T10:00:00Z'
+  );
+
+  assert.equal(synced.annualCheckups?.length, 1);
+  const chk = synced.annualCheckups![0];
+  assert.equal(chk.student_name, sampleStudents[0].full_name);
+  assert.equal(chk.height_cm, 152);
+  assert.equal(chk.weight_kg, 46.2);
+  assert.equal(chk.bmi, 20);
+  assert.equal(chk.parent_referral, true);
+  assert.equal(chk.general_fitness, 'Needs Follow-up');
+
+  assert.equal(synced.menstrualLogs?.length, 1);
+  const mns = synced.menstrualLogs![0];
+  assert.equal(mns.student_name, sampleStudents[1].full_name);
+  assert.equal(mns.pads_issued, 4);
+  assert.equal(mns.irregular_flag, false);
+});
+
+test('Phase 3 Health Insights computes frequent visitors and common illnesses across visits, doctor cases, and OPD', async () => {
+  const { normalizeIssueCategory, computeFrequentVisitors, computeCommonIssues } = await import(
+    './nurseLogic.ts'
+  );
+
+  assert.equal(normalizeIssueCategory('High fever with chills').key, 'fever');
+  assert.equal(normalizeIssueCategory('Severe migraine / headache').key, 'headache');
+  assert.equal(normalizeIssueCategory('Playground scraped knee').key, 'injury');
+
+  const multiClassStudents: StudentRecord[] = [
+    ...sampleStudents,
+    {
+      student_id: 'STU-2026-0040',
+      full_name: 'Meera Kulkarni',
+      section: 'Emerald',
+      roll_number: '04',
+      active_status: 'Active',
+      created_at: '2026-06-15T08:00:00Z',
+      updated_at: '2026-06-15T08:00:00Z',
+    },
+  ];
+
+  const visits: VisitRecord[] = [
+    {
+      visit_id: 'VIS-2026-0101',
+      student_id: 'STU-2026-0001',
+      visit_datetime: '2026-10-20T09:00',
+      reason: 'High fever 101F',
+      observations: '',
+      action_taken: 'Paracetamol',
+      medicine_status: 'given',
+      medicine_name: 'Paracetamol',
+      dosage: '1',
+      dosage_unit: 'tab',
+      route: 'Oral',
+      administration_time: '09:05 AM',
+      notes: '',
+      recorded_by: 'Nurse',
+      created_at: '2026-10-20T09:00:00Z',
+    },
+    {
+      visit_id: 'VIS-2026-0102',
+      student_id: 'STU-2026-0001',
+      visit_datetime: '2026-10-18T11:00',
+      reason: 'Mild headache',
+      observations: '',
+      action_taken: 'Rest',
+      medicine_status: 'none',
+      medicine_name: 'None',
+      dosage: '',
+      dosage_unit: '',
+      route: '',
+      administration_time: '',
+      notes: '',
+      recorded_by: 'Nurse',
+      created_at: '2026-10-18T11:00:00Z',
+    },
+    {
+      visit_id: 'VIS-2026-0103',
+      student_id: 'STU-2026-0002',
+      visit_datetime: '2026-10-19T10:30',
+      reason: 'Fever and body ache',
+      observations: '',
+      action_taken: 'Cold compress',
+      medicine_status: 'none',
+      medicine_name: 'None',
+      dosage: '',
+      dosage_unit: '',
+      route: '',
+      administration_time: '',
+      notes: '',
+      recorded_by: 'Nurse',
+      created_at: '2026-10-19T10:30:00Z',
+    },
+    {
+      visit_id: 'VIS-2026-0104',
+      student_id: 'STU-2026-0040',
+      visit_datetime: '2026-10-19T14:00',
+      reason: 'Viral fever',
+      observations: '',
+      action_taken: 'Rest',
+      medicine_status: 'none',
+      medicine_name: 'None',
+      dosage: '',
+      dosage_unit: '',
+      route: '',
+      administration_time: '',
+      notes: '',
+      recorded_by: 'Nurse',
+      created_at: '2026-10-19T14:00:00Z',
+    },
+    {
+      // Old visit outside 7d window
+      visit_id: 'VIS-2026-0105',
+      student_id: 'STU-2026-0002',
+      visit_datetime: '2026-09-01T09:00',
+      reason: 'Scraped knee',
+      observations: '',
+      action_taken: 'Bandage',
+      medicine_status: 'none',
+      medicine_name: 'None',
+      dosage: '',
+      dosage_unit: '',
+      route: '',
+      administration_time: '',
+      notes: '',
+      recorded_by: 'Nurse',
+      created_at: '2026-09-01T09:00:00Z',
+    },
+  ];
+
+  const doctorVisits = [
+    {
+      doctor_visit_id: 'DOC-2026-0001',
+      visit_date: '2026-10-20',
+      doctor_name: 'Dr. Sharma',
+      created_at: '2026-10-20T10:00:00Z',
+    },
+  ];
+  const doctorVisitCases = [
+    {
+      case_id: 'DC-2026-0001',
+      doctor_visit_id: 'DOC-2026-0001',
+      student_id: 'STU-2026-0001',
+      complaint: 'Persistent fever',
+      created_at: '2026-10-20T10:30:00Z',
+    },
+  ];
+
+  // 30d with programs included: STU-0001 has 2 visits + 1 doctor case = 3 total
+  const frequent = computeFrequentVisitors({
+    students: multiClassStudents,
+    visits,
+    doctorVisits,
+    doctorVisitCases,
+    timeframe: '30d',
+    includePrograms: true,
+    minVisits: 2,
+    referenceDate: '2026-10-21',
+  });
+  assert.equal(frequent.length, 1);
+  assert.equal(frequent[0].student.student_id, 'STU-2026-0001');
+  assert.equal(frequent[0].totalVisits, 3);
+  assert.equal(frequent[0].visitCount, 2);
+  assert.equal(frequent[0].doctorCaseCount, 1);
+
+  // Visits only (includePrograms: false) drops doctor case count to 0
+  const visitsOnly = computeFrequentVisitors({
+    students: multiClassStudents,
+    visits,
+    doctorVisits,
+    doctorVisitCases,
+    timeframe: '30d',
+    includePrograms: false,
+    minVisits: 2,
+    referenceDate: '2026-10-21',
+  });
+  assert.equal(visitsOnly[0].totalVisits, 2);
+  assert.equal(visitsOnly[0].doctorCaseCount, 0);
+
+  // Common issues in last 7d: Fever should rank #1 with 4 cases across 3 unique students & 2 classes
+  const issues = computeCommonIssues({
+    students: multiClassStudents,
+    visits,
+    doctorVisits,
+    doctorVisitCases,
+    timeframe: '7d',
+    includePrograms: true,
+    referenceDate: '2026-10-21',
+  });
+  assert.ok(issues.length >= 2);
+  assert.equal(issues[0].issueKey, 'fever');
+  assert.equal(issues[0].totalCases, 4);
+  assert.equal(issues[0].uniqueStudentCount, 3);
+  assert.equal(issues[0].recent7dCount, 4);
+  assert.equal(issues[0].classBreakdown.length, 2);
+
+  // Section filter narrows to Emerald only
+  const emeraldIssues = computeCommonIssues({
+    students: multiClassStudents,
+    visits,
+    timeframe: '30d',
+    sectionFilter: 'Emerald',
+    includePrograms: true,
+    referenceDate: '2026-10-21',
+  });
+  assert.equal(emeraldIssues.length, 1);
+  assert.equal(emeraldIssues[0].totalCases, 1);
+});
+
+test('Phase 3 RBAC hides Annual Checkups & Menstrual Logs from Warden and allows Nurse & Admin', async () => {
+  const { sanitizeDbForRole, isMutationAllowedForRole } = await import('../../serverAuth.ts');
+  const dbWithPhase3: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    annualCheckups: [
+      {
+        checkup_id: 'CHK-2026-0001',
+        academic_year: '2026-27',
+        student_id: 'STU-2026-0001',
+        checkup_date: '2026-10-18',
+        general_fitness: 'Fit',
+        created_at: '2026-10-18T10:00:00Z',
+      },
+    ],
+    menstrualLogs: [
+      {
+        menstrual_id: 'MNS-2026-0001',
+        student_id: 'STU-2026-0002',
+        cycle_start_date: '2026-10-18',
+        private_notes: 'Confidential nurse note',
+        created_at: '2026-10-18T11:00:00Z',
+      },
+    ],
+  };
+
+  const wardenDb = sanitizeDbForRole(dbWithPhase3, 'warden');
+  assert.equal(wardenDb.annualCheckups?.length, 0);
+  assert.equal(wardenDb.menstrualLogs?.length, 0);
+
+  const nurseDb = sanitizeDbForRole(dbWithPhase3, 'nurse');
+  assert.equal(nurseDb.annualCheckups?.length, 1);
+  assert.equal(nurseDb.menstrualLogs?.length, 1);
+
+  const adminDb = sanitizeDbForRole(dbWithPhase3, 'admin');
+  assert.equal(adminDb.annualCheckups?.length, 1);
+  assert.equal(adminDb.menstrualLogs?.length, 1);
+
+  const phase3Actions = [
+    'upsertAnnualCheckup',
+    'deleteAnnualCheckup',
+    'upsertMenstrualLog',
+    'deleteMenstrualLog',
+  ];
+  for (const act of phase3Actions) {
+    assert.equal(isMutationAllowedForRole(act, 'warden'), false);
+    assert.equal(isMutationAllowedForRole(act, 'nurse'), true);
+    assert.equal(isMutationAllowedForRole(act, 'admin'), true);
+  }
+});
+
+test('Phase 3 Excel export includes Annual Checkups in All but strictly excludes Menstrual Log from All', async () => {
+  const { GOOGLE_APPS_SCRIPT_CODE } = await import('./appsScriptTemplate.ts');
+  const { generateEncryptedExcelWorkbook, ALLOWED_EXCEL_TABS, getExcelExportPassword } =
+    await import('../../serverExcel.ts');
+  const ExcelJS = (await import('exceljs')).default;
+  const officeCryptoMod = await import('officecrypto-tool');
+  const officeCrypto = (officeCryptoMod.default || officeCryptoMod) as unknown as {
+    isEncrypted: (buf: Buffer) => boolean;
+    decrypt: (buf: Buffer, opts: { password: string }) => Promise<Buffer>;
+  };
+
+  // Apps Script template includes both new sheets and mutation handlers
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("'Annual Checkups':"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("'Menstrual Log':"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("action === 'upsertAnnualCheckup'"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("action === 'upsertMenstrualLog'"));
+
+  assert.ok(ALLOWED_EXCEL_TABS.has('Annual Checkups'));
+  assert.ok(ALLOWED_EXCEL_TABS.has('Menstrual Log'));
+
+  const dbForExcel: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    annualCheckups: [
+      {
+        checkup_id: 'CHK-2026-0001',
+        academic_year: '2026-27',
+        student_id: 'STU-2026-0001',
+        checkup_date: '2026-10-18',
+        height_cm: 150,
+        weight_kg: 45,
+        bmi: 20,
+        general_fitness: 'Fit',
+        doctor_remarks: '=HYPERLINK("http://evil.example","bad")',
+        created_at: '2026-10-18T10:00:00Z',
+      },
+    ],
+    menstrualLogs: [
+      {
+        menstrual_id: 'MNS-2026-0001',
+        student_id: 'STU-2026-0002',
+        cycle_start_date: '2026-10-18',
+        pads_issued: 3,
+        private_notes: 'Strictly confidential',
+        created_at: '2026-10-18T11:00:00Z',
+      },
+    ],
+  };
+
+  // 1. Default 'All' workbook MUST contain Annual Checkups and MUST NOT contain Menstrual Log
+  const allOut = await generateEncryptedExcelWorkbook(dbForExcel, 'All');
+  assert.ok(officeCrypto.isEncrypted(allOut.buffer));
+  const decAll = await officeCrypto.decrypt(allOut.buffer, { password: getExcelExportPassword() });
+  const wbAll = new ExcelJS.Workbook();
+  await wbAll.xlsx.load(decAll as unknown as ArrayBuffer);
+  const allSheetNames = wbAll.worksheets.map((ws) => ws.name);
+  assert.ok(allSheetNames.includes('Annual Checkups'));
+  assert.equal(allSheetNames.includes('Menstrual Log'), false);
+
+  // Verify formula injection neutralization on Annual Checkups remarks
+  const chkSheet = wbAll.getWorksheet('Annual Checkups');
+  assert.ok(chkSheet);
+  const serializedChk = JSON.stringify(chkSheet.getSheetValues());
+  assert.ok(serializedChk.includes("'=HYPERLINK"));
+
+  // 2. Standalone opt-in 'Menstrual Log' workbook MUST contain Menstrual Log only
+  const mnsOut = await generateEncryptedExcelWorkbook(dbForExcel, 'Menstrual Log');
+  assert.ok(officeCrypto.isEncrypted(mnsOut.buffer));
+  const decMns = await officeCrypto.decrypt(mnsOut.buffer, { password: getExcelExportPassword() });
+  const wbMns = new ExcelJS.Workbook();
+  await wbMns.xlsx.load(decMns as unknown as ArrayBuffer);
+  const mnsSheetNames = wbMns.worksheets.map((ws) => ws.name);
+  assert.deepEqual(mnsSheetNames, ['Menstrual Log']);
+});
+
+
 
 

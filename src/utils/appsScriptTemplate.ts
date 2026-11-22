@@ -27,16 +27,38 @@ export const GOOGLE_APPS_SCRIPT_CODE = String.raw`/**
  *    txn_id, entity_type, entity_id, entity_name, delta, balance_after, reason,
  *    ref_id, recorded_by, created_at
  * 9. Bills (Infirmary Bills & Receipts — links to Google Drive photos):
- *    bill_id, bill_number, vendor_name, bill_date, category, total_amount, payment_status,
+ *    bill_id, bill_number, vendor_name, bill_date, category, total_amount,
  *    drive_file_id, image_url, notes, recorded_by, created_at
  * 10. Settings (Infirmary Configuration, e.g. School Hours Start & End):
  *    key, value, updated_at
+ * 11. Doctor Visits (Weekly Visiting Physician Sessions):
+ *    doctor_visit_id, visit_date, session_time, doctor_name, specialization, campus_notes, recorded_by, created_at
+ * 12. Doctor Visit Cases (Students Seen During Weekly Doctor Visits):
+ *    case_id, doctor_visit_id, student_id, student_name, section, roll_number, complaint, findings,
+ *    prescription_or_advice, follow_up_needed, notes, recorded_by, created_at
+ * 13. OPD (External Hospital / Clinic Referrals — links to Google Drive OPD slip photos):
+ *    opd_id, student_id, student_name, section, roll_number, referral_datetime, hospital_or_clinic,
+ *    doctor_name, reason, escort_or_parent, diagnosis_and_advice, follow_up_date, status,
+ *    drive_file_id, image_url, notes, recorded_by, created_at
+ * 14. Medical Camps (School Health & Screening Camps):
+ *    camp_id, camp_title, camp_type, organizer, camp_date, target_classes, doctor_team, summary,
+ *    recorded_by, created_at
+ * 15. Camp Screenings (Individual Student Screening Findings):
+ *    screening_id, camp_id, student_id, student_name, section, roll_number, findings,
+ *    referral_needed, notes, recorded_by, created_at
+ * 16. Annual Checkups (Yearly Physical Health Checkups per Academic Year):
+ *    checkup_id, academic_year, student_id, student_name, section, roll_number, checkup_date,
+ *    height_cm, weight_kg, bmi, vision_left, vision_right, dental_status, ent_notes,
+ *    blood_group, hemoglobin, general_fitness, parent_referral, doctor_remarks, recorded_by, created_at
+ * 17. Menstrual Log (Confidential — Nurse & Admin Only):
+ *    menstrual_id, student_id, student_name, section, roll_number, cycle_start_date, cycle_end_date,
+ *    flow_or_pain_notes, pads_issued, item_id, item_name, irregular_flag, private_notes, recorded_by, created_at
  *
  * Notes:
  * - Classes use section names ONLY (e.g. Sparkle, Twinkle, Topaz, Sapphire) without grade numbers.
  * - Clinical & operational records are stored in plain readable text.
- * - Bill photos are saved to a Google Drive folder named "SVA Infirmary Documents"
- *   and linked via drive_file_id + image_url in the Bills tab.
+ * - Bill & OPD slip photos are saved to a Google Drive folder named "SVA Infirmary Documents"
+ *   and linked via drive_file_id + image_url in the Bills and OPD tabs.
  */
 
 const DRIVE_DOCS_FOLDER_NAME = 'SVA Infirmary Documents';
@@ -78,17 +100,51 @@ const SHEET_SCHEMAS = {
   ],
   'Bills': [
     'bill_id', 'bill_number', 'vendor_name', 'bill_date', 'category',
-    'total_amount', 'payment_status', 'drive_file_id', 'image_url',
+    'total_amount', 'drive_file_id', 'image_url',
     'notes', 'recorded_by', 'created_at'
   ],
   'Settings': [
     'key', 'value', 'updated_at'
+  ],
+  'Doctor Visits': [
+    'doctor_visit_id', 'visit_date', 'session_time', 'doctor_name',
+    'specialization', 'campus_notes', 'recorded_by', 'created_at'
+  ],
+  'Doctor Visit Cases': [
+    'case_id', 'doctor_visit_id', 'student_id', 'student_name', 'section', 'roll_number',
+    'complaint', 'findings', 'prescription_or_advice', 'follow_up_needed',
+    'notes', 'recorded_by', 'created_at'
+  ],
+  'OPD': [
+    'opd_id', 'student_id', 'student_name', 'section', 'roll_number',
+    'referral_datetime', 'hospital_or_clinic', 'doctor_name', 'reason',
+    'escort_or_parent', 'diagnosis_and_advice', 'follow_up_date', 'status',
+    'drive_file_id', 'image_url', 'notes', 'recorded_by', 'created_at'
+  ],
+  'Medical Camps': [
+    'camp_id', 'camp_title', 'camp_type', 'organizer', 'camp_date',
+    'target_classes', 'doctor_team', 'summary', 'recorded_by', 'created_at'
+  ],
+  'Camp Screenings': [
+    'screening_id', 'camp_id', 'student_id', 'student_name', 'section', 'roll_number',
+    'findings', 'referral_needed', 'notes', 'recorded_by', 'created_at'
+  ],
+  'Annual Checkups': [
+    'checkup_id', 'academic_year', 'student_id', 'student_name', 'section', 'roll_number',
+    'checkup_date', 'height_cm', 'weight_kg', 'bmi', 'vision_left', 'vision_right',
+    'dental_status', 'ent_notes', 'blood_group', 'hemoglobin', 'general_fitness',
+    'parent_referral', 'doctor_remarks', 'recorded_by', 'created_at'
+  ],
+  'Menstrual Log': [
+    'menstrual_id', 'student_id', 'student_name', 'section', 'roll_number',
+    'cycle_start_date', 'cycle_end_date', 'flow_or_pain_notes', 'pads_issued',
+    'item_id', 'item_name', 'irregular_flag', 'private_notes', 'recorded_by', 'created_at'
   ]
 };
 
 /**
- * Run this function once in the Apps Script Editor to create and format all 10 tabs
- * and authorize Google Drive access for bill photo uploads.
+ * Run this function once in the Apps Script Editor to create and format all 17 tabs
+ * and authorize Google Drive access for bill & OPD slip photo uploads.
  */
 function setupSpreadsheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -104,7 +160,7 @@ function setupSpreadsheet() {
       sheet.setFrozenRows(1);
     }
   });
-  return { status: 'ok', message: 'All 10 Infirmary tabs initialized.' };
+  return { status: 'ok', message: 'All 17 Infirmary tabs initialized.' };
 }
 
 /**
@@ -127,6 +183,13 @@ function doGet(e) {
       items: readSheetObjects('Items'),
       stockTransactions: readSheetObjects('Stock Transactions'),
       bills: readSheetObjects('Bills'),
+      doctorVisits: readSheetObjects('Doctor Visits'),
+      doctorVisitCases: readSheetObjects('Doctor Visit Cases'),
+      opdRecords: readSheetObjects('OPD'),
+      medicalCamps: readSheetObjects('Medical Camps'),
+      campScreenings: readSheetObjects('Camp Screenings'),
+      annualCheckups: readSheetObjects('Annual Checkups'),
+      menstrualLogs: readSheetObjects('Menstrual Log'),
       settings: readSettingsObject()
     };
     return ContentService
@@ -464,6 +527,30 @@ function deleteRowById(tabName, idField, targetIdVal) {
 }
 
 /**
+ * Deletes ALL matching rows by a foreign-key or field column (used for cascade deletes).
+ */
+function deleteRowsByField(tabName, fieldName, targetVal) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(tabName);
+  const target = String(targetVal || '').trim();
+  if (!sheet || !target || sheet.getLastRow() < 2) return 0;
+  const values = sheet.getDataRange().getValues();
+  const headersLower = values[0].map(function(h) {
+    return String(h || '').trim().toLowerCase().replace(/[\s._-]+/g, '_');
+  });
+  const colIdx = headersLower.indexOf(fieldName);
+  if (colIdx === -1) return 0;
+  let removed = 0;
+  for (let r = values.length - 1; r >= 1; r--) {
+    if (String(values[r][colIdx] || '').trim() === target) {
+      sheet.deleteRow(r + 1);
+      removed++;
+    }
+  }
+  return removed;
+}
+
+/**
  * POST endpoint: handles clinical, inventory, bills, settings, Drive upload, and backup sync actions.
  * Uses LockService to safely handle simultaneous submissions without overwriting rows.
  */
@@ -790,6 +877,142 @@ function doPost(e) {
       return jsonSuccess({ bill_id: payload.bill_id, deleted: deleted });
     }
 
+    // ---- PHASE 2: WEEKLY DOCTOR VISITS, EXTERNAL OPD & MEDICAL CAMPS ----
+    if (action === 'upsertDoctorVisit') {
+      const sess = payload.doctorVisit;
+      if (!sess || !sess.doctor_visit_id || !sess.doctor_name) {
+        return jsonError('Missing required doctor visit fields.');
+      }
+      const updated = upsertRowById('Doctor Visits', 'doctor_visit_id', sess);
+      return jsonSuccess({ doctor_visit_id: sess.doctor_visit_id, updated: updated });
+    }
+
+    if (action === 'deleteDoctorVisit') {
+      const deleted = deleteRowById('Doctor Visits', 'doctor_visit_id', payload.doctor_visit_id);
+      const removedCases = deleteRowsByField('Doctor Visit Cases', 'doctor_visit_id', payload.doctor_visit_id);
+      return jsonSuccess({ doctor_visit_id: payload.doctor_visit_id, deleted: deleted, removedCases: removedCases });
+    }
+
+    if (action === 'upsertDoctorVisitCase') {
+      const c = payload.doctorVisitCase;
+      if (!c || !c.case_id || !c.doctor_visit_id || !c.student_id) {
+        return jsonError('Missing required doctor visit case fields.');
+      }
+      const updated = upsertRowById('Doctor Visit Cases', 'case_id', c);
+      return jsonSuccess({ case_id: c.case_id, updated: updated });
+    }
+
+    if (action === 'deleteDoctorVisitCase') {
+      const deleted = deleteRowById('Doctor Visit Cases', 'case_id', payload.case_id);
+      return jsonSuccess({ case_id: payload.case_id, deleted: deleted });
+    }
+
+    if (action === 'uploadOpdImage') {
+      let mimeType = String(payload.mimeType || 'image/jpeg').trim();
+      let base64Body = String(payload.base64Data || '').trim();
+      if (!base64Body && payload.image_data_url) {
+        const rawDataUrl = String(payload.image_data_url || '').trim();
+        const match = rawDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Body = match[2];
+        } else {
+          base64Body = rawDataUrl;
+        }
+      }
+      if (!base64Body) {
+        return jsonError('Missing base64Data or image_data_url for OPD slip upload.');
+      }
+      const ext = mimeType.indexOf('png') !== -1 ? 'png' : 'jpg';
+      const safeName = String(payload.filename || ('opd_slip_' + new Date().getTime() + '.' + ext))
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+      const bytes = Utilities.base64Decode(base64Body);
+      const blob = Utilities.newBlob(bytes, mimeType, safeName);
+      const folder = getOrCreateDocumentsFolder();
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      const fileId = file.getId();
+      const viewUrl = 'https://drive.google.com/uc?export=view&id=' + fileId;
+      return jsonSuccess({
+        drive_file_id: fileId,
+        image_url: viewUrl,
+        web_view_url: file.getUrl()
+      });
+    }
+
+    if (action === 'upsertOpd') {
+      const opd = payload.opd;
+      if (!opd || !opd.opd_id || !opd.student_id || !opd.hospital_or_clinic) {
+        return jsonError('Missing required OPD fields.');
+      }
+      const updated = upsertRowById('OPD', 'opd_id', opd);
+      return jsonSuccess({ opd_id: opd.opd_id, updated: updated });
+    }
+
+    if (action === 'deleteOpd') {
+      const deleted = deleteRowById('OPD', 'opd_id', payload.opd_id);
+      return jsonSuccess({ opd_id: payload.opd_id, deleted: deleted });
+    }
+
+    if (action === 'upsertMedicalCamp') {
+      const camp = payload.medicalCamp;
+      if (!camp || !camp.camp_id || !camp.camp_title) {
+        return jsonError('Missing required medical camp fields.');
+      }
+      const updated = upsertRowById('Medical Camps', 'camp_id', camp);
+      return jsonSuccess({ camp_id: camp.camp_id, updated: updated });
+    }
+
+    if (action === 'deleteMedicalCamp') {
+      const deleted = deleteRowById('Medical Camps', 'camp_id', payload.camp_id);
+      const removedScreenings = deleteRowsByField('Camp Screenings', 'camp_id', payload.camp_id);
+      return jsonSuccess({ camp_id: payload.camp_id, deleted: deleted, removedScreenings: removedScreenings });
+    }
+
+    if (action === 'upsertCampScreening') {
+      const screening = payload.campScreening;
+      if (!screening || !screening.screening_id || !screening.camp_id || !screening.student_id) {
+        return jsonError('Missing required camp screening fields.');
+      }
+      const updated = upsertRowById('Camp Screenings', 'screening_id', screening);
+      return jsonSuccess({ screening_id: screening.screening_id, updated: updated });
+    }
+
+    if (action === 'deleteCampScreening') {
+      const deleted = deleteRowById('Camp Screenings', 'screening_id', payload.screening_id);
+      return jsonSuccess({ screening_id: payload.screening_id, deleted: deleted });
+    }
+
+    // ---- PHASE 3: ANNUAL HEALTH CHECKUPS & PRIVATE MENSTRUAL LOG ----
+    if (action === 'upsertAnnualCheckup') {
+      const checkup = payload.annualCheckup;
+      if (!checkup || !checkup.checkup_id || !checkup.student_id) {
+        return jsonError('Missing required annual checkup fields.');
+      }
+      const updated = upsertRowById('Annual Checkups', 'checkup_id', checkup);
+      return jsonSuccess({ checkup_id: checkup.checkup_id, updated: updated });
+    }
+
+    if (action === 'deleteAnnualCheckup') {
+      const deleted = deleteRowById('Annual Checkups', 'checkup_id', payload.checkup_id);
+      return jsonSuccess({ checkup_id: payload.checkup_id, deleted: deleted });
+    }
+
+    if (action === 'upsertMenstrualLog') {
+      const log = payload.menstrualLog;
+      if (!log || !log.menstrual_id || !log.student_id) {
+        return jsonError('Missing required menstrual log fields.');
+      }
+      const updated = upsertRowById('Menstrual Log', 'menstrual_id', log);
+      return jsonSuccess({ menstrual_id: log.menstrual_id, updated: updated });
+    }
+
+    if (action === 'deleteMenstrualLog') {
+      const deleted = deleteRowById('Menstrual Log', 'menstrual_id', payload.menstrual_id);
+      return jsonSuccess({ menstrual_id: payload.menstrual_id, deleted: deleted });
+    }
+
     if (action === 'syncStudentsBatch') {
       const students = payload.students;
       if (!Array.isArray(students) || students.length === 0) {
@@ -828,6 +1051,27 @@ function doPost(e) {
       const addedBills = Array.isArray(db.bills)
         ? batchAppendUniqueRows('Bills', 'bill_id', db.bills)
         : 0;
+      const addedDoctorVisits = Array.isArray(db.doctorVisits)
+        ? batchAppendUniqueRows('Doctor Visits', 'doctor_visit_id', db.doctorVisits)
+        : 0;
+      const addedDoctorVisitCases = Array.isArray(db.doctorVisitCases)
+        ? batchAppendUniqueRows('Doctor Visit Cases', 'case_id', db.doctorVisitCases)
+        : 0;
+      const addedOpdRecords = Array.isArray(db.opdRecords)
+        ? batchAppendUniqueRows('OPD', 'opd_id', db.opdRecords)
+        : 0;
+      const addedMedicalCamps = Array.isArray(db.medicalCamps)
+        ? batchAppendUniqueRows('Medical Camps', 'camp_id', db.medicalCamps)
+        : 0;
+      const addedCampScreenings = Array.isArray(db.campScreenings)
+        ? batchAppendUniqueRows('Camp Screenings', 'screening_id', db.campScreenings)
+        : 0;
+      const addedAnnualCheckups = Array.isArray(db.annualCheckups)
+        ? batchAppendUniqueRows('Annual Checkups', 'checkup_id', db.annualCheckups)
+        : 0;
+      const addedMenstrualLogs = Array.isArray(db.menstrualLogs)
+        ? batchAppendUniqueRows('Menstrual Log', 'menstrual_id', db.menstrualLogs)
+        : 0;
       if (db.settings) {
         const ts = db.settings.updated_at || new Date().toISOString();
         if (db.settings.school_hours_start) {
@@ -846,7 +1090,14 @@ function doPost(e) {
         addedMedicines: addedMedicines,
         addedItems: addedItems,
         addedStockTransactions: addedStockTransactions,
-        addedBills: addedBills
+        addedBills: addedBills,
+        addedDoctorVisits: addedDoctorVisits,
+        addedDoctorVisitCases: addedDoctorVisitCases,
+        addedOpdRecords: addedOpdRecords,
+        addedMedicalCamps: addedMedicalCamps,
+        addedCampScreenings: addedCampScreenings,
+        addedAnnualCheckups: addedAnnualCheckups,
+        addedMenstrualLogs: addedMenstrualLogs
       });
     }
 

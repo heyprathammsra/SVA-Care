@@ -21,6 +21,9 @@ import {
   Pill,
   Package,
   Receipt,
+  Stethoscope,
+  Building2,
+  ClipboardCheck,
 } from 'lucide-react';
 import { GOOGLE_APPS_SCRIPT_CODE } from '../utils/appsScriptTemplate';
 import type { NurseDatabase } from '../utils/nurseLogic';
@@ -33,6 +36,11 @@ export type DownloadableExcelTab =
   | 'Medicines'
   | 'Items'
   | 'Bills'
+  | 'Doctor Visits'
+  | 'External OPD'
+  | 'Medical Camps'
+  | 'Annual Checkups'
+  | 'Menstrual Log'
   | 'All';
 
 export interface SheetsActionResult {
@@ -244,10 +252,64 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
     {
       tab: 'Bills',
       filename: 'Bills.xlsx',
-      description: 'Infirmary purchase bills, pharmacy invoice numbers, amounts, payment status, and Drive receipt links.',
+      description: 'Infirmary purchase bills, pharmacy invoice numbers, amounts, notes, and Drive receipt links.',
       count: (db.bills || []).length,
       unit: (db.bills || []).length === 1 ? 'bill' : 'bills',
       icon: <Receipt className="w-4 h-4 text-teal-700" />,
+    },
+    {
+      tab: 'Doctor Visits',
+      filename: 'Doctor_Visits.xlsx',
+      description: 'Weekly visiting doctor sessions paired with student complaints, clinical findings, and prescriptions.',
+      count: (db.doctorVisitCases || []).length || (db.doctorVisits || []).length,
+      unit:
+        (db.doctorVisitCases || []).length > 0
+          ? (db.doctorVisitCases || []).length === 1
+            ? 'consultation'
+            : 'consultations'
+          : (db.doctorVisits || []).length === 1
+            ? 'session'
+            : 'sessions',
+      icon: <Stethoscope className="w-4 h-4 text-teal-700" />,
+    },
+    {
+      tab: 'External OPD',
+      filename: 'External_OPD.xlsx',
+      description: 'Outside hospital/clinic referrals, escort details, follow-up dates, status, and OPD slip Drive links.',
+      count: (db.opdRecords || []).length,
+      unit: (db.opdRecords || []).length === 1 ? 'referral' : 'referrals',
+      icon: <Building2 className="w-4 h-4 text-teal-700" />,
+    },
+    {
+      tab: 'Medical Camps',
+      filename: 'Medical_Camps.xlsx',
+      description: 'School dental, eye, vaccination, and annual health camps with student screening findings and referrals.',
+      count: (db.campScreenings || []).length || (db.medicalCamps || []).length,
+      unit:
+        (db.campScreenings || []).length > 0
+          ? (db.campScreenings || []).length === 1
+            ? 'screening'
+            : 'screenings'
+          : (db.medicalCamps || []).length === 1
+            ? 'camp'
+            : 'camps',
+      icon: <HeartPulse className="w-4 h-4 text-teal-700" />,
+    },
+    {
+      tab: 'Annual Checkups',
+      filename: 'Annual_Checkups.xlsx',
+      description: 'Academic-year physical examination records including height, weight, BMI, vision, dental, ENT, and blood group.',
+      count: (db.annualCheckups || []).length,
+      unit: (db.annualCheckups || []).length === 1 ? 'checkup' : 'checkups',
+      icon: <ClipboardCheck className="w-4 h-4 text-teal-700" />,
+    },
+    {
+      tab: 'Menstrual Log',
+      filename: 'Menstrual_Log_Private.xlsx',
+      description: 'Confidential Nurse & Admin opt-in export only (permanently excluded from Download All Sheets).',
+      count: (db.menstrualLogs || []).length,
+      unit: (db.menstrualLogs || []).length === 1 ? 'entry' : 'entries',
+      icon: <Lock className="w-4 h-4 text-amber-700" />,
     },
   ];
 
@@ -425,7 +487,7 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
               Apps Script Backend (Code.gs)
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-              Updated with 10 tabs (Students, Visits with Shift &amp; Stock linkage, Measurements, Health Profiles, Users, Medicines, Items, Stock Transactions, Bills, and Settings) plus automatic Google Drive bill photo archiving in &ldquo;SVA Infirmary Documents&rdquo;. Paste this updated Code.gs into Apps Script, run <code className="font-mono text-zinc-700">setupSpreadsheet</code> once to approve Drive access, and redeploy your Web App.
+              Updated with all 17 tabs (Students, Visits, Measurements, Health Profiles, Users, Medicines, Items, Stock Transactions, Bills, Settings, Doctor Visits, Doctor Visit Cases, OPD, Medical Camps, Camp Screenings, Annual Checkups, and private Menstrual Log) plus automatic Google Drive bill &amp; OPD slip photo archiving in &ldquo;SVA Infirmary Documents&rdquo;. Paste this updated Code.gs into Apps Script, run <code className="font-mono text-zinc-700">setupSpreadsheet</code> once, and redeploy your Web App.
             </p>
           </div>
 

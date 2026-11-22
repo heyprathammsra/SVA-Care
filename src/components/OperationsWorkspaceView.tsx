@@ -27,7 +27,6 @@ import {
   type StockTransactionRecord,
   type BillRecord,
   type BillCategory,
-  type BillPaymentStatus,
 } from '../utils/nurseLogic';
 import { getTodayLocalDateString } from '../utils/seedData';
 import { CustomSelect } from './CustomSelect';
@@ -94,7 +93,6 @@ const ITEM_CATEGORIES = [
 const ITEM_UNITS = ['pcs', 'packs', 'rolls', 'boxes', 'bottles', 'pairs', 'kits'];
 
 const BILL_CATEGORIES: BillCategory[] = ['Medicines', 'Items', 'Equipment', 'Camp', 'Other'];
-const BILL_PAYMENT_STATUSES: BillPaymentStatus[] = ['Paid', 'Pending', 'Reimbursed'];
 
 /**
  * Compresses an uploaded bill photo in the browser to a lightweight JPEG data URL
@@ -174,7 +172,6 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
 
   const [billSearch, setBillSearch] = useState('');
   const [billCatFilter, setBillCatFilter] = useState<string>('ALL');
-  const [billPayFilter, setBillPayFilter] = useState<string>('ALL');
 
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'medicine' | 'item'>('all');
 
@@ -223,7 +220,6 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   const [billDate, setBillDate] = useState(getTodayLocalDateString);
   const [billCategory, setBillCategory] = useState<BillCategory>('Medicines');
   const [billAmount, setBillAmount] = useState('');
-  const [billPaymentStatus, setBillPaymentStatus] = useState<BillPaymentStatus>('Paid');
   const [billNotes, setBillNotes] = useState('');
   const [billImageDataUrl, setBillImageDataUrl] = useState<string | undefined>(undefined);
   const [billImageSizeKb, setBillImageSizeKb] = useState<number | null>(null);
@@ -262,14 +258,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
 
   const billStats = useMemo(() => {
     let totalSpend = 0;
-    let pendingCount = 0;
     let photosCount = 0;
     for (const b of bills) {
       totalSpend += Number(b.total_amount) || 0;
-      if (b.payment_status === 'Pending') pendingCount++;
       if (b.image_url || b.image_data_url) photosCount++;
     }
-    return { total: bills.length, totalSpend, pendingCount, photosCount };
+    return { total: bills.length, totalSpend, photosCount };
   }, [bills]);
 
   // Filtered lists
@@ -312,7 +306,6 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     const q = billSearch.trim().toLowerCase();
     return bills.filter((b) => {
       if (billCatFilter !== 'ALL' && b.category !== billCatFilter) return false;
-      if (billPayFilter !== 'ALL' && b.payment_status !== billPayFilter) return false;
       if (!q) return true;
       return (
         b.vendor_name.toLowerCase().includes(q) ||
@@ -321,7 +314,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         (b.notes || '').toLowerCase().includes(q)
       );
     });
-  }, [bills, billSearch, billCatFilter, billPayFilter]);
+  }, [bills, billSearch, billCatFilter]);
 
   const filteredLedger = useMemo(() => {
     if (ledgerFilter === 'all') return stockTransactions;
@@ -399,7 +392,6 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     setBillDate(getTodayLocalDateString());
     setBillCategory('Medicines');
     setBillAmount('');
-    setBillPaymentStatus('Paid');
     setBillNotes('');
     setBillImageDataUrl(undefined);
     setBillImageSizeKb(null);
@@ -414,7 +406,6 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     setBillDate(b.bill_date || getTodayLocalDateString());
     setBillCategory(b.category);
     setBillAmount(String(b.total_amount));
-    setBillPaymentStatus(b.payment_status);
     setBillNotes(b.notes || '');
     setBillImageDataUrl(b.image_data_url);
     setBillImageSizeKb(null);
@@ -559,8 +550,8 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             bill_date: billDate,
             category: billCategory,
             total_amount: amountNum,
-            payment_status: billPaymentStatus,
-            notes: billNotes.trim() || undefined,
+            notes: billNotes.trim(),
+            image_data_url: billImageDataUrl,
           })
         : await onCreateBill(
             {
@@ -569,7 +560,6 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               bill_date: billDate,
               category: billCategory,
               total_amount: amountNum,
-              payment_status: billPaymentStatus,
               notes: billNotes.trim() || undefined,
               image_data_url: billImageDataUrl,
             },
@@ -583,17 +573,17 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5 sm:space-y-6">
+    <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-stone-200/80 pb-4">
-        <div>
-          <p className="text-xs font-medium text-teal-700">
+      <div className="flex items-center sm:items-end justify-between gap-3 border-b border-stone-200/80 pb-3.5 sm:pb-4">
+        <div className="min-w-0">
+          <p className="text-[11px] sm:text-xs font-medium text-teal-700">
             Infirmary Stock &amp; Expense Register
           </p>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5">
+          <h1 className="text-xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-tight truncate">
             Inventory &amp; Bills
           </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 mt-1">
+          <p className="hidden sm:block text-sm text-zinc-500 mt-1">
             Track medicines, first-aid supplies, purchase bills with receipts, and live stock movements.
           </p>
         </div>
@@ -603,17 +593,18 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             <button
               type="button"
               onClick={openAddMedicine}
-              className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap cursor-pointer"
+              className="h-9 sm:h-10 px-3 sm:px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Medicine</span>
+              <span className="sm:hidden">Add Med</span>
+              <span className="hidden sm:inline">Add Medicine</span>
             </button>
           )}
           {activeTab === 'items' && (
             <button
               type="button"
               onClick={openAddItem}
-              className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap cursor-pointer"
+              className="h-9 sm:h-10 px-3 sm:px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Add Item</span>
@@ -623,7 +614,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             <button
               type="button"
               onClick={openAddBill}
-              className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap cursor-pointer"
+              className="h-9 sm:h-10 px-3 sm:px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Record Bill</span>
@@ -661,26 +652,26 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         </div>
       )}
 
-      {/* Segmented Workspace Tabs */}
+      {/* Segmented Workspace Tabs (Single row on mobile & desktop) */}
       <div
         role="tablist"
         aria-label="Inventory and bills sections"
-        className="flex flex-wrap items-center gap-1.5"
+        className="grid grid-cols-4 sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/70 rounded-xl w-full sm:w-auto"
       >
         <button
           type="button"
           role="tab"
           aria-selected={activeTab === 'medicines'}
           onClick={() => setActiveTab('medicines')}
-          className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'medicines'
-              ? 'bg-zinc-900 text-white shadow-xs'
-              : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+              ? 'bg-white text-zinc-900 shadow-xs'
+              : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Pill className="w-4 h-4" />
+          <Pill className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span>Medicines</span>
-          <span className="font-mono text-[11px] opacity-75">({medicines.length})</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({medicines.length})</span>
         </button>
 
         <button
@@ -688,15 +679,16 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           role="tab"
           aria-selected={activeTab === 'items'}
           onClick={() => setActiveTab('items')}
-          className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'items'
-              ? 'bg-zinc-900 text-white shadow-xs'
-              : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+              ? 'bg-white text-zinc-900 shadow-xs'
+              : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Package className="w-4 h-4" />
-          <span>Items &amp; Supplies</span>
-          <span className="font-mono text-[11px] opacity-75">({items.length})</span>
+          <Package className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
+          <span className="sm:hidden">Items</span>
+          <span className="hidden sm:inline">Items &amp; Supplies</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({items.length})</span>
         </button>
 
         <button
@@ -704,15 +696,16 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           role="tab"
           aria-selected={activeTab === 'bills'}
           onClick={() => setActiveTab('bills')}
-          className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'bills'
-              ? 'bg-zinc-900 text-white shadow-xs'
-              : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+              ? 'bg-white text-zinc-900 shadow-xs'
+              : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Receipt className="w-4 h-4" />
-          <span>Bills &amp; Receipts</span>
-          <span className="font-mono text-[11px] opacity-75">({bills.length})</span>
+          <Receipt className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
+          <span className="sm:hidden">Bills</span>
+          <span className="hidden sm:inline">Bills &amp; Receipts</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({bills.length})</span>
         </button>
 
         <button
@@ -720,15 +713,16 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           role="tab"
           aria-selected={activeTab === 'ledger'}
           onClick={() => setActiveTab('ledger')}
-          className={`px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'ledger'
-              ? 'bg-zinc-900 text-white shadow-xs'
-              : 'bg-white text-zinc-600 border border-stone-200/80 hover:text-zinc-900 hover:bg-stone-50'
+              ? 'bg-white text-zinc-900 shadow-xs'
+              : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <History className="w-4 h-4" />
-          <span>Stock History</span>
-          <span className="font-mono text-[11px] opacity-75">({stockTransactions.length})</span>
+          <History className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
+          <span className="sm:hidden">History</span>
+          <span className="hidden sm:inline">Stock History</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({stockTransactions.length})</span>
         </button>
       </div>
 
@@ -736,29 +730,38 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           TAB 1: MEDICINES INVENTORY
       ==================================================================== */}
       {activeTab === 'medicines' && (
-        <div className="space-y-4">
-          {/* KPI Summary Strip */}
-          <div className="grid grid-cols-3 gap-3 sm:gap-4">
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Total Medicines</p>
-              <p className="text-xl sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-1">
+        <div className="space-y-3.5 sm:space-y-4">
+          {/* Unified 3-Column Metric Strip */}
+          <div className="bg-white border border-stone-200/80 rounded-2xl grid grid-cols-3 divide-x divide-stone-100 shadow-2xs">
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Medicines</span>
+                <span className="hidden sm:inline">Total Medicines</span>
+              </p>
+              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {medStats.total}
               </p>
             </div>
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Low / Out of Stock</p>
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Low Stock</span>
+                <span className="hidden sm:inline">Low / Out of Stock</span>
+              </p>
               <p
-                className={`text-xl sm:text-2xl font-semibold font-mono tabular-nums mt-1 ${
+                className={`text-lg sm:text-2xl font-semibold font-mono tabular-nums mt-0.5 sm:mt-1 ${
                   medStats.lowOrOut > 0 ? 'text-amber-700' : 'text-zinc-900'
                 }`}
               >
                 {medStats.lowOrOut}
               </p>
             </div>
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Expiring / Expired</p>
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Expiring</span>
+                <span className="hidden sm:inline">Expiring / Expired</span>
+              </p>
               <p
-                className={`text-xl sm:text-2xl font-semibold font-mono tabular-nums mt-1 ${
+                className={`text-lg sm:text-2xl font-semibold font-mono tabular-nums mt-0.5 sm:mt-1 ${
                   medStats.expiringOrExpired > 0 ? 'text-rose-700' : 'text-zinc-900'
                 }`}
               >
@@ -790,25 +793,26 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               )}
             </div>
 
-            <div className="inline-flex items-center gap-1 p-1 bg-stone-100 rounded-xl shrink-0">
+            <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/60 rounded-xl w-full sm:w-auto shrink-0">
               {(
                 [
-                  { key: 'all', label: 'All' },
-                  { key: 'low', label: `Low / Out (${medStats.lowOrOut})` },
-                  { key: 'expiring', label: `Expiring (${medStats.expiringOrExpired})` },
+                  { key: 'all', mobileLabel: 'All', label: 'All' },
+                  { key: 'low', mobileLabel: `Low (${medStats.lowOrOut})`, label: `Low / Out (${medStats.lowOrOut})` },
+                  { key: 'expiring', mobileLabel: `Exp (${medStats.expiringOrExpired})`, label: `Expiring (${medStats.expiringOrExpired})` },
                 ] as const
               ).map((opt) => (
                 <button
                   key={opt.key}
                   type="button"
                   onClick={() => setMedFilter(opt.key)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap text-center cursor-pointer ${
                     medFilter === opt.key
                       ? 'bg-white text-zinc-900 shadow-xs font-semibold'
                       : 'text-zinc-500 hover:text-zinc-900'
                   }`}
                 >
-                  {opt.label}
+                  <span className="sm:hidden">{opt.mobileLabel}</span>
+                  <span className="hidden sm:inline">{opt.label}</span>
                 </button>
               ))}
             </div>
@@ -926,7 +930,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                      <div className="flex items-center gap-1.5 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-stone-100 shrink-0 flex-wrap">
                         <button
                           type="button"
                           onClick={() =>
@@ -938,7 +942,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                               med.unit
                             )
                           }
-                          className="h-8 px-2.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/70 rounded-lg inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/70 rounded-lg inline-flex items-center gap-1.5 sm:gap-1 transition-colors cursor-pointer"
                         >
                           <ArrowUpDown className="w-3.5 h-3.5" />
                           <span>Stock</span>
@@ -946,13 +950,13 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         <button
                           type="button"
                           onClick={() => openEditMedicine(med)}
-                          className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1.5 sm:gap-1 transition-colors cursor-pointer"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                           <span>Edit</span>
                         </button>
                         {confirmDeleteMedId === med.medicine_id ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-0">
                             <button
                               type="button"
                               disabled={busy}
@@ -966,14 +970,14 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                                   setBusy(false);
                                 }
                               }}
-                              className="h-8 px-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
+                              className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
                             >
                               Delete
                             </button>
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteMedId(null)}
-                              className="h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                              className="h-9 sm:h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
                             >
                               Cancel
                             </button>
@@ -983,7 +987,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                             type="button"
                             onClick={() => setConfirmDeleteMedId(med.medicine_id)}
                             aria-label={`Delete ${med.name}`}
-                            className="h-8 px-2 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg inline-flex items-center cursor-pointer"
+                            className="h-9 sm:h-8 px-2.5 sm:px-2 ml-auto sm:ml-0 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg inline-flex items-center cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1002,27 +1006,36 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           TAB 2: ITEMS & SUPPLIES INVENTORY
       ==================================================================== */}
       {activeTab === 'items' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3 sm:gap-4">
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Tracked Items</p>
-              <p className="text-xl sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-1">
+        <div className="space-y-3.5 sm:space-y-4">
+          <div className="bg-white border border-stone-200/80 rounded-2xl grid grid-cols-3 divide-x divide-stone-100 shadow-2xs">
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Items</span>
+                <span className="hidden sm:inline">Tracked Items</span>
+              </p>
+              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {itemStats.total}
               </p>
             </div>
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Low / Out of Stock</p>
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Low Stock</span>
+                <span className="hidden sm:inline">Low / Out of Stock</span>
+              </p>
               <p
-                className={`text-xl sm:text-2xl font-semibold font-mono tabular-nums mt-1 ${
+                className={`text-lg sm:text-2xl font-semibold font-mono tabular-nums mt-0.5 sm:mt-1 ${
                   itemStats.lowOrOut > 0 ? 'text-amber-700' : 'text-zinc-900'
                 }`}
               >
                 {itemStats.lowOrOut}
               </p>
             </div>
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Total Units Available</p>
-              <p className="text-xl sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-1">
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Total Units</span>
+                <span className="hidden sm:inline">Total Units Available</span>
+              </p>
+              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {itemStats.totalUnits}
               </p>
             </div>
@@ -1050,7 +1063,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               )}
             </div>
 
-            <div className="inline-flex items-center gap-1 p-1 bg-stone-100 rounded-xl shrink-0">
+            <div className="grid grid-cols-2 sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/60 rounded-xl w-full sm:w-auto shrink-0">
               {(
                 [
                   { key: 'all', label: 'All Items' },
@@ -1061,7 +1074,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                   key={opt.key}
                   type="button"
                   onClick={() => setItemFilter(opt.key)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                  className={`px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap text-center cursor-pointer ${
                     itemFilter === opt.key
                       ? 'bg-white text-zinc-900 shadow-xs font-semibold'
                       : 'text-zinc-500 hover:text-zinc-900'
@@ -1149,7 +1162,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                      <div className="flex items-center gap-1.5 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-stone-100 shrink-0 flex-wrap">
                         <button
                           type="button"
                           onClick={() =>
@@ -1161,7 +1174,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                               it.unit
                             )
                           }
-                          className="h-8 px-2.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/70 rounded-lg inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/70 rounded-lg inline-flex items-center gap-1.5 sm:gap-1 transition-colors cursor-pointer"
                         >
                           <ArrowUpDown className="w-3.5 h-3.5" />
                           <span>Stock</span>
@@ -1169,13 +1182,13 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         <button
                           type="button"
                           onClick={() => openEditItem(it)}
-                          className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1.5 sm:gap-1 transition-colors cursor-pointer"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                           <span>Edit</span>
                         </button>
                         {confirmDeleteItemId === it.item_id ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 ml-auto sm:ml-0">
                             <button
                               type="button"
                               disabled={busy}
@@ -1189,14 +1202,14 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                                   setBusy(false);
                                 }
                               }}
-                              className="h-8 px-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
+                              className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
                             >
                               Delete
                             </button>
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteItemId(null)}
-                              className="h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                              className="h-9 sm:h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
                             >
                               Cancel
                             </button>
@@ -1206,7 +1219,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                             type="button"
                             onClick={() => setConfirmDeleteItemId(it.item_id)}
                             aria-label={`Delete ${it.name}`}
-                            className="h-8 px-2 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg inline-flex items-center cursor-pointer"
+                            className="h-9 sm:h-8 px-2.5 sm:px-2 ml-auto sm:ml-0 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg inline-flex items-center cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1225,33 +1238,32 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           TAB 3: BILLS & RECEIPTS LEDGER
       ==================================================================== */}
       {activeTab === 'bills' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Total Bills</p>
-              <p className="text-xl sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-1">
+        <div className="space-y-3.5 sm:space-y-4">
+          <div className="bg-white border border-stone-200/80 rounded-2xl grid grid-cols-3 divide-x divide-stone-100 shadow-2xs">
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Bills</span>
+                <span className="hidden sm:inline">Total Bills Recorded</span>
+              </p>
+              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {billStats.total}
               </p>
             </div>
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Total Recorded Spend</p>
-              <p className="text-xl sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-1">
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Total Spend</span>
+                <span className="hidden sm:inline">Total Recorded Spend</span>
+              </p>
+              <p className="text-base sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1 truncate">
                 {formatInr(billStats.totalSpend)}
               </p>
             </div>
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Pending Payment</p>
-              <p
-                className={`text-xl sm:text-2xl font-semibold font-mono tabular-nums mt-1 ${
-                  billStats.pendingCount > 0 ? 'text-amber-700' : 'text-zinc-900'
-                }`}
-              >
-                {billStats.pendingCount}
+            <div className="px-3 py-3 sm:px-5 sm:py-4 min-w-0">
+              <p className="text-[11px] font-medium text-zinc-500 truncate">
+                <span className="sm:hidden">Photos</span>
+                <span className="hidden sm:inline">Bill Photos Stored</span>
               </p>
-            </div>
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-4 shadow-2xs">
-              <p className="text-[11px] font-medium text-zinc-500">Bill Photos Stored</p>
-              <p className="text-xl sm:text-2xl font-semibold font-mono tabular-nums text-teal-800 mt-1">
+              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-teal-800 mt-0.5 sm:mt-1">
                 {billStats.photosCount}
               </p>
             </div>
@@ -1279,25 +1291,15 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               )}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="w-full sm:w-auto shrink-0">
               <CustomSelect
                 ariaLabel="Filter bills by category"
                 value={billCatFilter}
                 onChange={setBillCatFilter}
-                className="min-w-[135px]"
+                className="w-full sm:min-w-[165px]"
                 options={[
                   { value: 'ALL', label: 'All Categories' },
                   ...BILL_CATEGORIES.map((c) => ({ value: c, label: c })),
-                ]}
-              />
-              <CustomSelect
-                ariaLabel="Filter bills by payment status"
-                value={billPayFilter}
-                onChange={setBillPayFilter}
-                className="min-w-[125px]"
-                options={[
-                  { value: 'ALL', label: 'All Status' },
-                  ...BILL_PAYMENT_STATUSES.map((s) => ({ value: s, label: s })),
                 ]}
               />
             </div>
@@ -1312,7 +1314,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <p className="text-xs text-zinc-500 mt-1">
                   {bills.length === 0
                     ? 'Log pharmacy or supplier bills, attach compressed receipt photos to Google Drive, and optionally restock inventory.'
-                    : 'Try clearing the search or status filters above.'}
+                    : 'Try clearing the search or category filter above.'}
                 </p>
                 {bills.length === 0 && (
                   <button
@@ -1376,17 +1378,6 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                             <span className="font-mono tabular-nums text-zinc-600">
                               {bill.bill_date}
                             </span>
-                            <span
-                              className={`text-[11px] font-semibold ${
-                                bill.payment_status === 'Pending'
-                                  ? 'text-amber-700'
-                                  : bill.payment_status === 'Reimbursed'
-                                    ? 'text-teal-700'
-                                    : 'text-emerald-700'
-                              }`}
-                            >
-                              {bill.payment_status}
-                            </span>
                             {bill.image_url && (
                               <>
                                 <span className="text-stone-300">·</span>
@@ -1403,7 +1394,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-stone-100 shrink-0">
                         <span className="font-mono tabular-nums text-base font-semibold text-zinc-900">
                           {formatInr(bill.total_amount)}
                         </span>
@@ -1413,7 +1404,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                             <button
                               type="button"
                               onClick={() => setPreviewBill(bill)}
-                              className="h-8 px-2.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/70 rounded-lg inline-flex items-center gap-1 cursor-pointer"
+                              className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/70 rounded-lg inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5" />
                               <span>Photo</span>
@@ -1422,7 +1413,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                           <button
                             type="button"
                             onClick={() => openEditBill(bill)}
-                            className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1 cursor-pointer"
+                            className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1 cursor-pointer"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             <span>Edit</span>
@@ -1442,14 +1433,14 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                                     setBusy(false);
                                   }
                                 }}
-                                className="h-8 px-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
+                                className="h-9 sm:h-8 px-3 sm:px-2.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
                               >
                                 Delete
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteBillId(null)}
-                                className="h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                                className="h-9 sm:h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
                               >
                                 Cancel
                               </button>
@@ -1459,7 +1450,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                               type="button"
                               onClick={() => setConfirmDeleteBillId(bill.bill_id)}
                               aria-label={`Delete bill ${bill.bill_id}`}
-                              className="h-8 px-2 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg inline-flex items-center cursor-pointer"
+                              className="h-9 sm:h-8 px-2.5 sm:px-2 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/80 rounded-lg inline-flex items-center cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1479,12 +1470,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           TAB 4: STOCK LEDGER (AUDIT TRAIL)
       ==================================================================== */}
       {activeTab === 'ledger' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2">
+        <div className="space-y-3.5 sm:space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <p className="text-xs text-zinc-500">
               Automatic log of visit deductions, bill restocks, and manual stock adjustments.
             </p>
-            <div className="inline-flex items-center gap-1 p-1 bg-stone-100 rounded-xl shrink-0">
+            <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/60 rounded-xl w-full sm:w-auto shrink-0">
               {(
                 [
                   { key: 'all', label: 'All' },
@@ -1496,7 +1487,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                   key={opt.key}
                   type="button"
                   onClick={() => setLedgerFilter(opt.key)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                  className={`px-3 py-2 sm:py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap text-center cursor-pointer ${
                     ledgerFilter === opt.key
                       ? 'bg-white text-zinc-900 shadow-xs font-semibold'
                       : 'text-zinc-500 hover:text-zinc-900'
@@ -1586,11 +1577,11 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         icon={<Pill className="w-4 h-4 text-teal-700" />}
         titleId="medicine-modal-title"
         footer={
-          <>
+          <div className="flex items-center justify-end gap-2.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setShowMedModal(false)}
-              className="h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
             >
               Cancel
             </button>
@@ -1598,12 +1589,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               type="submit"
               form="medicine-upsert-form"
               disabled={busy}
-              className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 disabled:opacity-60 cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{editingMed ? 'Save Changes' : 'Add Medicine'}</span>
             </button>
-          </>
+          </div>
         }
       >
         <form id="medicine-upsert-form" onSubmit={handleSaveMedicine} className="space-y-3.5">
@@ -1652,7 +1643,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
               <label htmlFor="med-stock" className="block text-xs font-semibold text-zinc-700 mb-1">
                 Current Stock
@@ -1681,7 +1672,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 options={MEDICINE_UNITS.map((u) => ({ value: u, label: u }))}
               />
             </div>
-            <div>
+            <div className="col-span-2 sm:col-span-1">
               <label htmlFor="med-min" className="block text-xs font-semibold text-zinc-700 mb-1">
                 Low Stock Alert
               </label>
@@ -1752,11 +1743,11 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         icon={<Package className="w-4 h-4 text-teal-700" />}
         titleId="item-modal-title"
         footer={
-          <>
+          <div className="flex items-center justify-end gap-2.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setShowItemModal(false)}
-              className="h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
             >
               Cancel
             </button>
@@ -1764,12 +1755,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               type="submit"
               form="item-upsert-form"
               disabled={busy}
-              className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 disabled:opacity-60 cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{editingItem ? 'Save Changes' : 'Add Item'}</span>
             </button>
-          </>
+          </div>
         }
       >
         <form id="item-upsert-form" onSubmit={handleSaveItem} className="space-y-3.5">
@@ -1882,11 +1873,11 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         titleId="adjust-stock-modal-title"
         maxWidthClass="max-w-md"
         footer={
-          <>
+          <div className="flex items-center justify-end gap-2.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setAdjustTarget(null)}
-              className="h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
             >
               Cancel
             </button>
@@ -1894,12 +1885,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               type="submit"
               form="adjust-stock-form"
               disabled={busy}
-              className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 disabled:opacity-60 cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Update Stock</span>
             </button>
-          </>
+          </div>
         }
       >
         <form id="adjust-stock-form" onSubmit={handleSaveAdjustStock} className="space-y-4">
@@ -1991,11 +1982,11 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         titleId="bill-modal-title"
         maxWidthClass="max-w-xl"
         footer={
-          <>
+          <div className="flex items-center justify-end gap-2.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setShowBillModal(false)}
-              className="h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-3.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl cursor-pointer"
             >
               Cancel
             </button>
@@ -2003,15 +1994,15 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               type="submit"
               form="bill-upsert-form"
               disabled={busy || compressingImage}
-              className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 disabled:opacity-60 cursor-pointer"
+              className="flex-1 sm:flex-none h-10 sm:h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{busy ? 'Saving...' : editingBill ? 'Save Changes' : 'Save Bill'}</span>
             </button>
-          </>
+          </div>
         }
       >
-        <form id="bill-upsert-form" onSubmit={handleSaveBill} className="space-y-4">
+        <form id="bill-upsert-form" onSubmit={handleSaveBill} className="space-y-3.5 sm:space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="bill-vendor" className="block text-xs font-semibold text-zinc-700 mb-1">
@@ -2042,8 +2033,8 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="col-span-1 sm:col-span-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
               <label htmlFor="bill-date" className="block text-xs font-semibold text-zinc-700 mb-1">
                 Bill Date *
               </label>
@@ -2056,7 +2047,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 className="w-full h-10 px-2.5 text-xs font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
               />
             </div>
-            <div className="col-span-1 sm:col-span-1">
+            <div>
               <label htmlFor="bill-amount" className="block text-xs font-semibold text-zinc-700 mb-1">
                 Total Amount (₹) *
               </label>
@@ -2072,7 +2063,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 className="w-full h-10 px-3 text-sm font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
               />
             </div>
-            <div className="col-span-1 sm:col-span-1">
+            <div className="col-span-2 sm:col-span-1">
               <label htmlFor="bill-cat" className="block text-xs font-semibold text-zinc-700 mb-1">
                 Category
               </label>
@@ -2086,58 +2077,48 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 options={BILL_CATEGORIES.map((c) => ({ value: c, label: c }))}
               />
             </div>
-            <div className="col-span-1 sm:col-span-1">
-              <label htmlFor="bill-status" className="block text-xs font-semibold text-zinc-700 mb-1">
-                Payment
-              </label>
-              <CustomSelect
-                id="bill-status"
-                ariaLabel="Bill payment status"
-                value={billPaymentStatus}
-                onChange={(v) => setBillPaymentStatus(v as BillPaymentStatus)}
-                variant="subtle"
-                className="w-full"
-                options={BILL_PAYMENT_STATUSES.map((s) => ({ value: s, label: s }))}
-              />
-            </div>
           </div>
 
-          {/* Bill Photo Upload (only on new bill creation) */}
-          {!editingBill && (
-            <div className="space-y-2">
-              <span className="block text-xs font-semibold text-zinc-700">
-                Bill / Receipt Photo (Optional)
-              </span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleBillFileSelect}
-                className="hidden"
-              />
-              {billImageDataUrl ? (
-                <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={billImageDataUrl}
-                      alt="Bill receipt preview"
-                      className="w-14 h-14 rounded-lg object-cover border border-stone-200 shrink-0"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-zinc-900">Receipt photo attached</p>
-                      <p className="text-[11px] font-mono text-zinc-500">
-                        {billImageSizeKb ? `Compressed to ${billImageSizeKb} KB JPEG` : 'Ready to upload'}
-                      </p>
-                    </div>
+          {/* Bill Photo Upload (create & edit) */}
+          <div className="space-y-2">
+            <span className="block text-xs font-semibold text-zinc-700">
+              Bill / Receipt Photo (Optional)
+            </span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleBillFileSelect}
+              className="hidden"
+            />
+            {billImageDataUrl || (editingBill?.image_url && /^https:\/\//i.test(editingBill.image_url)) ? (
+              <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <img
+                    src={billImageDataUrl || editingBill?.image_url}
+                    alt="Bill receipt preview"
+                    className="w-14 h-14 rounded-lg object-cover border border-stone-200 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-zinc-900">Receipt photo attached</p>
+                    <p className="text-[11px] font-mono text-zinc-500">
+                      {billImageSizeKb
+                        ? `Compressed to ${billImageSizeKb} KB JPEG`
+                        : editingBill && !billImageSizeKb
+                          ? 'Existing receipt attached'
+                          : 'Ready to upload'}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200 hover:bg-stone-100 rounded-lg cursor-pointer"
-                    >
-                      Replace
-                    </button>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200 hover:bg-stone-100 rounded-lg cursor-pointer"
+                  >
+                    Replace
+                  </button>
+                  {billImageDataUrl && (
                     <button
                       type="button"
                       onClick={() => {
@@ -2148,25 +2129,25 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                     >
                       Remove
                     </button>
-                  </div>
+                  )}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  disabled={compressingImage}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-4 px-4 border border-dashed border-stone-300 hover:border-zinc-500 bg-stone-50/70 hover:bg-stone-100/70 rounded-xl flex items-center justify-center gap-2 text-xs font-medium text-zinc-700 transition-colors cursor-pointer"
-                >
-                  <Camera className="w-4 h-4 text-teal-700" />
-                  <span>
-                    {compressingImage
-                      ? 'Compressing photo...'
-                      : 'Take Photo or Upload Receipt Image (JPG / PNG)'}
-                  </span>
-                </button>
-              )}
-            </div>
-          )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={compressingImage}
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-4 px-4 border border-dashed border-stone-300 hover:border-zinc-500 bg-stone-50/70 hover:bg-stone-100/70 rounded-xl flex items-center justify-center gap-2 text-xs font-medium text-zinc-700 transition-colors cursor-pointer"
+              >
+                <Camera className="w-4 h-4 text-teal-700" />
+                <span>
+                  {compressingImage
+                    ? 'Compressing photo...'
+                    : 'Take Photo or Upload Receipt Image (JPG / PNG)'}
+                </span>
+              </button>
+            )}
+          </div>
 
           {/* Optional Restock Inventory Lines on new bills */}
           {!editingBill && (medicines.length > 0 || items.length > 0) && (
@@ -2293,7 +2274,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
               type="text"
               value={billNotes}
               onChange={(e) => setBillNotes(e.target.value)}
-              placeholder="Items summary, approved by principal, payment reference..."
+              placeholder="Items summary, medicines/supplies purchased, remarks..."
               className="w-full h-10 px-3 text-sm bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
             />
           </div>
@@ -2309,7 +2290,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         title={previewBill ? `${previewBill.vendor_name} · ${formatInr(previewBill.total_amount)}` : 'Bill Photo'}
         subtitle={
           previewBill
-            ? `${previewBill.bill_date}${previewBill.bill_number ? ` · #${previewBill.bill_number}` : ''} · ${previewBill.payment_status}`
+            ? `${previewBill.bill_date}${previewBill.bill_number ? ` · #${previewBill.bill_number}` : ''} · ${previewBill.category}`
             : undefined
         }
         icon={<Receipt className="w-4 h-4 text-teal-700" />}
@@ -2317,7 +2298,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         maxWidthClass="max-w-2xl"
         footer={
           <div className="w-full flex items-center justify-between gap-2">
-            {previewBill?.image_url ? (
+            {previewBill?.image_url && /^https:\/\//i.test(previewBill.image_url) ? (
               <a
                 href={previewBill.image_url}
                 target="_blank"
@@ -2345,11 +2326,21 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         {previewBill && (
           <div className="space-y-3">
             <div className="rounded-xl overflow-hidden border border-stone-200 bg-stone-100 flex items-center justify-center max-h-[65vh]">
-              <img
-                src={previewBill.image_data_url || previewBill.image_url}
-                alt={`Bill receipt from ${previewBill.vendor_name}`}
-                className="max-h-[65vh] w-auto object-contain"
-              />
+              {(previewBill.image_data_url && /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(previewBill.image_data_url)) ||
+              (previewBill.image_url && /^https:\/\//i.test(previewBill.image_url)) ? (
+                <img
+                  src={
+                    previewBill.image_data_url &&
+                    /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(previewBill.image_data_url)
+                      ? previewBill.image_data_url
+                      : previewBill.image_url
+                  }
+                  alt={`Bill receipt from ${previewBill.vendor_name}`}
+                  className="max-h-[65vh] w-auto object-contain"
+                />
+              ) : (
+                <div className="py-12 text-center text-xs text-zinc-500">Preview unavailable</div>
+              )}
             </div>
             {previewBill.notes && (
               <p className="text-xs text-zinc-600 bg-stone-50 p-3 rounded-xl border border-stone-200/60">
