@@ -738,7 +738,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="sm:hidden">Medicines</span>
                 <span className="hidden sm:inline">Total Medicines</span>
               </p>
-              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-semibold tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {medStats.total}
               </p>
             </div>
@@ -748,7 +748,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="hidden sm:inline">Low / Out of Stock</span>
               </p>
               <p
-                className={`text-lg sm:text-2xl font-semibold font-mono tabular-nums mt-0.5 sm:mt-1 ${
+                className={`text-lg sm:text-2xl font-semibold tabular-nums mt-0.5 sm:mt-1 ${
                   medStats.lowOrOut > 0 ? 'text-amber-700' : 'text-zinc-900'
                 }`}
               >
@@ -761,7 +761,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="hidden sm:inline">Expiring / Expired</span>
               </p>
               <p
-                className={`text-lg sm:text-2xl font-semibold font-mono tabular-nums mt-0.5 sm:mt-1 ${
+                className={`text-lg sm:text-2xl font-semibold tabular-nums mt-0.5 sm:mt-1 ${
                   medStats.expiringOrExpired > 0 ? 'text-rose-700' : 'text-zinc-900'
                 }`}
               >
@@ -866,7 +866,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         </div>
 
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-                          <span className="font-mono tabular-nums">
+                          <span className="tabular-nums">
                             Stock:{' '}
                             <strong
                               className={
@@ -899,7 +899,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                             <>
                               <span className="text-stone-300">·</span>
                               <span
-                                className={`font-mono tabular-nums text-[11px] ${
+                                className={`tabular-nums text-[11px] ${
                                   expiryState === 'expired'
                                     ? 'text-rose-700 font-semibold'
                                     : expiryState === 'expiring_soon'
@@ -1013,7 +1013,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="sm:hidden">Items</span>
                 <span className="hidden sm:inline">Tracked Items</span>
               </p>
-              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-semibold tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {itemStats.total}
               </p>
             </div>
@@ -1023,7 +1023,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="hidden sm:inline">Low / Out of Stock</span>
               </p>
               <p
-                className={`text-lg sm:text-2xl font-semibold font-mono tabular-nums mt-0.5 sm:mt-1 ${
+                className={`text-lg sm:text-2xl font-semibold tabular-nums mt-0.5 sm:mt-1 ${
                   itemStats.lowOrOut > 0 ? 'text-amber-700' : 'text-zinc-900'
                 }`}
               >
@@ -1035,7 +1035,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="sm:hidden">Total Units</span>
                 <span className="hidden sm:inline">Total Units Available</span>
               </p>
-              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-semibold tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {itemStats.totalUnits}
               </p>
             </div>
@@ -1124,7 +1124,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                           <span className="text-xs text-zinc-500">{it.category}</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-                          <span className="font-mono tabular-nums">
+                          <span className="tabular-nums">
                             Stock:{' '}
                             <strong
                               className={
@@ -1245,7 +1245,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="sm:hidden">Bills</span>
                 <span className="hidden sm:inline">Total Bills Recorded</span>
               </p>
-              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-semibold tabular-nums text-zinc-900 mt-0.5 sm:mt-1">
                 {billStats.total}
               </p>
             </div>
@@ -1254,7 +1254,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="sm:hidden">Total Spend</span>
                 <span className="hidden sm:inline">Total Recorded Spend</span>
               </p>
-              <p className="text-base sm:text-2xl font-semibold font-mono tabular-nums text-zinc-900 mt-0.5 sm:mt-1 truncate">
+              <p className="text-base sm:text-2xl font-semibold tabular-nums text-zinc-900 mt-0.5 sm:mt-1 truncate">
                 {formatInr(billStats.totalSpend)}
               </p>
             </div>
@@ -1263,7 +1263,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                 <span className="sm:hidden">Photos</span>
                 <span className="hidden sm:inline">Bill Photos Stored</span>
               </p>
-              <p className="text-lg sm:text-2xl font-semibold font-mono tabular-nums text-teal-800 mt-0.5 sm:mt-1">
+              <p className="text-lg sm:text-2xl font-semibold tabular-nums text-teal-800 mt-0.5 sm:mt-1">
                 {billStats.photosCount}
               </p>
             </div>
@@ -1375,7 +1375,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                           </div>
 
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-                            <span className="font-mono tabular-nums text-zinc-600">
+                            <span className="tabular-nums text-zinc-600">
                               {bill.bill_date}
                             </span>
                             {bill.image_url && (
@@ -1395,7 +1395,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                       </div>
 
                       <div className="flex items-center justify-between sm:justify-end gap-3 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-stone-100 shrink-0">
-                        <span className="font-mono tabular-nums text-base font-semibold text-zinc-900">
+                        <span className="tabular-nums text-base font-semibold text-zinc-900">
                           {formatInr(bill.total_amount)}
                         </span>
 
@@ -1543,7 +1543,7 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0 font-mono tabular-nums">
+                      <div className="text-right shrink-0 tabular-nums">
                         <span
                           className={`block text-sm font-semibold ${
                             isAdd ? 'text-emerald-700' : 'text-rose-700'

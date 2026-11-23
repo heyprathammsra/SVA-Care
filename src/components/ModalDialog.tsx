@@ -59,12 +59,12 @@ export const ModalDialog: React.FC<ModalDialogProps> = ({
         className={`modal-panel-animate bg-white w-full ${maxWidthClass} max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-3xl sm:rounded-2xl border border-stone-200/90 shadow-[0_24px_64px_-16px_rgba(24,24,27,0.32),0_8px_24px_-8px_rgba(24,24,27,0.12)] overflow-hidden`}
       >
         {/* Mobile bottom-sheet drag handle */}
-        <div className="sm:hidden flex justify-center pt-2.5 pb-0.5 bg-stone-50/70 shrink-0" aria-hidden="true">
+        <div className="sm:hidden flex justify-center pt-2.5 pb-0.5 bg-white shrink-0" aria-hidden="true">
           <div className="w-10 h-1 rounded-full bg-stone-300/90" />
         </div>
 
         {/* Header */}
-        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-stone-100 flex items-start justify-between gap-3 bg-gradient-to-b from-stone-50/70 to-white shrink-0">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-stone-100 flex items-start justify-between gap-3 bg-white shrink-0">
           <div className="flex items-start gap-3 min-w-0">
             {icon && (
               <div className="w-9 h-9 rounded-xl bg-stone-100/90 border border-stone-200/70 flex items-center justify-center shrink-0 mt-0.5">

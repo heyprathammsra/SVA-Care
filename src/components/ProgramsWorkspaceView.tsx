@@ -24,9 +24,14 @@ import {
   ClipboardCheck,
   Lock,
   TrendingUp,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import {
   formatTimeFromDatetime,
+  getCurrentAcademicYear,
+  computeFrequentVisitors,
+  computeCommonIssues,
   type StudentRecord,
   type VisitRecord,
   type ItemInventoryRecord,
@@ -79,9 +84,11 @@ interface ProgramsWorkspaceViewProps {
   onUpsertMenstrualLog: (record: Partial<MenstrualLogRecord>) => Promise<ProgramsActionResult>;
   onDeleteMenstrualLog: (menstrualId: string) => Promise<ProgramsActionResult>;
   onSelectStudent?: (student: StudentRecord) => void;
+  initialTab?: ProgramsTab;
+  initialTabNonce?: number;
 }
 
-type ProgramsTab = 'doctor' | 'opd' | 'camps' | 'checkups' | 'menstrual' | 'insights';
+export type ProgramsTab = 'hub' | 'doctor' | 'opd' | 'camps' | 'checkups' | 'menstrual' | 'insights';
 
 const CAMP_TYPES = [
   'General Health',
@@ -204,12 +211,12 @@ const StudentPickerField: React.FC<StudentPickerFieldProps> = ({
   if (selectedStudent && !disabled) {
     return (
       <div>
-        <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+        <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
           {label}
         </label>
         <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-teal-50/70 border border-teal-200">
           <div className="min-w-0">
-            <div className="text-[13.5px] font-semibold text-slate-900 truncate">
+            <div className="text-[13.5px] font-semibold text-zinc-900 truncate">
               {selectedStudent.full_name}
             </div>
             <div className="text-[11.5px] text-teal-800 font-medium">
@@ -233,19 +240,19 @@ const StudentPickerField: React.FC<StudentPickerFieldProps> = ({
 
   return (
     <div>
-      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+      <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
         {label}
       </label>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
         <div className="relative sm:col-span-2">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={disabled}
             placeholder="Search student name or roll no..."
-            className="w-full h-9 pl-8.5 pr-3 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
+            className="w-full h-9 pl-8.5 pr-3 rounded-lg border border-stone-200 bg-white text-[13px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
           />
         </div>
         <CustomSelect
@@ -258,9 +265,9 @@ const StudentPickerField: React.FC<StudentPickerFieldProps> = ({
           size="sm"
         />
       </div>
-      <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/40 divide-y divide-slate-100">
+      <div className="max-h-36 overflow-y-auto rounded-xl border border-stone-200 bg-stone-50/40 divide-y divide-stone-100">
         {filtered.length === 0 ? (
-          <div className="px-3 py-4 text-center text-[12px] text-slate-400">
+          <div className="px-3 py-4 text-center text-[12px] text-zinc-400">
             No matching students found.
           </div>
         ) : (
@@ -271,10 +278,10 @@ const StudentPickerField: React.FC<StudentPickerFieldProps> = ({
               onClick={() => onSelect(stu.student_id)}
               className="w-full text-left px-3 py-2 hover:bg-teal-50/70 transition-colors flex items-center justify-between gap-2 cursor-pointer"
             >
-              <span className="text-[13px] font-medium text-slate-900 truncate">
+              <span className="text-[13px] font-medium text-zinc-900 truncate">
                 {stu.full_name}
               </span>
-              <span className="text-[11px] font-mono tabular-nums text-slate-500 shrink-0">
+              <span className="text-[11px] tabular-nums text-zinc-500 shrink-0">
                 {stu.section} · #{stu.roll_number}
               </span>
             </button>
@@ -313,10 +320,18 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
   onUpsertMenstrualLog,
   onDeleteMenstrualLog,
   onSelectStudent,
+  initialTab = 'hub',
+  initialTabNonce = 0,
 }) => {
-  const [activeTab, setActiveTab] = useState<ProgramsTab>('doctor');
+  const [activeTab, setActiveTab] = useState<ProgramsTab>(initialTab);
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (initialTabNonce > 0) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, initialTabNonce]);
 
   // ---- Search & Filter State ----
   const [docSearch, setDocSearch] = useState('');
@@ -881,6 +896,54 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
     }
   };
 
+  const activeStudentCount = useMemo(
+    () => students.filter((s) => s.active_status !== 'Inactive').length,
+    [students]
+  );
+
+  const currentAcademicYear = useMemo(
+    () => getCurrentAcademicYear(getTodayLocalDateString()),
+    []
+  );
+
+  const annualScreenedCount = useMemo(() => {
+    const ids = new Set(
+      annualCheckups
+        .filter((c) => c.academic_year === currentAcademicYear)
+        .map((c) => c.student_id)
+    );
+    return ids.size;
+  }, [annualCheckups, currentAcademicYear]);
+
+  const insightsPreview = useMemo(() => {
+    const refDate = getTodayLocalDateString();
+    const repeatVisitors = computeFrequentVisitors({
+      students,
+      visits,
+      doctorVisits,
+      doctorVisitCases,
+      opdRecords,
+      timeframe: '30d',
+      includePrograms: true,
+      minVisits: 2,
+      referenceDate: refDate,
+    });
+    const issues = computeCommonIssues({
+      students,
+      visits,
+      doctorVisits,
+      doctorVisitCases,
+      opdRecords,
+      timeframe: '30d',
+      includePrograms: true,
+      referenceDate: refDate,
+    });
+    return {
+      repeatCount: repeatVisitors.length,
+      topIssue: issues[0]?.label.split(' / ')[0] || null,
+    };
+  }, [students, visits, doctorVisits, doctorVisitCases, opdRecords]);
+
   const showTopPrimaryAction =
     activeTab === 'doctor' || activeTab === 'opd' || activeTab === 'camps';
 
@@ -903,34 +966,108 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
   const isCampExpanded = (campId: string, idx: number) =>
     expandedCampIds[campId] !== undefined ? expandedCampIds[campId] : idx === 0;
 
+  const MODULE_META: Record<
+    Exclude<ProgramsTab, 'hub'>,
+    { title: string; subtitle: string }
+  > = {
+    insights: {
+      title: 'Health Insights',
+      subtitle: 'Frequent student visitors and common illnesses across campus',
+    },
+    doctor: {
+      title: 'Weekly Doctor Visits',
+      subtitle: 'Campus physician sessions and student consultations',
+    },
+    opd: {
+      title: 'External OPD Register',
+      subtitle: 'Hospital referrals, prescriptions, and follow-up tracking',
+    },
+    camps: {
+      title: 'Medical Camps',
+      subtitle: 'Dental, eye, and periodic campus screening camps',
+    },
+    checkups: {
+      title: 'Annual Health Checkups',
+      subtitle: `Academic year ${currentAcademicYear} class-wise physical exam tracker`,
+    },
+    menstrual: {
+      title: 'Menstrual Health Care',
+      subtitle: 'Confidential cycle log restricted to Nurse & Admin',
+    },
+  };
+
   return (
-    <div className="space-y-4 pb-8">
-      {/* Compact Header Row with Inline Primary CTA */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-[20px] sm:text-[22px] font-bold tracking-tight text-slate-900 truncate">
-            Clinical Programs
-          </h1>
-          <p className="hidden sm:block text-[12.5px] text-slate-500 mt-0.5">
-            Doctor rounds, external OPD, screening camps, annual checkups, menstrual care, and campus health insights.
-          </p>
+    <div className="space-y-4 sm:space-y-6 pb-8">
+      {/* Header: Clean Hub Title OR Focused Breadcrumb + Module Switcher */}
+      {activeTab === 'hub' ? (
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-teal-700">
+              Campus Health &amp; Preventive Care
+            </p>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-tight">
+              Clinical Programs
+            </h1>
+            <p className="text-xs sm:text-sm text-zinc-500 mt-1">
+              Choose a section below to view trends, log doctor rounds, manage referrals, or run annual checkups.
+            </p>
+          </div>
         </div>
-        {showTopPrimaryAction && (
-          <button
-            type="button"
-            onClick={handlePrimaryAction}
-            className="inline-flex items-center gap-1.5 h-9 sm:h-10 px-3.5 sm:px-4 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-[13px] font-semibold shadow-sm transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            <span>{primaryActionLabel}</span>
-          </button>
-        )}
-      </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200/80">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('hub')}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer mb-1"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>All Programs</span>
+            </button>
+            <h1 className="text-xl sm:text-2xl font-semibold text-zinc-900 font-display tracking-tight truncate">
+              {MODULE_META[activeTab].title}
+            </h1>
+            <p className="hidden sm:block text-xs text-zinc-500 mt-0.5">
+              {MODULE_META[activeTab].subtitle}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="w-44 sm:w-48">
+              <CustomSelect
+                ariaLabel="Switch clinical program"
+                value={activeTab}
+                onChange={(val) => setActiveTab(val as ProgramsTab)}
+                size="sm"
+                options={[
+                  { value: 'insights', label: 'Health Insights' },
+                  { value: 'doctor', label: `Doctor Visits (${doctorVisits.length})` },
+                  { value: 'opd', label: `External OPD (${opdRecords.length})` },
+                  { value: 'camps', label: `Medical Camps (${medicalCamps.length})` },
+                  { value: 'checkups', label: `Annual Checkups (${annualScreenedCount})` },
+                  { value: 'menstrual', label: `Menstrual Health (${menstrualLogs.length})` },
+                ]}
+              />
+            </div>
+
+            {showTopPrimaryAction && (
+              <button
+                type="button"
+                onClick={handlePrimaryAction}
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span>{primaryActionLabel}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Inline Feedback Banner */}
       {banner && (
         <div
-          className={`flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl border text-[13px] ${
+          className={`flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs font-medium ${
             banner.type === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
               : 'bg-rose-50 border-rose-200 text-rose-900'
@@ -955,47 +1092,109 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* Responsive Single-Line Tab Switcher */}
-      <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80 overflow-x-auto">
-        {(
-          [
-            { id: 'doctor', short: 'Doctor', full: 'Doctor Visits', icon: Stethoscope, count: doctorVisits.length },
-            { id: 'opd', short: 'OPD', full: 'External OPD', icon: Building2, count: opdRecords.length },
-            { id: 'camps', short: 'Camps', full: 'Medical Camps', icon: HeartPulse, count: medicalCamps.length },
-            { id: 'checkups', short: 'Checkups', full: 'Annual Checkup', icon: ClipboardCheck, count: annualCheckups.length },
-            { id: 'menstrual', short: 'Menstrual', full: 'Menstrual Health', icon: Lock, count: menstrualLogs.length },
-            { id: 'insights', short: 'Insights', full: 'Health Insights', icon: TrendingUp, count: null },
-          ] as const
-        ).map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-lg flex items-center justify-center gap-1.5 text-[12.5px] sm:text-[13px] font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer lg:flex-1 ${
-                active
-                  ? 'bg-white text-teal-800 shadow-xs border border-slate-200/80'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span className="sm:hidden">{tab.short}</span>
-              <span className="hidden sm:inline">{tab.full}</span>
-              {tab.count !== null && (
-                <span
-                  className={`text-[11px] font-mono tabular-nums ${
-                    active ? 'text-teal-700' : 'text-slate-500'
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {/* ================================================================= */}
+      {/* HUB OVERVIEW: 6 CALM, SCANNABLE PROGRAM CARDS                     */}
+      {/* ================================================================= */}
+      {activeTab === 'hub' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[
+            {
+              id: 'insights' as const,
+              title: 'Health Insights',
+              description: 'Spot students visiting frequently and common illnesses spreading by class.',
+              icon: TrendingUp,
+              statPrimary: `${insightsPreview.repeatCount} repeat visitor${insightsPreview.repeatCount === 1 ? '' : 's'} (30d)`,
+              statSecondary: insightsPreview.topIssue
+                ? `Top: ${insightsPreview.topIssue}`
+                : 'Live from visits & OPD',
+              accent: false,
+            },
+            {
+              id: 'doctor' as const,
+              title: 'Weekly Doctor Visits',
+              description: 'Log visiting physician sessions, student findings, prescriptions, and follow-ups.',
+              icon: Stethoscope,
+              statPrimary: `${doctorVisits.length} session${doctorVisits.length === 1 ? '' : 's'}`,
+              statSecondary: `${doctorVisitCases.length} seen${doctorFollowUpCount > 0 ? ` · ${doctorFollowUpCount} follow-up` : ''}`,
+              accent: false,
+            },
+            {
+              id: 'opd' as const,
+              title: 'External OPD Register',
+              description: 'Track outside hospital referrals, prescription slip photos, and return status.',
+              icon: Building2,
+              statPrimary: `${opdRecords.length} referral${opdRecords.length === 1 ? '' : 's'}`,
+              statSecondary: activeOpdCount > 0 ? `${activeOpdCount} open / follow-up` : 'All settled',
+              accent: activeOpdCount > 0,
+            },
+            {
+              id: 'camps' as const,
+              title: 'Medical Camps',
+              description: 'Manage dental, eye, or general camps with rapid student-by-student screening.',
+              icon: HeartPulse,
+              statPrimary: `${medicalCamps.length} camp${medicalCamps.length === 1 ? '' : 's'}`,
+              statSecondary: `${campScreenings.length} screened${campReferralsCount > 0 ? ` · ${campReferralsCount} referred` : ''}`,
+              accent: false,
+            },
+            {
+              id: 'checkups' as const,
+              title: 'Annual Health Checkups',
+              description: 'Class-wise annual physical exams with auto-BMI, vision, dental, and fitness status.',
+              icon: ClipboardCheck,
+              statPrimary: `${annualScreenedCount} / ${activeStudentCount} screened`,
+              statSecondary: `Academic year ${currentAcademicYear}`,
+              accent: false,
+            },
+            {
+              id: 'menstrual' as const,
+              title: 'Menstrual Health Care',
+              description: 'Discreet, nurse-only cycle care log with optional sanitary pad stock deduction.',
+              icon: Lock,
+              statPrimary: `${menstrualLogs.length} entr${menstrualLogs.length === 1 ? 'y' : 'ies'}`,
+              statSecondary: 'Nurse & Admin only · Private',
+              accent: false,
+            },
+          ].map((card) => {
+            const Icon = card.icon;
+            return (
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => setActiveTab(card.id)}
+                className="group text-left bg-white border border-stone-200/80 hover:border-stone-300 rounded-2xl p-5 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between gap-4 cursor-pointer"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="w-9 h-9 rounded-xl bg-stone-100 text-teal-800 group-hover:bg-teal-50 flex items-center justify-center transition-colors">
+                      <Icon className="w-4.5 h-4.5" />
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-700 group-hover:translate-x-0.5 transition-all" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-zinc-900 font-display group-hover:text-teal-800 transition-colors">
+                      {card.title}
+                    </h2>
+                    <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                      {card.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2 text-xs">
+                  <span
+                    className={`tabular-nums font-semibold ${
+                      card.accent ? 'text-amber-700' : 'text-zinc-800'
+                    }`}
+                  >
+                    {card.statPrimary}
+                  </span>
+                  <span className="text-zinc-400 truncate">{card.statSecondary}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ================================================================= */}
       {/* TAB 1: WEEKLY DOCTOR VISITS                                       */}
@@ -1003,31 +1202,31 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
       {activeTab === 'doctor' && (
         <div className="space-y-3.5">
           {/* Unified 3-Column Metric Strip */}
-          <div className="grid grid-cols-3 bg-white rounded-xl border border-slate-200/90 divide-x divide-slate-100 shadow-2xs">
+          <div className="grid grid-cols-3 bg-white rounded-xl border border-stone-200/90 divide-x divide-stone-100 shadow-2xs">
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 whitespace-nowrap">
                 Sessions
               </div>
-              <div className="text-[18px] sm:text-[22px] font-bold font-mono tabular-nums text-slate-900 mt-0.5">
+              <div className="text-[18px] sm:text-[22px] font-bold tabular-nums text-zinc-900 mt-0.5">
                 {doctorVisits.length}
               </div>
             </div>
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 whitespace-nowrap">
                 <span className="sm:hidden">Seen</span>
                 <span className="hidden sm:inline">Students Seen</span>
               </div>
-              <div className="text-[18px] sm:text-[22px] font-bold font-mono tabular-nums text-teal-800 mt-0.5">
+              <div className="text-[18px] sm:text-[22px] font-bold tabular-nums text-teal-800 mt-0.5">
                 {doctorVisitCases.length}
               </div>
             </div>
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 whitespace-nowrap">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 whitespace-nowrap">
                 Follow-ups
               </div>
               <div
-                className={`text-[18px] sm:text-[22px] font-bold font-mono tabular-nums mt-0.5 ${
-                  doctorFollowUpCount > 0 ? 'text-amber-700' : 'text-slate-900'
+                className={`text-[18px] sm:text-[22px] font-bold tabular-nums mt-0.5 ${
+                  doctorFollowUpCount > 0 ? 'text-amber-700' : 'text-zinc-900'
                 }`}
               >
                 {doctorFollowUpCount}
@@ -1037,26 +1236,26 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
 
           {/* Search */}
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={docSearch}
               onChange={(e) => setDocSearch(e.target.value)}
               placeholder="Search doctor, specialization, student, complaint, or advice..."
-              className="w-full h-10 pl-10 pr-3.5 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
+              className="w-full h-10 pl-10 pr-3.5 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
             />
           </div>
 
           {/* Session Cards */}
           {filteredDoctorVisits.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200/90 px-5 py-10 text-center">
+            <div className="bg-white rounded-2xl border border-stone-200/90 px-5 py-10 text-center">
               <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center mx-auto mb-3">
                 <Stethoscope className="w-5 h-5" />
               </div>
-              <h3 className="text-[15px] font-semibold text-slate-900">
+              <h3 className="text-[15px] font-semibold text-zinc-900">
                 {docSearch ? 'No matching doctor visits' : 'No weekly doctor visits logged yet'}
               </h3>
-              <p className="text-[13px] text-slate-500 mt-1 max-w-sm mx-auto">
+              <p className="text-[13px] text-zinc-500 mt-1 max-w-sm mx-auto">
                 Log each visiting physician session and attach every student seen with findings and advice.
               </p>
               {!docSearch && (
@@ -1080,7 +1279,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 return (
                   <div
                     key={sess.doctor_visit_id}
-                    className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden"
+                    className="bg-white rounded-2xl border border-stone-200/90 shadow-2xs overflow-hidden"
                   >
                     {/* Session Header */}
                     <div className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1099,44 +1298,44 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <h3 className="text-[15px] font-bold text-slate-900 truncate">
+                            <h3 className="text-[15px] font-bold text-zinc-900 truncate">
                               {sess.doctor_name}
                             </h3>
                             {sess.specialization && (
-                              <span className="text-[11.5px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                              <span className="text-[11.5px] font-medium px-2 py-0.5 rounded-md bg-stone-100 text-zinc-700">
                                 {sess.specialization}
                               </span>
                             )}
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500 mt-1">
-                            <span className="inline-flex items-center gap-1 font-mono tabular-nums">
-                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-zinc-500 mt-1">
+                            <span className="inline-flex items-center gap-1 tabular-nums">
+                              <Calendar className="w-3.5 h-3.5 text-zinc-400" />
                               {formatReadableDate(sess.visit_date)}
                             </span>
                             {sess.session_time && (
                               <span className="inline-flex items-center gap-1">
-                                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                <Clock className="w-3.5 h-3.5 text-zinc-400" />
                                 {sess.session_time}
                               </span>
                             )}
-                            <span className="font-semibold text-teal-800 font-mono tabular-nums">
+                            <span className="font-semibold text-teal-800 tabular-nums">
                               {cases.length} {cases.length === 1 ? 'student' : 'students'}
                             </span>
                             {followUps > 0 && (
-                              <span className="font-semibold text-amber-700 font-mono tabular-nums">
+                              <span className="font-semibold text-amber-700 tabular-nums">
                                 {followUps} follow-up
                               </span>
                             )}
                           </div>
                           {sess.campus_notes && (
-                            <p className="text-[12.5px] text-slate-600 mt-1.5 line-clamp-2">
+                            <p className="text-[12.5px] text-zinc-600 mt-1.5 line-clamp-2">
                               {sess.campus_notes}
                             </p>
                           )}
                         </div>
                       </button>
 
-                      <div className="flex items-center justify-end gap-1.5 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                      <div className="flex items-center justify-end gap-1.5 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-stone-100">
                         <button
                           type="button"
                           onClick={() => openNewDocCase(sess.doctor_visit_id)}
@@ -1148,7 +1347,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                         <button
                           type="button"
                           onClick={() => openEditDocSession(sess)}
-                          className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-500 hover:text-zinc-800 hover:bg-stone-100 cursor-pointer"
                           title="Edit session"
                           aria-label="Edit doctor session"
                         >
@@ -1167,7 +1366,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                   : undefined,
                             })
                           }
-                          className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                           title="Delete session"
                           aria-label="Delete doctor session"
                         >
@@ -1181,7 +1380,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                               [sess.doctor_visit_id]: !expanded,
                             }))
                           }
-                          className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-stone-100 cursor-pointer"
                           aria-label={expanded ? 'Collapse session' : 'Expand session'}
                         >
                           {expanded ? (
@@ -1195,9 +1394,9 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
 
                     {/* Linked Student Consultations */}
                     {expanded && (
-                      <div className="border-t border-slate-100 bg-slate-50/50 px-3.5 py-3 sm:px-4">
+                      <div className="border-t border-stone-100 bg-stone-50/50 px-3.5 py-3 sm:px-4">
                         {cases.length === 0 ? (
-                          <div className="py-4 text-center text-[12.5px] text-slate-500">
+                          <div className="py-4 text-center text-[12.5px] text-zinc-500">
                             No students logged under this session yet. Tap{' '}
                             <button
                               type="button"
@@ -1218,14 +1417,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                               return (
                                 <div
                                   key={c.case_id}
-                                  className="bg-white rounded-xl border border-slate-200/80 p-3 flex items-start justify-between gap-2.5"
+                                  className="bg-white rounded-xl border border-stone-200/80 p-3 flex items-start justify-between gap-2.5"
                                 >
                                   <div className="min-w-0 flex-1 space-y-1">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="text-[13.5px] font-semibold text-slate-900">
+                                      <span className="text-[13.5px] font-semibold text-zinc-900">
                                         {name}
                                       </span>
-                                      <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                                      <span className="text-[11px] tabular-nums text-zinc-500">
                                         {sec} · #{roll}
                                       </span>
                                       {c.follow_up_needed && (
@@ -1234,13 +1433,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                         </span>
                                       )}
                                     </div>
-                                    <div className="text-[12.5px] text-slate-800">
-                                      <span className="font-semibold text-slate-600">Complaint: </span>
+                                    <div className="text-[12.5px] text-zinc-800">
+                                      <span className="font-semibold text-zinc-600">Complaint: </span>
                                       {c.complaint}
                                     </div>
                                     {c.findings && (
-                                      <div className="text-[12.5px] text-slate-700">
-                                        <span className="font-semibold text-slate-600">Findings: </span>
+                                      <div className="text-[12.5px] text-zinc-700">
+                                        <span className="font-semibold text-zinc-600">Findings: </span>
                                         {c.findings}
                                       </div>
                                     )}
@@ -1251,14 +1450,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                       </div>
                                     )}
                                     {c.notes && (
-                                      <div className="text-[11.5px] text-slate-500">Note: {c.notes}</div>
+                                      <div className="text-[11.5px] text-zinc-500">Note: {c.notes}</div>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button
                                       type="button"
                                       onClick={() => openEditDocCase(c)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-stone-100 cursor-pointer"
                                       aria-label="Edit consultation"
                                     >
                                       <Pencil className="w-3.5 h-3.5" />
@@ -1272,7 +1471,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                           label: `${name} — ${c.complaint}`,
                                         })
                                       }
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                                       aria-label="Delete consultation"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -1299,32 +1498,32 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
       {activeTab === 'opd' && (
         <div className="space-y-3.5">
           {/* Unified 3-Column Metric Strip */}
-          <div className="grid grid-cols-3 bg-white rounded-xl border border-slate-200/90 divide-x divide-slate-100 shadow-2xs">
+          <div className="grid grid-cols-3 bg-white rounded-xl border border-stone-200/90 divide-x divide-stone-100 shadow-2xs">
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Total OPD
               </div>
-              <div className="text-[18px] sm:text-[22px] font-bold font-mono tabular-nums text-slate-900 mt-0.5">
+              <div className="text-[18px] sm:text-[22px] font-bold tabular-nums text-zinc-900 mt-0.5">
                 {opdRecords.length}
               </div>
             </div>
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Active / F-Up
               </div>
               <div
-                className={`text-[18px] sm:text-[22px] font-bold font-mono tabular-nums mt-0.5 ${
-                  activeOpdCount > 0 ? 'text-amber-700' : 'text-slate-900'
+                className={`text-[18px] sm:text-[22px] font-bold tabular-nums mt-0.5 ${
+                  activeOpdCount > 0 ? 'text-amber-700' : 'text-zinc-900'
                 }`}
               >
                 {activeOpdCount}
               </div>
             </div>
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 OPD Slips
               </div>
-              <div className="text-[18px] sm:text-[22px] font-bold font-mono tabular-nums text-teal-800 mt-0.5">
+              <div className="text-[18px] sm:text-[22px] font-bold tabular-nums text-teal-800 mt-0.5">
                 {opdSlipsCount}
               </div>
             </div>
@@ -1333,16 +1532,16 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
           {/* Search & Status Filter */}
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={opdSearch}
                 onChange={(e) => setOpdSearch(e.target.value)}
                 placeholder="Search student, hospital, doctor, reason, or diagnosis..."
-                className="w-full h-10 pl-10 pr-3.5 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
+                className="w-full h-10 pl-10 pr-3.5 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
               />
             </div>
-            <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80 sm:w-[320px] shrink-0">
+            <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-stone-100 border border-stone-200/80 sm:w-[320px] shrink-0">
               {(['ALL', 'Referred', 'Returned', 'Follow-up'] as const).map((st) => {
                 const active = opdStatusFilter === st;
                 return (
@@ -1352,8 +1551,8 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                     onClick={() => setOpdStatusFilter(st)}
                     className={`h-8 px-1.5 rounded-lg text-[11.5px] font-semibold transition-all whitespace-nowrap cursor-pointer ${
                       active
-                        ? 'bg-white text-teal-800 shadow-2xs border border-slate-200/80'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white text-teal-800 shadow-2xs border border-stone-200/80'
+                        : 'text-zinc-600 hover:text-zinc-900'
                     }`}
                   >
                     {st === 'ALL' ? 'All' : st}
@@ -1365,16 +1564,16 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
 
           {/* OPD List */}
           {filteredOpdRecords.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200/90 px-5 py-10 text-center">
+            <div className="bg-white rounded-2xl border border-stone-200/90 px-5 py-10 text-center">
               <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center mx-auto mb-3">
                 <Building2 className="w-5 h-5" />
               </div>
-              <h3 className="text-[15px] font-semibold text-slate-900">
+              <h3 className="text-[15px] font-semibold text-zinc-900">
                 {opdSearch || opdStatusFilter !== 'ALL'
                   ? 'No matching OPD referrals'
                   : 'No external OPD referrals logged yet'}
               </h3>
-              <p className="text-[13px] text-slate-500 mt-1 max-w-sm mx-auto">
+              <p className="text-[13px] text-zinc-500 mt-1 max-w-sm mx-auto">
                 Record outside clinic or hospital visits along with escort details, follow-up date, and OPD slip photo.
               </p>
               {!opdSearch && opdStatusFilter === 'ALL' && (
@@ -1412,15 +1611,15 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 return (
                   <div
                     key={o.opd_id}
-                    className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-4 shadow-2xs flex flex-col justify-between gap-3"
+                    className="bg-white rounded-2xl border border-stone-200/90 p-3.5 sm:p-4 shadow-2xs flex flex-col justify-between gap-3"
                   >
                     <div className="space-y-2">
                       {/* Top Row */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <h3 className="text-[15px] font-bold text-slate-900 truncate">{name}</h3>
-                            <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                            <h3 className="text-[15px] font-bold text-zinc-900 truncate">{name}</h3>
+                            <span className="text-[11px] tabular-nums text-zinc-500">
                               {sec} · #{roll}
                             </span>
                           </div>
@@ -1437,13 +1636,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                       </div>
 
                       {/* Metadata Line */}
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-500 font-mono tabular-nums">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-zinc-500 tabular-nums">
                         <span>
                           {formatReadableDate(o.referral_datetime)} ·{' '}
                           {formatTimeFromDatetime(o.referral_datetime)}
                         </span>
                         {o.escort_or_parent && (
-                          <span className="font-sans text-slate-600">
+                          <span className="font-sans text-zinc-600">
                             Escort: <strong className="font-medium">{o.escort_or_parent}</strong>
                           </span>
                         )}
@@ -1451,42 +1650,42 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
 
                       {/* Clinical Details */}
                       <div className="space-y-1 text-[12.5px] pt-1">
-                        <div className="text-slate-800">
-                          <span className="font-semibold text-slate-500">Reason: </span>
+                        <div className="text-zinc-800">
+                          <span className="font-semibold text-zinc-500">Reason: </span>
                           {o.reason}
                         </div>
                         {o.diagnosis_and_advice && (
-                          <div className="text-slate-700 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
-                            <span className="font-semibold text-slate-600">Diagnosis / Advice: </span>
+                          <div className="text-zinc-700 bg-stone-50 border border-stone-100 rounded-lg px-2.5 py-1.5">
+                            <span className="font-semibold text-zinc-600">Diagnosis / Advice: </span>
                             {o.diagnosis_and_advice}
                           </div>
                         )}
                         {o.follow_up_date && (
                           <div className="text-[12px] font-medium text-blue-800">
                             Follow-up Date:{' '}
-                            <span className="font-mono tabular-nums">
+                            <span className="tabular-nums">
                               {formatReadableDate(o.follow_up_date)}
                             </span>
                           </div>
                         )}
-                        {o.notes && <div className="text-[11.5px] text-slate-500">Note: {o.notes}</div>}
+                        {o.notes && <div className="text-[11.5px] text-zinc-500">Note: {o.notes}</div>}
                       </div>
                     </div>
 
                     {/* Footer: Slip Preview + Actions */}
-                    <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
+                    <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-stone-100">
                       <div className="flex items-center gap-2 min-w-0">
                         {previewSrc ? (
                           <button
                             type="button"
                             onClick={() => setLightboxOpd(o)}
-                            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-800 text-[12px] font-semibold cursor-pointer whitespace-nowrap"
+                            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 text-zinc-800 text-[12px] font-semibold cursor-pointer whitespace-nowrap"
                           >
                             <Eye className="w-3.5 h-3.5 text-teal-700" />
                             <span>View OPD Slip</span>
                           </button>
                         ) : (
-                          <span className="text-[11.5px] text-slate-400 inline-flex items-center gap-1">
+                          <span className="text-[11.5px] text-zinc-400 inline-flex items-center gap-1">
                             <FileText className="w-3.5 h-3.5" />
                             No slip photo
                           </span>
@@ -1508,7 +1707,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                         <button
                           type="button"
                           onClick={() => openEditOpd(o)}
-                          className="p-2 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-stone-100 cursor-pointer"
                           title="Edit OPD record"
                           aria-label="Edit OPD record"
                         >
@@ -1523,7 +1722,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                               label: `${name} — ${o.hospital_or_clinic}`,
                             })
                           }
-                          className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                           title="Delete OPD record"
                           aria-label="Delete OPD record"
                         >
@@ -1545,30 +1744,30 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
       {activeTab === 'camps' && (
         <div className="space-y-3.5">
           {/* Unified 3-Column Metric Strip */}
-          <div className="grid grid-cols-3 bg-white rounded-xl border border-slate-200/90 divide-x divide-slate-100 shadow-2xs">
+          <div className="grid grid-cols-3 bg-white rounded-xl border border-stone-200/90 divide-x divide-stone-100 shadow-2xs">
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Camps
               </div>
-              <div className="text-[18px] sm:text-[22px] font-bold font-mono tabular-nums text-slate-900 mt-0.5">
+              <div className="text-[18px] sm:text-[22px] font-bold tabular-nums text-zinc-900 mt-0.5">
                 {medicalCamps.length}
               </div>
             </div>
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Screened
               </div>
-              <div className="text-[18px] sm:text-[22px] font-bold font-mono tabular-nums text-teal-800 mt-0.5">
+              <div className="text-[18px] sm:text-[22px] font-bold tabular-nums text-teal-800 mt-0.5">
                 {campScreenings.length}
               </div>
             </div>
             <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 Referrals
               </div>
               <div
-                className={`text-[18px] sm:text-[22px] font-bold font-mono tabular-nums mt-0.5 ${
-                  campReferralsCount > 0 ? 'text-rose-700' : 'text-slate-900'
+                className={`text-[18px] sm:text-[22px] font-bold tabular-nums mt-0.5 ${
+                  campReferralsCount > 0 ? 'text-rose-700' : 'text-zinc-900'
                 }`}
               >
                 {campReferralsCount}
@@ -1578,26 +1777,26 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
 
           {/* Search */}
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={campSearch}
               onChange={(e) => setCampSearch(e.target.value)}
               placeholder="Search camp title, type, organizer, student, or screening findings..."
-              className="w-full h-10 pl-10 pr-3.5 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
+              className="w-full h-10 pl-10 pr-3.5 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
             />
           </div>
 
           {/* Camp Cards */}
           {filteredCamps.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200/90 px-5 py-10 text-center">
+            <div className="bg-white rounded-2xl border border-stone-200/90 px-5 py-10 text-center">
               <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center mx-auto mb-3">
                 <HeartPulse className="w-5 h-5" />
               </div>
-              <h3 className="text-[15px] font-semibold text-slate-900">
+              <h3 className="text-[15px] font-semibold text-zinc-900">
                 {campSearch ? 'No matching medical camps' : 'No medical camps recorded yet'}
               </h3>
-              <p className="text-[13px] text-slate-500 mt-1 max-w-sm mx-auto">
+              <p className="text-[13px] text-zinc-500 mt-1 max-w-sm mx-auto">
                 Track dental, eye, vaccination, or annual health camps and rapidly log student screenings and referrals.
               </p>
               {!campSearch && (
@@ -1625,7 +1824,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 return (
                   <div
                     key={camp.camp_id}
-                    className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden"
+                    className="bg-white rounded-2xl border border-stone-200/90 shadow-2xs overflow-hidden"
                   >
                     <div className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <button
@@ -1640,45 +1839,45 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-[15px] font-bold text-slate-900 truncate">
+                            <h3 className="text-[15px] font-bold text-zinc-900 truncate">
                               {camp.camp_title}
                             </h3>
                             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200">
                               {camp.camp_type}
                             </span>
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500 mt-1">
-                            <span className="inline-flex items-center gap-1 font-mono tabular-nums">
-                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-zinc-500 mt-1">
+                            <span className="inline-flex items-center gap-1 tabular-nums">
+                              <Calendar className="w-3.5 h-3.5 text-zinc-400" />
                               {formatReadableDate(camp.camp_date)}
                             </span>
                             {camp.organizer && <span>{camp.organizer}</span>}
                             {camp.target_classes && (
-                              <span className="text-slate-600">Classes: {camp.target_classes}</span>
+                              <span className="text-zinc-600">Classes: {camp.target_classes}</span>
                             )}
-                            <span className="font-semibold text-teal-800 font-mono tabular-nums">
+                            <span className="font-semibold text-teal-800 tabular-nums">
                               {allScreenings.length} screened
                             </span>
                             {referralCount > 0 && (
-                              <span className="font-semibold text-rose-700 font-mono tabular-nums">
+                              <span className="font-semibold text-rose-700 tabular-nums">
                                 {referralCount} referral{referralCount === 1 ? '' : 's'}
                               </span>
                             )}
                           </div>
                           {camp.doctor_team && (
-                            <div className="text-[12px] text-slate-600 mt-1">
+                            <div className="text-[12px] text-zinc-600 mt-1">
                               Team: {camp.doctor_team}
                             </div>
                           )}
                           {camp.summary && (
-                            <p className="text-[12.5px] text-slate-600 mt-1 line-clamp-2">
+                            <p className="text-[12.5px] text-zinc-600 mt-1 line-clamp-2">
                               {camp.summary}
                             </p>
                           )}
                         </div>
                       </button>
 
-                      <div className="flex items-center justify-end gap-1.5 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                      <div className="flex items-center justify-end gap-1.5 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-stone-100">
                         <button
                           type="button"
                           onClick={() => openNewScreening(camp.camp_id)}
@@ -1690,7 +1889,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                         <button
                           type="button"
                           onClick={() => openEditCamp(camp)}
-                          className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-500 hover:text-zinc-800 hover:bg-stone-100 cursor-pointer"
                           title="Edit camp"
                           aria-label="Edit medical camp"
                         >
@@ -1709,7 +1908,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                   : undefined,
                             })
                           }
-                          className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                           title="Delete camp"
                           aria-label="Delete medical camp"
                         >
@@ -1720,7 +1919,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                           onClick={() =>
                             setExpandedCampIds((prev) => ({ ...prev, [camp.camp_id]: !expanded }))
                           }
-                          className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                          className="p-2 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-stone-100 cursor-pointer"
                           aria-label={expanded ? 'Collapse camp' : 'Expand camp'}
                         >
                           {expanded ? (
@@ -1733,13 +1932,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                     </div>
 
                     {expanded && (
-                      <div className="border-t border-slate-100 bg-slate-50/50 px-3.5 py-3 sm:px-4 space-y-2.5">
+                      <div className="border-t border-stone-100 bg-stone-50/50 px-3.5 py-3 sm:px-4 space-y-2.5">
                         {allScreenings.length > 0 && (
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-slate-500">
+                            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-zinc-500">
                               Student Screenings ({visibleScreenings.length})
                             </span>
-                            <div className="inline-flex p-0.5 rounded-lg bg-slate-200/70">
+                            <div className="inline-flex p-0.5 rounded-lg bg-stone-200/70">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1747,8 +1946,8 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                 }
                                 className={`px-2.5 py-1 rounded-md text-[11.5px] font-semibold cursor-pointer ${
                                   !referralOnly
-                                    ? 'bg-white text-slate-900 shadow-2xs'
-                                    : 'text-slate-600'
+                                    ? 'bg-white text-zinc-900 shadow-2xs'
+                                    : 'text-zinc-600'
                                 }`}
                               >
                                 All ({allScreenings.length})
@@ -1761,7 +1960,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                 className={`px-2.5 py-1 rounded-md text-[11.5px] font-semibold cursor-pointer ${
                                   referralOnly
                                     ? 'bg-white text-rose-700 shadow-2xs'
-                                    : 'text-slate-600'
+                                    : 'text-zinc-600'
                                 }`}
                               >
                                 Referrals ({referralCount})
@@ -1771,7 +1970,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                         )}
 
                         {visibleScreenings.length === 0 ? (
-                          <div className="py-4 text-center text-[12.5px] text-slate-500">
+                          <div className="py-4 text-center text-[12.5px] text-zinc-500">
                             {allScreenings.length === 0 ? (
                               <>
                                 No student screenings logged for this camp yet. Tap{' '}
@@ -1798,14 +1997,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                               return (
                                 <div
                                   key={sc.screening_id}
-                                  className="bg-white rounded-xl border border-slate-200/80 p-3 flex items-start justify-between gap-2.5"
+                                  className="bg-white rounded-xl border border-stone-200/80 p-3 flex items-start justify-between gap-2.5"
                                 >
                                   <div className="min-w-0 flex-1 space-y-1">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="text-[13.5px] font-semibold text-slate-900">
+                                      <span className="text-[13.5px] font-semibold text-zinc-900">
                                         {name}
                                       </span>
-                                      <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                                      <span className="text-[11px] tabular-nums text-zinc-500">
                                         {sec} · #{roll}
                                       </span>
                                       {sc.referral_needed ? (
@@ -1818,16 +2017,16 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                         </span>
                                       )}
                                     </div>
-                                    <div className="text-[12.5px] text-slate-800">{sc.findings}</div>
+                                    <div className="text-[12.5px] text-zinc-800">{sc.findings}</div>
                                     {sc.notes && (
-                                      <div className="text-[11.5px] text-slate-500">Note: {sc.notes}</div>
+                                      <div className="text-[11.5px] text-zinc-500">Note: {sc.notes}</div>
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button
                                       type="button"
                                       onClick={() => openEditScreening(sc)}
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 hover:bg-stone-100 cursor-pointer"
                                       aria-label="Edit screening"
                                     >
                                       <Pencil className="w-3.5 h-3.5" />
@@ -1841,7 +2040,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                                           label: `${name} — ${sc.findings}`,
                                         })
                                       }
-                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                                       aria-label="Delete screening"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
@@ -1917,7 +2116,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
         <form onSubmit={handleSaveDocSession} className="space-y-3.5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Visit Date *
               </label>
               <input
@@ -1925,11 +2124,11 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={docVisitDate}
                 onChange={(e) => setDocVisitDate(e.target.value)}
                 required
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] font-mono text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] font-mono text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Session Time
               </label>
               <input
@@ -1937,14 +2136,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={docSessionTime}
                 onChange={(e) => setDocSessionTime(e.target.value)}
                 placeholder="e.g. 10:00 AM – 12:30 PM"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Doctor Name *
               </label>
               <input
@@ -1953,11 +2152,11 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 onChange={(e) => setDocName(e.target.value)}
                 required
                 placeholder="e.g. Dr. Rajesh Sharma"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Specialization
               </label>
               <input
@@ -1965,13 +2164,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={docSpec}
                 onChange={(e) => setDocSpec(e.target.value)}
                 placeholder="e.g. Pediatrician / General Physician"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Campus / Session Notes
             </label>
             <textarea
@@ -1979,15 +2178,15 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={docNotes}
               onChange={(e) => setDocNotes(e.target.value)}
               placeholder="Optional summary of the doctor's weekly visit..."
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600 resize-none"
+              className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600 resize-none"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
             <button
               type="button"
               onClick={() => setDocSessionModalOpen(false)}
-              className="h-10 px-4 rounded-xl border border-slate-200 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              className="h-10 px-4 rounded-xl border border-stone-200 text-[13px] font-semibold text-zinc-600 hover:bg-stone-50 cursor-pointer"
             >
               Cancel
             </button>
@@ -2020,7 +2219,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
           />
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Complaint / Reason *
             </label>
             <input
@@ -2029,12 +2228,12 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               onChange={(e) => setDocCaseComplaint(e.target.value)}
               required
               placeholder="e.g. Persistent dry cough for 4 days"
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+              className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Doctor Findings
             </label>
             <input
@@ -2042,12 +2241,12 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={docCaseFindings}
               onChange={(e) => setDocCaseFindings(e.target.value)}
               placeholder="e.g. Clear chest, mild throat congestion, afebrile"
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+              className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Prescription / Advice
             </label>
             <textarea
@@ -2055,7 +2254,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={docCaseAdvice}
               onChange={(e) => setDocCaseAdvice(e.target.value)}
               placeholder="e.g. Warm saline gargles twice daily; syrup 5ml BD for 3 days"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600 resize-none"
+              className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600 resize-none"
             />
           </div>
 
@@ -2072,7 +2271,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
           </label>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Additional Notes
             </label>
             <input
@@ -2080,15 +2279,15 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={docCaseNotes}
               onChange={(e) => setDocCaseNotes(e.target.value)}
               placeholder="Optional nurse notes..."
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+              className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
             <button
               type="button"
               onClick={() => setDocCaseModalOpen(false)}
-              className="h-10 px-4 rounded-xl border border-slate-200 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              className="h-10 px-4 rounded-xl border border-stone-200 text-[13px] font-semibold text-zinc-600 hover:bg-stone-50 cursor-pointer"
             >
               Cancel
             </button>
@@ -2123,7 +2322,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Hospital / Clinic *
               </label>
               <input
@@ -2132,11 +2331,11 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 onChange={(e) => setOpdHospital(e.target.value)}
                 required
                 placeholder="e.g. District Civil Hospital"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Referral Date & Time *
               </label>
               <input
@@ -2144,14 +2343,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={opdDateTime}
                 onChange={(e) => setOpdDateTime(e.target.value)}
                 required
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13px] font-mono text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13px] font-mono text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Reason for Referral *
               </label>
               <input
@@ -2160,11 +2359,11 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 onChange={(e) => setOpdReason(e.target.value)}
                 required
                 placeholder="e.g. Ankle X-ray after sports injury"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 External Doctor
               </label>
               <input
@@ -2172,14 +2371,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={opdDoctor}
                 onChange={(e) => setOpdDoctor(e.target.value)}
                 placeholder="e.g. Dr. Mehta (Orthopedics)"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Escort / Parent
               </label>
               <input
@@ -2187,11 +2386,11 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={opdEscort}
                 onChange={(e) => setOpdEscort(e.target.value)}
                 placeholder="e.g. Hostel Warden"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Status
               </label>
               <CustomSelect
@@ -2201,20 +2400,20 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Follow-up Date
               </label>
               <input
                 type="date"
                 value={opdFollowUpDate}
                 onChange={(e) => setOpdFollowUpDate(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13px] font-mono text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13px] font-mono text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Diagnosis & Advice
             </label>
             <textarea
@@ -2222,13 +2421,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={opdDiagnosis}
               onChange={(e) => setOpdDiagnosis(e.target.value)}
               placeholder="Hospital findings, X-ray result, prescribed medicines, or rest days..."
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600 resize-none"
+              className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600 resize-none"
             />
           </div>
 
           {/* OPD Slip Photo Upload */}
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               OPD Slip / Prescription Photo (Saved to Google Drive)
             </label>
             <input
@@ -2240,19 +2439,19 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               className="hidden"
             />
             {opdImageDataUrl || isSafeImageSrc(editingOpd?.image_url) ? (
-              <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-slate-200 bg-slate-50">
+              <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-stone-200 bg-stone-50">
                 <div className="flex items-center gap-3 min-w-0">
                   <img
                     src={opdImageDataUrl || editingOpd?.image_url}
                     alt="OPD slip preview"
-                    className="w-14 h-14 rounded-lg object-cover border border-slate-200 bg-white shrink-0"
+                    className="w-14 h-14 rounded-lg object-cover border border-stone-200 bg-white shrink-0"
                   />
                   <div className="min-w-0">
-                    <div className="text-[12.5px] font-semibold text-slate-800 flex items-center gap-1">
+                    <div className="text-[12.5px] font-semibold text-zinc-800 flex items-center gap-1">
                       <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <span className="truncate">OPD slip ready</span>
                     </div>
-                    <div className="text-[11.5px] text-slate-500">
+                    <div className="text-[11.5px] text-zinc-500">
                       {opdImageSizeKb ? `Compressed ~${opdImageSizeKb} KB` : 'Existing slip attached'}
                     </div>
                   </div>
@@ -2261,7 +2460,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                   <button
                     type="button"
                     onClick={() => opdFileInputRef.current?.click()}
-                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-200 text-[12px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    className="h-8 px-2.5 rounded-lg bg-white border border-stone-200 text-[12px] font-semibold text-zinc-700 hover:bg-stone-100 cursor-pointer"
                   >
                     Replace
                   </button>
@@ -2272,7 +2471,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                         setOpdImageDataUrl(undefined);
                         setOpdImageSizeKb(null);
                       }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                       aria-label="Remove slip photo"
                     >
                       <X className="w-4 h-4" />
@@ -2285,7 +2484,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 type="button"
                 onClick={() => opdFileInputRef.current?.click()}
                 disabled={opdImageCompressing}
-                className="w-full py-3.5 px-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 hover:bg-teal-50/40 hover:border-teal-400 transition-colors flex items-center justify-center gap-2 text-[13px] font-semibold text-slate-700 cursor-pointer"
+                className="w-full py-3.5 px-4 rounded-xl border border-dashed border-stone-300 bg-stone-50/70 hover:bg-teal-50/40 hover:border-teal-400 transition-colors flex items-center justify-center gap-2 text-[13px] font-semibold text-zinc-700 cursor-pointer"
               >
                 <Camera className="w-4 h-4 text-teal-700" />
                 <span>
@@ -2298,7 +2497,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Notes
             </label>
             <input
@@ -2306,15 +2505,15 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={opdNotes}
               onChange={(e) => setOpdNotes(e.target.value)}
               placeholder="Optional transport or parent communication notes..."
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+              className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
             <button
               type="button"
               onClick={() => setOpdModalOpen(false)}
-              className="h-10 px-4 rounded-xl border border-slate-200 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              className="h-10 px-4 rounded-xl border border-stone-200 text-[13px] font-semibold text-zinc-600 hover:bg-stone-50 cursor-pointer"
             >
               Cancel
             </button>
@@ -2349,7 +2548,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
       >
         {lightboxOpd && (
           <div className="space-y-3">
-            <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-900/5 flex items-center justify-center max-h-[62vh]">
+            <div className="rounded-xl overflow-hidden border border-stone-200 bg-stone-900/5 flex items-center justify-center max-h-[62vh]">
               {isSafeImageSrc(lightboxOpd.image_data_url || lightboxOpd.image_url) ? (
                 <img
                   src={lightboxOpd.image_data_url || lightboxOpd.image_url}
@@ -2357,7 +2556,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                   className="max-h-[60vh] w-auto object-contain"
                 />
               ) : (
-                <div className="py-12 text-center text-slate-400 text-[13px] flex flex-col items-center gap-2">
+                <div className="py-12 text-center text-zinc-400 text-[13px] flex flex-col items-center gap-2">
                   <ImageIcon className="w-8 h-8" />
                   <span>Preview unavailable</span>
                 </div>
@@ -2375,14 +2574,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                   <span>Open in Google Drive</span>
                 </a>
               ) : (
-                <span className="text-[12px] text-slate-500">
+                <span className="text-[12px] text-zinc-500">
                   Saved locally (syncs to Drive when updated Apps Script is deployed)
                 </span>
               )}
               <button
                 type="button"
                 onClick={() => setLightboxOpd(null)}
-                className="h-9 px-4 rounded-xl bg-slate-900 text-white text-[13px] font-semibold cursor-pointer"
+                className="h-9 px-4 rounded-xl bg-stone-900 text-white text-[13px] font-semibold cursor-pointer"
               >
                 Close
               </button>
@@ -2402,7 +2601,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
       >
         <form onSubmit={handleSaveCamp} className="space-y-3.5">
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Camp Title *
             </label>
             <input
@@ -2411,13 +2610,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               onChange={(e) => setCampTitle(e.target.value)}
               required
               placeholder="e.g. Annual Dental & Eye Checkup Camp"
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+              className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Camp Type
               </label>
               <CustomSelect
@@ -2427,7 +2626,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Camp Date *
               </label>
               <input
@@ -2435,14 +2634,14 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={campDate}
                 onChange={(e) => setCampDate(e.target.value)}
                 required
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] font-mono text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] font-mono text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Organizer / Hospital Partner
               </label>
               <input
@@ -2450,11 +2649,11 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={campOrganizer}
                 onChange={(e) => setCampOrganizer(e.target.value)}
                 placeholder="e.g. Lions Club / Civil Health Team"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
                 Target Classes
               </label>
               <input
@@ -2462,13 +2661,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 value={campTargetClasses}
                 onChange={(e) => setCampTargetClasses(e.target.value)}
                 placeholder="e.g. All Classes or Sparkle, Twinkle"
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Visiting Doctor Team
             </label>
             <input
@@ -2476,12 +2675,12 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={campDoctorTeam}
               onChange={(e) => setCampDoctorTeam(e.target.value)}
               placeholder="e.g. Dr. Patel (Dentist), Dr. Verma (Optometrist)"
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+              className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Camp Summary
             </label>
             <textarea
@@ -2489,15 +2688,15 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={campSummary}
               onChange={(e) => setCampSummary(e.target.value)}
               placeholder="Overview, key observations, or follow-up plan..."
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600 resize-none"
+              className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600 resize-none"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
             <button
               type="button"
               onClick={() => setCampModalOpen(false)}
-              className="h-10 px-4 rounded-xl border border-slate-200 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              className="h-10 px-4 rounded-xl border border-stone-200 text-[13px] font-semibold text-zinc-600 hover:bg-stone-50 cursor-pointer"
             >
               Cancel
             </button>
@@ -2540,7 +2739,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
           />
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Screening Findings *
             </label>
             <textarea
@@ -2549,7 +2748,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               onChange={(e) => setScreeningFindings(e.target.value)}
               required
               placeholder="e.g. Vision 6/6 normal, or Mild myopia — advise optometrist check"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600 resize-none"
+              className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600 resize-none"
             />
           </div>
 
@@ -2566,7 +2765,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
           </label>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
               Notes
             </label>
             <input
@@ -2574,15 +2773,15 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               value={screeningNotes}
               onChange={(e) => setScreeningNotes(e.target.value)}
               placeholder="Optional notes..."
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-[13.5px] text-slate-900 focus:outline-none focus:border-teal-600"
+              className="w-full h-10 px-3 rounded-xl border border-stone-200 bg-white text-[13.5px] text-zinc-900 focus:outline-none focus:border-teal-600"
             />
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-stone-100">
             <button
               type="button"
               onClick={() => setScreeningModalOpen(false)}
-              className="h-10 px-3.5 rounded-xl border border-slate-200 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              className="h-10 px-3.5 rounded-xl border border-stone-200 text-[13px] font-semibold text-zinc-600 hover:bg-stone-50 cursor-pointer"
             >
               Close
             </button>
@@ -2629,7 +2828,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               <button
                 type="button"
                 onClick={() => setConfirmDelete(null)}
-                className="h-9 px-4 rounded-xl border border-slate-200 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                className="h-9 px-4 rounded-xl border border-stone-200 text-[13px] font-semibold text-zinc-600 hover:bg-stone-50 cursor-pointer"
               >
                 Cancel
               </button>

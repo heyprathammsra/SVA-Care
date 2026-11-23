@@ -38,6 +38,9 @@ import {
   normalizeTimeOnlyString,
   resolveVisitShiftPeriod,
   formatShiftPeriodLabel,
+  getStockStatus,
+  getExpiryStatus,
+  computeCommonIssues,
   DEFAULT_INFIRMARY_SETTINGS,
   PURGED_TEST_VISIT_IDS,
   PURGED_TEST_MEASUREMENT_IDS,
@@ -86,6 +89,7 @@ import {
 import {
   ProgramsWorkspaceView,
   type ProgramsActionResult,
+  type ProgramsTab,
 } from './components/ProgramsWorkspaceView';
 import { PrintableReport, type PrintReportConfig } from './components/PrintableReport';
 import { AuthScreen, type LoginSuccessPayload } from './components/AuthScreen';
@@ -122,6 +126,8 @@ const EMPTY_DB: NurseDatabase = {
   opdRecords: [],
   medicalCamps: [],
   campScreenings: [],
+  annualCheckups: [],
+  menstrualLogs: [],
   settings: DEFAULT_INFIRMARY_SETTINGS,
 };
 
@@ -224,6 +230,8 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
   const opdRecords = Array.isArray(inputDb.opdRecords) ? inputDb.opdRecords : [];
   const medicalCamps = Array.isArray(inputDb.medicalCamps) ? inputDb.medicalCamps : [];
   const campScreenings = Array.isArray(inputDb.campScreenings) ? inputDb.campScreenings : [];
+  const annualCheckups = Array.isArray(inputDb.annualCheckups) ? inputDb.annualCheckups : [];
+  const menstrualLogs = Array.isArray(inputDb.menstrualLogs) ? inputDb.menstrualLogs : [];
   const settings = inputDb.settings
     ? {
         school_hours_start:
@@ -252,6 +260,8 @@ function normalizeDatabaseSections(inputDb: NurseDatabase): NurseDatabase {
     opdRecords,
     medicalCamps,
     campScreenings,
+    annualCheckups,
+    menstrualLogs,
     settings,
   };
 }
@@ -278,11 +288,34 @@ export default function App() {
     if (hash === 'students') return 'students';
     if (hash === 'daily-log') return 'daily-log';
     if (hash === 'operations' || hash === 'inventory' || hash === 'bills') return 'operations';
+    if (
+      hash === 'programs' ||
+      hash === 'insights' ||
+      hash === 'checkups' ||
+      hash === 'menstrual'
+    ) {
+      return 'programs';
+    }
     if (hash === 'downloads' || hash === 'sheets-setup') return 'sheets-setup';
     if (hash === 'admin' || hash === 'admin-panel') return 'admin-panel';
     if (hash === 'new-visit' || hash === 'record') return 'new-visit';
     return 'home';
   });
+  const [programsTargetTab, setProgramsTargetTab] = useState<ProgramsTab>(() => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash === 'insights' || hash === 'checkups' || hash === 'menstrual') {
+      return hash;
+    }
+    return 'hub';
+  });
+  const [programsTargetNonce, setProgramsTargetNonce] = useState<number>(0);
+
+  const openProgramsTab = useCallback((tab: ProgramsTab = 'hub') => {
+    setProgramsTargetTab(tab);
+    setProgramsTargetNonce((n) => n + 1);
+    setActiveScreen('programs');
+  }, []);
+
   const [syncStatusMessage, setSyncStatusMessage] = useState<string | null>(null);
   const [saveErrorBanner, setSaveErrorBanner] = useState<string | null>(null);
   const [preselectedStudentIdForVisit, setPreselectedStudentIdForVisit] = useState<string>('');
@@ -300,6 +333,10 @@ export default function App() {
       else if (hash === 'daily-log') setActiveScreen('daily-log');
       else if (hash === 'operations' || hash === 'inventory' || hash === 'bills') {
         setActiveScreen('operations');
+      } else if (hash === 'programs') {
+        openProgramsTab('hub');
+      } else if (hash === 'insights' || hash === 'checkups' || hash === 'menstrual') {
+        openProgramsTab(hash);
       } else if (hash === 'downloads' || hash === 'sheets-setup') setActiveScreen('sheets-setup');
       else if (hash === 'admin' || hash === 'admin-panel') setActiveScreen('admin-panel');
       else if (hash === 'new-visit' || hash === 'record') setActiveScreen('new-visit');
@@ -307,7 +344,7 @@ export default function App() {
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [openProgramsTab]);
 
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const deferredHomeSearchQuery = useDeferredValue(homeSearchQuery);
@@ -740,36 +777,52 @@ export default function App() {
       visits: [newVisit, ...prev.visits],
     }));
 
-    // Sync to shared school server and apply server-returned db (with updated stock balances & shift)
-    void authFetch('/api/mutate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'recordVisit', visit: newVisit, deviceId }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          setSaveErrorBanner(`Could not sync visit record to the school server (HTTP ${res.status}).`);
-          return;
-        }
-        setSaveErrorBanner(null);
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          const data = (await res.json()) as Record<string, unknown>;
-          if (data.db) {
-            if (typeof data.updatedAt === 'string') {
-              lastServerUpdatedAtRef.current = data.updatedAt;
-            }
-            setDb(normalizeDatabaseSections(data.db as NurseDatabase));
-          }
-        }
-      })
-      .catch(() => {
-        setSaveErrorBanner(
-          'Network error while saving visit record. Please verify your connection before closing.'
-        );
+    // Sync to shared school server and await confirmation so stock/validation errors roll back cleanly
+    try {
+      const res = await authFetch('/api/mutate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recordVisit', visit: newVisit, deviceId }),
       });
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json')
+        ? ((await res.json()) as Record<string, unknown>)
+        : null;
 
-    return newVisit;
+      if (!res.ok) {
+        setDb((prev) => ({
+          ...prev,
+          visits: prev.visits.filter((v) => v.visit_id !== newVisit.visit_id),
+        }));
+        const errMsg =
+          (data && typeof data.message === 'string' && data.message) ||
+          `Could not save visit record (HTTP ${res.status}).`;
+        setSaveErrorBanner(errMsg);
+        throw new Error(errMsg);
+      }
+
+      setSaveErrorBanner(null);
+      if (data?.db) {
+        if (typeof data.updatedAt === 'string') {
+          lastServerUpdatedAtRef.current = data.updatedAt;
+        }
+        setDb(normalizeDatabaseSections(data.db as NurseDatabase));
+      }
+      return (data?.visit as VisitRecord) || newVisit;
+    } catch (err) {
+      setDb((prev) => ({
+        ...prev,
+        visits: prev.visits.filter((v) => v.visit_id !== newVisit.visit_id),
+      }));
+      if (err instanceof Error && err.message) {
+        setSaveErrorBanner(err.message);
+        throw err;
+      }
+      const netMsg =
+        'Network error while saving visit record. Please verify your connection before closing.';
+      setSaveErrorBanner(netMsg);
+      throw new Error(netMsg);
+    }
   };
 
   const handleCreateStudent = (
@@ -832,6 +885,9 @@ export default function App() {
         };
       }
       if (data.db) {
+        if (typeof data.updatedAt === 'string') {
+          lastServerUpdatedAtRef.current = data.updatedAt;
+        }
         setDb(normalizeDatabaseSections(data.db as NurseDatabase));
       }
       return { ok: true, message: successMessage };
@@ -1352,6 +1408,60 @@ export default function App() {
     return (db.dispatches || []).filter((d) => d.status === 'in_transit');
   }, [db.dispatches]);
 
+  const homeQuickSummary = useMemo(() => {
+    let schoolToday = 0;
+    let nightToday = 0;
+    for (const entry of todayEntries) {
+      const p = resolveVisitShiftPeriod(entry.visit, db.settings);
+      if (p === 'night') nightToday++;
+      else schoolToday++;
+    }
+
+    let lowStockCount = 0;
+    let expiringMedCount = 0;
+    for (const m of db.medicines || []) {
+      if (getStockStatus(m.current_stock, m.min_stock_alert) !== 'ok') lowStockCount++;
+      const exp = getExpiryStatus(m.expiry_date);
+      if (exp === 'expired' || exp === 'expiring_soon') expiringMedCount++;
+    }
+    for (const it of db.items || []) {
+      if (getStockStatus(it.current_stock, it.min_stock_alert) !== 'ok') lowStockCount++;
+    }
+
+    const common30d = computeCommonIssues({
+      students: db.students,
+      visits: db.visits,
+      doctorVisits: db.doctorVisits,
+      doctorVisitCases: db.doctorVisitCases,
+      opdRecords: db.opdRecords,
+      timeframe: '30d',
+      includePrograms: true,
+      referenceDate: todayDate,
+    });
+    const topIssue = common30d[0] || null;
+
+    return {
+      schoolToday,
+      nightToday,
+      lowStockCount,
+      expiringMedCount,
+      totalStockAlerts: lowStockCount + expiringMedCount,
+      topIssueLabel: topIssue ? topIssue.label.split(' / ')[0] : null,
+      topIssueCases: topIssue ? topIssue.totalCases : 0,
+    };
+  }, [
+    todayEntries,
+    db.settings,
+    db.medicines,
+    db.items,
+    db.students,
+    db.visits,
+    db.doctorVisits,
+    db.doctorVisitCases,
+    db.opdRecords,
+    todayDate,
+  ]);
+
   const latestMeasByStudentId = useMemo(() => {
     const map = new Map<string, MeasurementRecord>();
     const sorted = [...db.measurements].sort((a, b) => {
@@ -1443,6 +1553,49 @@ export default function App() {
     }
   };
 
+  // Desktop keyboard shortcuts: '/' focuses student search, 'n' opens Record Visit
+  useEffect(() => {
+    if (!currentUser || !authToken || currentUser.role === 'warden') return;
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (showIncomingDispatches || printReportConfig || document.querySelector('[role="dialog"]')) {
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) {
+        return;
+      }
+      if (e.key === '/') {
+        e.preventDefault();
+        if (activeScreen !== 'home') {
+          setActiveScreen('home');
+        }
+        requestAnimationFrame(() => {
+          const el = document.getElementById('home-student-search') as HTMLInputElement | null;
+          el?.focus();
+          el?.select();
+        });
+      } else if (e.key === 'n' || e.key === 'N') {
+        if (activeScreen !== 'new-visit') {
+          e.preventDefault();
+          startNewVisitForStudent(
+            activeScreen === 'students' && selectedProfileStudentId ? selectedProfileStudentId : ''
+          );
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [
+    currentUser,
+    authToken,
+    activeScreen,
+    selectedProfileStudentId,
+    showIncomingDispatches,
+    printReportConfig,
+  ]);
+
   // Authentication gate: strictly requires server-verified login on every reload or first visit
   if (!currentUser || !authToken) {
     return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
@@ -1506,39 +1659,25 @@ export default function App() {
           <span className="truncate">{SCHOOL_NAME}</span>
         </a>
 
-        {/* Zone 2: Navigation Links (clean single-line bar) */}
+        {/* Zone 2: Clean 5-Item Navigation Bar (mirrors mobile 1-to-1) */}
         <nav
           aria-label="Primary navigation"
-          className="flex items-center justify-center gap-5 text-sm font-medium text-zinc-500"
+          className="flex items-center justify-center gap-6 text-sm font-medium text-zinc-500"
         >
           <a
             href="#home"
             onClick={(e) => {
               e.preventDefault();
+              setSelectedProfileStudentId(null);
               setActiveScreen('home');
             }}
             className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
-              activeScreen === 'home'
+              effectiveScreen === 'home' || effectiveScreen === 'students'
                 ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
                 : ''
             }`}
           >
             Infirmary
-          </a>
-          <a
-            href="#students"
-            onClick={(e) => {
-              e.preventDefault();
-              setSelectedProfileStudentId(null);
-              setActiveScreen('students');
-            }}
-            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
-              activeScreen === 'students'
-                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                : ''
-            }`}
-          >
-            Students
           </a>
           <a
             href="#daily-log"
@@ -1572,7 +1711,7 @@ export default function App() {
             href="#programs"
             onClick={(e) => {
               e.preventDefault();
-              setActiveScreen('programs');
+              openProgramsTab('hub');
             }}
             className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
               effectiveScreen === 'programs'
@@ -1610,28 +1749,31 @@ export default function App() {
                   : ''
               }`}
             >
-              Downloads
+              Exports
             </a>
           )}
         </nav>
 
-        {/* Zone 3: Record Action + Lock Button */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          {/* Unobtrusive Warden Alert / Incoming Queue Pill */}
+        {/* Zone 3: Compact Passes Indicator + Primary Action + Quiet Lock */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setShowIncomingDispatches(true)}
-            className={`h-9 px-3 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs border cursor-pointer ${
+            aria-label="Incoming hostel passes"
+            title={
+              activeDispatches.length > 0
+                ? `${activeDispatches.length} incoming hostel pass(es)`
+                : 'Hostel passes (none waiting)'
+            }
+            className={`h-9 px-2.5 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 border cursor-pointer ${
               activeDispatches.length > 0
                 ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                : 'bg-white text-zinc-600 border-stone-200/90 hover:bg-stone-50'
+                : 'bg-white text-zinc-500 border-stone-200/90 hover:text-zinc-900 hover:bg-stone-50'
             }`}
-            title="Incoming passes from hostel warden"
           >
-            <Bell className={`w-3.5 h-3.5 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-400'}`} />
-            <span>Hostel Passes</span>
+            <Bell className={`w-4 h-4 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-400'}`} />
             {activeDispatches.length > 0 && (
-              <span className="w-4 h-4 flex items-center justify-center rounded-full bg-amber-600 text-white text-[10px] font-bold">
+              <span className="font-mono tabular-nums text-xs font-bold text-amber-900">
                 {activeDispatches.length}
               </span>
             )}
@@ -1655,11 +1797,11 @@ export default function App() {
           <button
             type="button"
             onClick={handleLogout}
+            aria-label="Lock infirmary terminal"
             title="Lock infirmary terminal"
-            className="h-9 px-2.5 text-xs font-medium text-zinc-600 bg-white border border-stone-200/90 rounded-xl hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition-colors flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer"
+            className="h-9 w-9 text-zinc-500 bg-white border border-stone-200/90 rounded-xl hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition-colors flex items-center justify-center shrink-0 cursor-pointer"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span className="font-medium">Lock</span>
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -1849,7 +1991,7 @@ export default function App() {
         )}
         {/* SCREEN 1: INFIRMARY WORKSPACE */}
         {effectiveScreen === 'home' && (
-          <div className="space-y-3.5 sm:space-y-6">
+          <div key="screen-home" className="view-enter-animate space-y-3.5 sm:space-y-6">
             {/* Desktop-only Workspace Title & Header (Preserved for PC) */}
             <div className="hidden sm:flex items-end justify-between gap-3">
               <div className="min-w-0">
@@ -1861,7 +2003,18 @@ export default function App() {
                 </h1>
               </div>
 
-              <div className="flex items-center gap-2.5 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedProfileStudentId(null);
+                    setActiveScreen('students');
+                  }}
+                  className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200/90 rounded-xl hover:bg-stone-50 active:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Student Directory</span>
+                </button>
                 <button
                   type="button"
                   onClick={() =>
@@ -1871,7 +2024,7 @@ export default function App() {
                       entries: todayEntries,
                     })
                   }
-                  className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200/90 rounded-xl hover:bg-stone-50 active:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs"
+                  className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200/90 rounded-xl hover:bg-stone-50 active:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5 text-zinc-500" />
                   <span>Print Today&apos;s Log ({todayEntries.length})</span>
@@ -1879,8 +2032,81 @@ export default function App() {
               </div>
             </div>
 
+            {/* Minimal 4-Column Summary Strip */}
+            <div className="hidden sm:grid grid-cols-4 bg-white/80 border border-stone-200/75 rounded-xl divide-x divide-stone-200/60">
+              <button
+                type="button"
+                onClick={() => setActiveScreen('daily-log')}
+                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0 first:rounded-l-xl"
+              >
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors truncate">
+                  Today&apos;s Visits
+                </span>
+                <span className="text-sm font-semibold tabular-nums text-zinc-900 shrink-0">
+                  {todayEntries.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveScreen('operations')}
+                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0"
+              >
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors truncate">
+                  Inventory
+                </span>
+                {homeQuickSummary.totalStockAlerts > 0 ? (
+                  <span className="text-xs font-semibold tabular-nums text-amber-700 shrink-0">
+                    {homeQuickSummary.totalStockAlerts}{' '}
+                    {homeQuickSummary.totalStockAlerts === 1 ? 'alert' : 'alerts'}
+                  </span>
+                ) : (db.medicines || []).length + (db.items || []).length === 0 ? (
+                  <span className="text-sm text-zinc-400 shrink-0">—</span>
+                ) : (
+                  <span className="text-xs font-semibold text-teal-800 shrink-0">Healthy</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowIncomingDispatches(true)}
+                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0"
+              >
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors truncate">
+                  Hostel Passes
+                </span>
+                <span
+                  className={`text-sm font-semibold tabular-nums shrink-0 ${
+                    activeDispatches.length > 0 ? 'text-amber-700' : 'text-zinc-900'
+                  }`}
+                >
+                  {activeDispatches.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openProgramsTab('insights')}
+                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0 last:rounded-r-xl"
+              >
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors shrink-0">
+                  Top Trend
+                </span>
+                <span className="flex items-baseline gap-1 min-w-0">
+                  <span className="text-xs font-semibold text-zinc-900 truncate">
+                    {homeQuickSummary.topIssueLabel || '—'}
+                  </span>
+                  {homeQuickSummary.topIssueCases > 0 && (
+                    <span className="text-[11px] tabular-nums text-zinc-400 shrink-0">
+                      ({homeQuickSummary.topIssueCases})
+                    </span>
+                  )}
+                </span>
+              </button>
+            </div>
+
             {/* Mobile-only Clinic Status Hub (<sm only): Clean Hero + 2-segment switcher */}
-            <div className="sm:hidden bg-gradient-to-br from-white to-stone-50 border border-stone-200/90 rounded-2xl p-3.5 shadow-2xs space-y-3">
+            <div className="sm:hidden bg-white border border-stone-200/80 rounded-2xl p-3.5 shadow-2xs space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <span className="text-[11px] font-semibold text-teal-700">
@@ -1962,11 +2188,11 @@ export default function App() {
 
             {/* 2-Column Split on Desktop (Aligned Height) | Instant Tab View on Mobile */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* LEFT COLUMN (7 COLS): CLASS 6 SPARKLE ROSTER WITH INSTANT SEARCH & FILTERS */}
+              {/* LEFT COLUMN (7 COLS): CLASS ROSTER WITH INSTANT SEARCH & FILTERS */}
               <section
                 className={`${
                   mobileHomeTab === 'roster' ? 'block' : 'hidden lg:flex'
-                } lg:col-span-7 lg:flex-col lg:h-[600px] bg-white border border-stone-200/90 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.03)] overflow-hidden`}
+                } lg:col-span-7 lg:flex-col lg:h-[600px] bg-white border border-stone-200/80 rounded-2xl shadow-2xs overflow-hidden`}
               >
                 {/* Search Input Bar */}
                 <div className="relative border-b border-stone-100 shrink-0">
@@ -1981,20 +2207,33 @@ export default function App() {
                       if (e.key === 'Enter' && homeFilteredStudents.length > 0) {
                         e.preventDefault();
                         openStudentProfile(homeFilteredStudents[0].student_id);
+                      } else if (e.key === 'Escape') {
+                        if (homeSearchQuery) {
+                          setHomeSearchQuery('');
+                        } else {
+                          (e.currentTarget as HTMLInputElement).blur();
+                        }
                       }
                     }}
                     placeholder="Search name, roll number, or class..."
-                    className="w-full h-11 sm:h-12 pl-9 sm:pl-11 pr-9 text-sm text-zinc-900 bg-transparent placeholder:text-zinc-400 focus:outline-none"
+                    className="w-full h-11 sm:h-12 pl-9 sm:pl-11 pr-11 text-sm text-zinc-900 bg-transparent placeholder:text-zinc-400 focus:outline-none"
                   />
-                  {homeSearchQuery && (
+                  {homeSearchQuery ? (
                     <button
                       type="button"
                       onClick={() => setHomeSearchQuery('')}
                       aria-label="Clear search"
-                      className="absolute right-3 top-3 p-1 text-zinc-400 hover:text-zinc-700"
+                      className="absolute right-3 top-3 p-1 text-zinc-400 hover:text-zinc-700 cursor-pointer"
                     >
                       <X className="w-4 h-4" />
                     </button>
+                  ) : (
+                    <kbd
+                      aria-hidden="true"
+                      className="hidden sm:inline-flex items-center justify-center absolute right-3.5 top-1/2 -translate-y-1/2 h-5 min-w-[20px] px-1.5 text-[11px] font-medium text-zinc-400 bg-stone-100/90 border border-stone-200/80 rounded pointer-events-none"
+                    >
+                      /
+                    </kbd>
                   )}
                 </div>
 
@@ -2052,8 +2291,8 @@ export default function App() {
                     </button>
                   </div>
 
-                  <span className="hidden sm:inline text-[11px] text-zinc-400 font-mono tabular-nums shrink-0">
-                    Showing {homeFilteredStudents.length} of {db.students.length}
+                  <span className="hidden sm:inline text-[11px] text-zinc-400 tabular-nums shrink-0">
+                    {homeFilteredStudents.length} of {db.students.length}
                   </span>
                 </div>
 
@@ -2176,7 +2415,7 @@ export default function App() {
               <section
                 className={`${
                   mobileHomeTab === 'visits' ? 'block' : 'hidden lg:flex'
-                } lg:col-span-5 lg:flex-col lg:h-[600px] bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.03)]`}
+                } lg:col-span-5 lg:flex-col lg:h-[600px] bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-2xs`}
               >
                 <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-stone-100 flex items-center justify-between gap-3 shrink-0">
                   <div>
@@ -2486,6 +2725,8 @@ export default function App() {
             onUpsertMenstrualLog={handleUpsertMenstrualLog}
             onDeleteMenstrualLog={handleDeleteMenstrualLog}
             onSelectStudent={(student) => openStudentProfile(student.student_id)}
+            initialTab={programsTargetTab}
+            initialTabNonce={programsTargetNonce}
           />
         )}
 
@@ -2647,7 +2888,7 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => setActiveScreen('programs')}
+              onClick={() => openProgramsTab('hub')}
               className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
                 effectiveScreen === 'programs'
                   ? 'text-teal-900 font-bold'

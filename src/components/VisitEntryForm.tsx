@@ -650,32 +650,37 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                   </button>
                 </div>
 
-                {/* Mobile Inline Clinical Summary Strip (visible on <lg so staff sees allergies above the fold) */}
-                <div className="lg:hidden">
-                  {selectedStudentConditions.length > 0 ? (
-                    <div className="p-2.5 bg-amber-50/90 border border-amber-200/80 rounded-xl text-xs text-amber-950 flex items-start gap-2">
-                      <HeartPulse className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <span className="font-semibold">Health Note: </span>
-                        <span>{selectedStudentConditions[0].condition_or_note}</span>
+                {/* Clinical Safety Alert: Always visible on desktop & mobile when student has active/monitoring health notes */}
+                {selectedStudentConditions.length > 0 ? (
+                  <div
+                    role="status"
+                    className="px-3.5 py-2.5 bg-amber-50/90 border border-amber-200/90 rounded-xl text-xs text-amber-950 flex items-start gap-2.5"
+                  >
+                    <HeartPulse className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="font-semibold text-amber-900">
+                        Active Health Alert{selectedStudentConditions.length > 1 ? `s (${selectedStudentConditions.length})` : ''}
                       </div>
+                      <p className="text-amber-950 leading-relaxed">
+                        {selectedStudentConditions.map((c) => c.condition_or_note).join(' · ')}
+                      </p>
                     </div>
-                  ) : (
-                    <div className="px-3 py-2 bg-stone-50 border border-stone-200/60 rounded-xl text-xs text-zinc-600 flex items-center justify-between gap-2">
-                      <span>
-                        No known allergies · {selectedStudentVisits.length} past{' '}
-                        {selectedStudentVisits.length === 1 ? 'visit' : 'visits'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onOpenStudentProfile(selectedStudent.student_id)}
-                        className="text-teal-700 font-semibold whitespace-nowrap"
-                      >
-                        Profile →
-                      </button>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="lg:hidden px-3 py-2 bg-stone-50 border border-stone-200/60 rounded-xl text-xs text-zinc-600 flex items-center justify-between gap-2">
+                    <span>
+                      No known allergies · {selectedStudentVisits.length} past{' '}
+                      {selectedStudentVisits.length === 1 ? 'visit' : 'visits'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onOpenStudentProfile(selectedStudent.student_id)}
+                      className="text-teal-700 font-semibold whitespace-nowrap"
+                    >
+                      Profile →
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div

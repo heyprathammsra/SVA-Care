@@ -101,13 +101,13 @@ export const DailyLogView: React.FC<DailyLogViewProps> = ({
           <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5">
             Daily Visit Log
           </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 mt-1">
-            <span data-testid="daily-log-count" className="font-mono font-semibold text-zinc-800">
+          <p className="text-xs sm:text-sm text-zinc-500 mt-1 tabular-nums">
+            <span data-testid="daily-log-count" className="font-semibold text-zinc-800">
               {dailyEntries.length}
             </span>{' '}
             {dailyEntries.length === 1 ? 'visit' : 'visits'} recorded on {selectedDate} ·{' '}
-            <span className="font-mono text-teal-700 font-medium">{shiftCounts.schoolHours}</span> School ·{' '}
-            <span className="font-mono text-indigo-700 font-medium">{shiftCounts.night}</span> Night
+            <span className="text-teal-700 font-semibold">{shiftCounts.schoolHours}</span> School ·{' '}
+            <span className="text-indigo-700 font-semibold">{shiftCounts.night}</span> Night
           </p>
         </div>
 

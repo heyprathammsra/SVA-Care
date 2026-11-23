@@ -563,8 +563,8 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                   These passes are live on the Nurse screen. Once the nurse admits the student, status updates to Arrived.
                 </p>
               </div>
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-                {activeDispatches.length} Active Pass{activeDispatches.length === 1 ? '' : 'es'}
+              <span className="text-xs font-semibold tabular-nums text-amber-800 shrink-0">
+                {activeDispatches.length} active {activeDispatches.length === 1 ? 'pass' : 'passes'}
               </span>
             </div>
 
@@ -581,13 +581,15 @@ export const WardenPortalView: React.FC<WardenPortalViewProps> = ({
                     className="p-4 bg-amber-50/40 border border-amber-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                   >
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-zinc-900">{d.student_name}</span>
-                        <span className="text-xs font-mono text-zinc-500">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="text-sm font-semibold text-zinc-900">{d.student_name}</span>
+                        <span className="text-zinc-300" aria-hidden="true">·</span>
+                        <span className="text-xs tabular-nums text-zinc-500">
                           Class {d.section} · Roll {d.roll_number}
                         </span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white animate-pulse">
-                          On the Way
+                        <span className="text-zinc-300" aria-hidden="true">·</span>
+                        <span className="text-xs font-semibold text-amber-700">
+                          On the way
                         </span>
                       </div>
                       <div className="text-xs text-zinc-700 mt-1">

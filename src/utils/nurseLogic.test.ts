@@ -2195,6 +2195,21 @@ test('Phase 3 Excel export includes Annual Checkups in All but strictly excludes
   assert.deepEqual(mnsSheetNames, ['Menstrual Log']);
 });
 
+test('normalizeIssueCategory maps legacy encrypted record placeholders to General / Unspecified', async () => {
+  const { normalizeIssueCategory } = await import('./nurseLogic.ts');
+
+  const res1 = normalizeIssueCategory('[Encrypted record — key mismatch or modified]');
+  assert.equal(res1.key, 'other');
+  assert.equal(res1.label, 'General / Unspecified');
+
+  const res2 = normalizeIssueCategory('  [encrypted record - cannot decrypt] ');
+  assert.equal(res2.key, 'other');
+  assert.equal(res2.label, 'General / Unspecified');
+
+  const fever = normalizeIssueCategory('High fever with chills');
+  assert.equal(fever.key, 'fever');
+});
+
 
 
 

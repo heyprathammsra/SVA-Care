@@ -2277,7 +2277,9 @@ const ISSUE_CATEGORY_RULES: Array<{ key: string; label: string; pattern: RegExp 
 
 export function normalizeIssueCategory(rawReason: string): { key: string; label: string } {
   const clean = String(rawReason || '').trim();
-  if (!clean) return { key: 'other', label: 'General / Unspecified' };
+  if (!clean || /^(?:\[encrypted\s+record\b|enc:v\d+:)/i.test(clean)) {
+    return { key: 'other', label: 'General / Unspecified' };
+  }
   for (const rule of ISSUE_CATEGORY_RULES) {
     if (rule.pattern.test(clean)) {
       return { key: rule.key, label: rule.label };
