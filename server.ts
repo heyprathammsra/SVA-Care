@@ -53,6 +53,10 @@ import {
   normalizeDatetimeString,
   normalizeDateOnlyString,
   normalizeTimeOnlyString,
+  normalizeDosageString,
+  normalizeSlashTextString,
+  isOrphanedEncryptedVisit,
+  isUnreadableEncryptedPlaceholder,
   normalizeHHMM,
   classifyVisitShift,
   resolveVisitShiftPeriod,
@@ -126,7 +130,12 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
   const seenVisitIds = new Set<string>();
   const visits: VisitRecord[] = [];
   for (const v of db.visits || []) {
-    if (!v.visit_id || PURGED_TEST_VISIT_IDS.has(v.visit_id) || seenVisitIds.has(v.visit_id)) {
+    if (
+      !v.visit_id ||
+      PURGED_TEST_VISIT_IDS.has(v.visit_id) ||
+      seenVisitIds.has(v.visit_id) ||
+      isOrphanedEncryptedVisit(v)
+    ) {
       continue;
     }
     seenVisitIds.add(v.visit_id);
@@ -163,6 +172,11 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
         },
         settingsForShift
       ),
+      reason: isUnreadableEncryptedPlaceholder(v.reason) ? 'Archived entry' : v.reason,
+      observations: isUnreadableEncryptedPlaceholder(v.observations) ? '' : v.observations,
+      action_taken: isUnreadableEncryptedPlaceholder(v.action_taken) ? '' : v.action_taken,
+      dosage: isUnreadableEncryptedPlaceholder(v.dosage) ? '' : normalizeDosageString(v.dosage),
+      notes: isUnreadableEncryptedPlaceholder(v.notes) ? '' : v.notes,
       administration_time: normalizeTimeOnlyString(v.administration_time),
     });
   }
@@ -1237,6 +1251,7 @@ async function startServer() {
           item_id: rawVisit.item_id ? String(rawVisit.item_id).trim() : undefined,
           item_name: rawVisit.item_name ? String(rawVisit.item_name).trim() : undefined,
           item_qty: itemQty > 0 ? itemQty : undefined,
+          dosage: normalizeDosageString(rawVisit.dosage),
           administration_time: normalizeTimeOnlyString(rawVisit.administration_time),
         };
         const exists = serverState.db.visits.some((v) => v.visit_id === visit.visit_id);
@@ -1328,16 +1343,27 @@ async function startServer() {
           broadcastStateUpdate(deviceId);
         }
 
+        // Prefix slash/hyphen/leading-zero text values with ' so Google Sheets stores them as literal Plain Text (never auto-parsed as Dates)
+        const protectSheetText = (val: string | undefined): string => {
+          const clean = String(val || '').trim();
+          if (!clean) return '';
+          if (/[/\-]/.test(clean) || /^0\d+$/.test(clean)) {
+            return `'${clean}`;
+          }
+          return clean;
+        };
+
         const sheetSynced = await forwardToAppsScript({
           action: 'createVisit',
           visit: {
             ...visit,
+            dosage: protectSheetText(visit.dosage),
             student_name: stuName,
             full_name: stuName,
             class: stuSec,
             section: stuSec,
-            roll_no: stuR,
-            roll_number: stuR,
+            roll_no: protectSheetText(stuR),
+            roll_number: protectSheetText(stuR),
           },
         });
         if (updatedMedForSheet) {
@@ -3063,8 +3089,8 @@ async function startServer() {
           height_cm: heightCm,
           weight_kg: weightKg,
           bmi,
-          vision_left: String(raw.vision_left || '').trim().slice(0, 30) || undefined,
-          vision_right: String(raw.vision_right || '').trim().slice(0, 30) || undefined,
+          vision_left: normalizeSlashTextString(raw.vision_left).slice(0, 30) || undefined,
+          vision_right: normalizeSlashTextString(raw.vision_right).slice(0, 30) || undefined,
           dental_status: String(raw.dental_status || '').trim().slice(0, 120) || undefined,
           ent_notes: String(raw.ent_notes || '').trim().slice(0, 160) || undefined,
           blood_group: String(raw.blood_group || '').trim().slice(0, 16) || undefined,
@@ -3081,9 +3107,17 @@ async function startServer() {
           : [checkupRecord, ...existingList];
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
+        const sheetSafeSlash = (val: string | undefined): string | undefined => {
+          if (!val) return undefined;
+          return /[/\-]/.test(val) ? `'${val}` : val;
+        };
         const sheetSynced = await forwardToAppsScript({
           action: 'upsertAnnualCheckup',
-          annualCheckup: checkupRecord,
+          annualCheckup: {
+            ...checkupRecord,
+            vision_left: sheetSafeSlash(checkupRecord.vision_left),
+            vision_right: sheetSafeSlash(checkupRecord.vision_right),
+          },
         });
         return res.json({
           status: 'ok',

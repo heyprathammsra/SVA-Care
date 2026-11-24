@@ -2210,6 +2210,84 @@ test('normalizeIssueCategory maps legacy encrypted record placeholders to Genera
   assert.equal(fever.key, 'fever');
 });
 
+test('normalizeDosageString & normalizeSlashTextString recover Sheets auto-parsed dates and strip orphaned encrypted visit stubs', async () => {
+  const {
+    normalizeDosageString,
+    normalizeSlashTextString,
+    formatMedicineDisplay,
+    normalizeSheetSyncPayload,
+  } = await import('./nurseLogic.ts');
+
+  assert.equal(
+    normalizeDosageString('Fri May 01 2026 00:00:00 GMT+0530 (インド標準時)'),
+    '1/5'
+  );
+  assert.equal(
+    normalizeDosageString('Sun Feb 01 2026 00:00:00 GMT+0530 (インド標準時)'),
+    '1/2'
+  );
+  assert.equal(normalizeDosageString("'1/2"), '1/2');
+  assert.equal(normalizeDosageString('25'), '25');
+  assert.equal(
+    normalizeSlashTextString('Sat Jun 06 2026 00:00:00 GMT+0530 (インド標準時)'),
+    '6/6'
+  );
+
+  // formatMedicineDisplay auto-recovers corrupted date dosages
+  const formatted = formatMedicineDisplay({
+    medicine_status: 'given',
+    medicine_name: 'T.MEFTAL SPSS',
+    dosage: 'Fri May 01 2026 00:00:00 GMT+0530 (インド標準時)',
+    dosage_unit: 'tablet',
+    route: 'Oral',
+    administration_time: '09:38 AM',
+  });
+  assert.equal(formatted, 'T.MEFTAL SPSS 1/5 tablet (Oral) at 09:38 AM');
+  assert.ok(!formatted.includes('GMT'));
+
+  // normalizeSheetSyncPayload cleans corrupted dosages and drops orphaned unreadable encrypted visit stubs
+  const currentDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+  };
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: sampleStudents,
+      visits: [
+        {
+          visit_id: 'VIS-2026-0031',
+          student_id: 'STU-2026-0001',
+          visit_datetime: '2026-11-20T08:26',
+          reason: '[Encrypted record — key mismatch or modified]',
+          action_taken: '[Encrypted record — key mismatch or modified]',
+          medicine_status: 'none',
+          medicine_name: 'None (No medicine given)',
+        },
+        {
+          visit_id: 'VIS-2026-0044',
+          student_id: 'STU-2026-0002',
+          visit_datetime: '2026-11-24T09:38',
+          reason: 'Stomach pain',
+          action_taken: 'Rest',
+          medicine_status: 'given',
+          medicine_name: 'T.MEFTAL SPSS',
+          dosage: 'Fri May 01 2026 00:00:00 GMT+0530 (インド標準時)',
+          dosage_unit: 'tablet',
+          route: 'Oral',
+        },
+      ],
+    },
+    currentDb,
+    '2026-11-24T10:00:00Z'
+  );
+
+  assert.equal(synced.visits.length, 1);
+  assert.equal(synced.visits[0].visit_id, 'VIS-2026-0044');
+  assert.equal(synced.visits[0].dosage, '1/5');
+});
+
 
 
 

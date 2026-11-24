@@ -630,12 +630,13 @@ export function formatMedicineDisplay(
     return 'No medicine given';
   }
   const baseName = rawName || 'Medicine given';
-  const dosePart = (visit.dosage || '').trim()
-    ? `${visit.dosage.trim()}${(visit.dosage_unit || '').trim() ? ' ' + visit.dosage_unit.trim() : ''}`
+  const cleanDose = normalizeDosageString(visit.dosage);
+  const dosePart = cleanDose
+    ? `${cleanDose}${(visit.dosage_unit || '').trim() ? ' ' + visit.dosage_unit.trim() : ''}`
     : '';
   const routePart = (visit.route || '').trim() ? `(${visit.route.trim()})` : '';
   const timePart = (visit.administration_time || '').trim()
-    ? `at ${visit.administration_time.trim()}`
+    ? `at ${normalizeTimeOnlyString(visit.administration_time)}`
     : '';
 
   return [baseName, dosePart, routePart, timePart].filter(Boolean).join(' ');
@@ -792,6 +793,93 @@ export function normalizeTimeOnlyString(raw: string): string {
       const h12 = h % 12 === 0 ? 12 : h % 12;
       return `${String(h12).padStart(2, '0')}:${mStr} ${period}`;
     }
+  }
+
+  return trimmed;
+}
+
+/**
+ * Detects undecryptable legacy AES placeholder strings or raw ciphertext prefixes.
+ */
+export function isUnreadableEncryptedPlaceholder(raw: unknown): boolean {
+  const clean = String(raw || '').trim();
+  if (!clean) return false;
+  return /^(?:\[encrypted\s+(?:record|data)\b|enc:v\d+:)/i.test(clean);
+}
+
+/**
+ * Detects an orphaned legacy visit whose primary reason was permanently lost due to an old
+ * ephemeral container key and carries no readable clinical observations, medicine, or notes.
+ */
+export function isOrphanedEncryptedVisit(visit: Partial<VisitRecord>): boolean {
+  if (!isUnreadableEncryptedPlaceholder(visit.reason)) return false;
+  const obs = String(visit.observations || '').trim();
+  const notes = String(visit.notes || '').trim();
+  const med = String(visit.medicine_name || '').trim().toLowerCase();
+  const hasReadableObs = Boolean(obs) && !isUnreadableEncryptedPlaceholder(obs);
+  const hasReadableNotes = Boolean(notes) && !isUnreadableEncryptedPlaceholder(notes);
+  const hasGivenMed =
+    visit.medicine_status === 'given' &&
+    Boolean(med) &&
+    med !== 'none (no medicine given)' &&
+    med !== 'no medicine given' &&
+    med !== 'none' &&
+    !isUnreadableEncryptedPlaceholder(med);
+  return !hasReadableObs && !hasReadableNotes && !hasGivenMed;
+}
+
+function extractCorruptedSheetMonthDay(trimmed: string): { month: number; day: number } | null {
+  const gsMatch = trimmed.match(
+    /^[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+\d{4}\s+00:00:00\s+GMT/i
+  );
+  if (gsMatch) {
+    const mStr = MONTH_MAP[gsMatch[1].toLowerCase()];
+    if (mStr) {
+      return { month: parseInt(mStr, 10), day: parseInt(gsMatch[2], 10) };
+    }
+  }
+  const isoMatch = trimmed.match(/^\d{4}-(\d{2})-(\d{2})T00:00:00(?:\.000)?Z?$/);
+  if (isoMatch) {
+    return { month: parseInt(isoMatch[1], 10), day: parseInt(isoMatch[2], 10) };
+  }
+  return null;
+}
+
+/**
+ * Recovers dosage strings that Google Sheets accidentally auto-parsed into Date objects
+ * (e.g. "1/2" -> "Sun Feb 01 2026 00:00:00 GMT+0530", "1/5" -> "Fri May 01 2026 ...").
+ * Also strips leading plain-text escape apostrophes.
+ */
+export function normalizeDosageString(raw: unknown): string {
+  const trimmed = String(raw ?? '').trim().replace(/^'+/, '').trim();
+  if (!trimmed) return '';
+
+  const md = extractCorruptedSheetMonthDay(trimmed);
+  if (md) {
+    const { month, day } = md;
+    if ((month === 1 && day === 2) || (month === 2 && day === 1)) return '1/2';
+    if ((month === 1 && day === 4) || (month === 4 && day === 1)) return '1/4';
+    if ((month === 3 && day === 4) || (month === 4 && day === 3)) return '3/4';
+    if ((month === 1 && day === 3) || (month === 3 && day === 1)) return '1/3';
+    if ((month === 2 && day === 3) || (month === 3 && day === 2)) return '2/3';
+    // Fallback to day/month fraction (e.g. India DD/MM: May 01 -> 1/5)
+    return `${day}/${month}`;
+  }
+
+  return trimmed;
+}
+
+/**
+ * Recovers slash-formatted clinical strings like vision ("6/6", "6/9") that Google Sheets
+ * may auto-convert into a Date object, and strips any leading plain-text apostrophe.
+ */
+export function normalizeSlashTextString(raw: unknown): string {
+  const trimmed = String(raw ?? '').trim().replace(/^'+/, '').trim();
+  if (!trimmed) return '';
+
+  const md = extractCorruptedSheetMonthDay(trimmed);
+  if (md) {
+    return `${md.month}/${md.day}`;
   }
 
   return trimmed;
@@ -1471,6 +1559,24 @@ export function normalizeSheetSyncPayload(
     const medQtyNum = Number(row?.medicine_qty);
     const itemQtyNum = Number(row?.item_qty);
 
+    const cleanReason = String(row?.reason || '').trim();
+    const cleanObs = String(row?.observations || '').trim();
+    const cleanAction = String(row?.action_taken || '').trim();
+    const cleanNotes = String(row?.notes || '').trim();
+
+    if (
+      isOrphanedEncryptedVisit({
+        reason: cleanReason,
+        observations: cleanObs,
+        action_taken: cleanAction,
+        medicine_status: medStatus,
+        medicine_name: medName,
+        notes: cleanNotes,
+      })
+    ) {
+      return;
+    }
+
     normalizedRemoteVisits.push({
       visit_id: visitId,
       student_id: studentId,
@@ -1482,21 +1588,23 @@ export function normalizeSheetSyncPayload(
       visit_datetime: normalizedVisitDt,
       shift_period: shiftPeriod,
       shift_overridden: rawShiftOverridden,
-      reason: String(row?.reason || '').trim(),
-      observations: String(row?.observations || '').trim(),
-      action_taken: String(row?.action_taken || '').trim(),
+      reason: isUnreadableEncryptedPlaceholder(cleanReason) ? 'Archived entry' : cleanReason,
+      observations: isUnreadableEncryptedPlaceholder(cleanObs) ? '' : cleanObs,
+      action_taken: isUnreadableEncryptedPlaceholder(cleanAction) ? '' : cleanAction,
       medicine_status: medStatus,
-      medicine_name: medName || (medStatus === 'none' ? 'None (No medicine given)' : ''),
+      medicine_name: isUnreadableEncryptedPlaceholder(medName)
+        ? ''
+        : medName || (medStatus === 'none' ? 'None (No medicine given)' : ''),
       medicine_id: String(row?.medicine_id || '').trim() || undefined,
       medicine_qty: !Number.isNaN(medQtyNum) && medQtyNum > 0 ? medQtyNum : undefined,
       item_id: String(row?.item_id || '').trim() || undefined,
       item_name: String(row?.item_name || '').trim() || undefined,
       item_qty: !Number.isNaN(itemQtyNum) && itemQtyNum > 0 ? itemQtyNum : undefined,
-      dosage: String(row?.dosage || '').trim(),
+      dosage: isUnreadableEncryptedPlaceholder(row?.dosage) ? '' : normalizeDosageString(row?.dosage),
       dosage_unit: String(row?.dosage_unit || '').trim(),
       route: String(row?.route || '').trim(),
       administration_time: normalizeTimeOnlyString(String(row?.administration_time || '')),
-      notes: String(row?.notes || '').trim(),
+      notes: isUnreadableEncryptedPlaceholder(cleanNotes) ? '' : cleanNotes,
       recorded_by: String(row?.recorded_by || '').trim() || 'Staff In-Charge',
       created_at: String(row?.created_at || '').trim() || nowIso,
     });
@@ -1505,7 +1613,12 @@ export function normalizeSheetSyncPayload(
   const seenLocalVisitIds = new Set<string>();
   let finalVisits: VisitRecord[] = currentDb.visits
     .filter((v) => {
-      if (!v.visit_id || PURGED_TEST_VISIT_IDS.has(v.visit_id) || seenLocalVisitIds.has(v.visit_id)) {
+      if (
+        !v.visit_id ||
+        PURGED_TEST_VISIT_IDS.has(v.visit_id) ||
+        seenLocalVisitIds.has(v.visit_id) ||
+        isOrphanedEncryptedVisit(v)
+      ) {
         return false;
       }
       seenLocalVisitIds.add(v.visit_id);
@@ -1525,6 +1638,7 @@ export function normalizeSheetSyncPayload(
         roll_number: stuR,
         roll_no: stuR,
         visit_datetime: normalizeDatetimeString(v.visit_datetime, nowIso.slice(0, 16)),
+        dosage: isUnreadableEncryptedPlaceholder(v.dosage) ? '' : normalizeDosageString(v.dosage),
         administration_time: normalizeTimeOnlyString(v.administration_time),
       };
     });
@@ -2079,8 +2193,8 @@ export function normalizeSheetSyncPayload(
       height_cm: heightCm,
       weight_kg: weightKg,
       bmi,
-      vision_left: String(row?.vision_left || '').trim() || undefined,
-      vision_right: String(row?.vision_right || '').trim() || undefined,
+      vision_left: normalizeSlashTextString(row?.vision_left) || undefined,
+      vision_right: normalizeSlashTextString(row?.vision_right) || undefined,
       dental_status: String(row?.dental_status || '').trim() || undefined,
       ent_notes: String(row?.ent_notes || '').trim() || undefined,
       blood_group: String(row?.blood_group || '').trim() || undefined,
@@ -2234,7 +2348,7 @@ export function generateVisitsCSV(
           ? 'No Medicine'
           : 'Not Recorded',
       v.medicine_name,
-      v.dosage ? `${v.dosage} ${v.dosage_unit || ''}`.trim() : '',
+      normalizeDosageString(v.dosage) ? `${normalizeDosageString(v.dosage)} ${v.dosage_unit || ''}`.trim() : '',
       v.route,
       v.administration_time,
       itemUsed,

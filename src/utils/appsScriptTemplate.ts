@@ -1109,6 +1109,28 @@ function doPost(e) {
   }
 }
 
+function protectSheetTextCell(key, val) {
+  if (val === undefined || val === null) return '';
+  if (typeof val !== 'string') return val;
+  const trimmed = val.trim();
+  if (!trimmed || trimmed.charAt(0) === "'") return val;
+  const plainTextKeys = {
+    dosage: true,
+    roll_no: true,
+    roll_number: true,
+    roll: true,
+    vision_left: true,
+    vision_right: true,
+    blood_pressure: true,
+    batch_number: true,
+    administration_time: true
+  };
+  if (plainTextKeys[key] && (/[\/\-]/.test(trimmed) || /^0\d+$/.test(trimmed))) {
+    return "'" + trimmed;
+  }
+  return val;
+}
+
 function batchAppendUniqueRows(tabName, idField, records) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(tabName);
@@ -1125,8 +1147,8 @@ function batchAppendUniqueRows(tabName, idField, records) {
       const row = actualHeaders.map(function(colHeader) {
         const rawKey = String(colHeader || '').trim();
         const key = rawKey.toLowerCase().replace(/[\s._-]+/g, '_');
-        if (rec[rawKey] !== undefined && rec[rawKey] !== null) return rec[rawKey];
-        if (rec[key] !== undefined && rec[key] !== null) return rec[key];
+        if (rec[rawKey] !== undefined && rec[rawKey] !== null) return protectSheetTextCell(key, rec[rawKey]);
+        if (rec[key] !== undefined && rec[key] !== null) return protectSheetTextCell(key, rec[key]);
         if (key === 'student_name' || key === 'full_name' || key === 'name') {
           return rec.student_name || rec.full_name || rec.name || '';
         }
@@ -1134,7 +1156,7 @@ function batchAppendUniqueRows(tabName, idField, records) {
           return rec.class || rec.section || '';
         }
         if (key === 'roll_no' || key === 'roll_number' || key === 'roll') {
-          return rec.roll_no || rec.roll_number || '';
+          return protectSheetTextCell(key, rec.roll_no || rec.roll_number || '');
         }
         return '';
       });
@@ -1174,10 +1196,10 @@ function appendRowBySchema(tabName, recordObj) {
     const rawKey = String(colHeader || '').trim();
     const key = rawKey.toLowerCase().replace(/[\s._-]+/g, '_');
     if (recordObj[rawKey] !== undefined && recordObj[rawKey] !== null) {
-      return recordObj[rawKey];
+      return protectSheetTextCell(key, recordObj[rawKey]);
     }
     if (recordObj[key] !== undefined && recordObj[key] !== null) {
-      return recordObj[key];
+      return protectSheetTextCell(key, recordObj[key]);
     }
     if (key === 'student_name' || key === 'full_name' || key === 'name') {
       return recordObj.student_name || recordObj.full_name || recordObj.name || '';
@@ -1186,7 +1208,7 @@ function appendRowBySchema(tabName, recordObj) {
       return recordObj.class || recordObj.section || '';
     }
     if (key === 'roll_no' || key === 'roll_number' || key === 'roll') {
-      return recordObj.roll_no || recordObj.roll_number || '';
+      return protectSheetTextCell(key, recordObj.roll_no || recordObj.roll_number || '');
     }
     return '';
   });
