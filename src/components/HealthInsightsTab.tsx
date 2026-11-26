@@ -140,17 +140,17 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
   return (
     <div className="space-y-4">
       {/* Unified 3-Column Metric Strip */}
-      <div className="grid grid-cols-3 bg-white rounded-xl border border-stone-200/90 divide-x divide-stone-100 shadow-2xs">
+      <div className="grid grid-cols-3 bg-white rounded-xl border border-slate-200/90 divide-x divide-slate-100 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
         <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-          <div className="text-[11px] font-medium text-zinc-500 whitespace-nowrap">
+          <div className="text-[11px] font-medium text-slate-500 whitespace-nowrap">
             Clinical Cases
           </div>
-          <div className="mt-0.5 text-lg sm:text-xl font-semibold text-zinc-900 tabular-nums">
+          <div className="mt-0.5 text-lg sm:text-xl font-semibold text-slate-900 tabular-nums">
             {summary.totalCases}
           </div>
         </div>
         <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-          <div className="text-[11px] font-medium text-zinc-500 whitespace-nowrap">
+          <div className="text-[11px] font-medium text-slate-500 whitespace-nowrap">
             Repeat Visitors (2+)
           </div>
           <div className="mt-0.5 text-lg sm:text-xl font-semibold text-amber-700 tabular-nums">
@@ -158,7 +158,7 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
           </div>
         </div>
         <div className="px-3 py-2.5 sm:px-4 sm:py-3 min-w-0">
-          <div className="text-[11px] font-medium text-zinc-500 whitespace-nowrap">
+          <div className="text-[11px] font-medium text-slate-500 whitespace-nowrap">
             Top Common Issue
           </div>
           <div className="mt-0.5 text-sm sm:text-base font-semibold text-teal-800 truncate">
@@ -169,7 +169,7 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
 
       {/* Filter & Timeframe Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-1 p-1 bg-stone-100 rounded-xl border border-stone-200/70 overflow-x-auto">
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/70 overflow-x-auto">
           {TIMEFRAME_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -177,8 +177,8 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
               onClick={() => setTimeframe(opt.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 timeframe === opt.value
-                  ? 'bg-white text-zinc-900 shadow-2xs'
-                  : 'text-zinc-600 hover:text-zinc-900'
+                  ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               {opt.label}
@@ -188,13 +188,13 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[180px] sm:w-52 sm:flex-none">
-            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter student or illness..."
-              className="w-full h-9 pl-8.5 pr-3 rounded-xl border border-stone-200 bg-white text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-teal-600"
+              className="w-full h-9 pl-8.5 pr-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-teal-600"
             />
           </div>
 
@@ -216,7 +216,7 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
             className={`h-9 px-3 rounded-xl border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
               includePrograms
                 ? 'bg-teal-50 text-teal-900 border-teal-200'
-                : 'bg-white text-zinc-600 border-stone-200 hover:bg-stone-50'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
             {includePrograms ? 'Visits + Doctor + OPD' : 'Infirmary Visits Only'}
@@ -225,7 +225,7 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
       </div>
 
       {/* Mobile / Compact View Switcher */}
-      <div className="flex lg:hidden items-center gap-1 p-1 bg-stone-100 rounded-xl border border-stone-200/70">
+      <div className="flex lg:hidden items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/70">
         {(
           [
             ['both', 'Overview'],
@@ -239,8 +239,8 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
             onClick={() => setActiveView(val)}
             className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
               activeView === val
-                ? 'bg-white text-zinc-900 shadow-2xs'
-                : 'text-zinc-600 hover:text-zinc-900'
+                ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             {label}
@@ -252,21 +252,21 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* PANEL 1: FREQUENT VISITORS */}
         {(activeView === 'both' || activeView === 'visitors') && (
-          <section className="bg-white rounded-xl border border-stone-200/90 shadow-2xs overflow-hidden">
-            <div className="px-4 py-3.5 border-b border-stone-100 flex items-center justify-between gap-2">
+          <section className="bg-white rounded-xl border border-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.03)] overflow-hidden">
+            <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Users className="w-4 h-4 text-teal-700 shrink-0" />
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-zinc-900 truncate">
+                  <h2 className="text-sm font-semibold text-slate-900 truncate">
                     Frequent Visitors
                   </h2>
-                  <p className="text-[11.5px] text-zinc-500">
+                  <p className="text-[11.5px] text-slate-500">
                     Students visiting the infirmary most often
                   </p>
                 </div>
               </div>
 
-              <div className="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200/60 shrink-0">
+              <div className="inline-flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200/60 shrink-0">
                 {[1, 2, 3].map((minCount) => (
                   <button
                     key={minCount}
@@ -274,8 +274,8 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                     onClick={() => setMinVisitsFilter(minCount)}
                     className={`px-2 py-1 text-[11px] font-medium rounded-md whitespace-nowrap cursor-pointer ${
                       minVisitsFilter === minCount
-                        ? 'bg-white text-zinc-900 shadow-2xs'
-                        : 'text-zinc-600 hover:text-zinc-900'
+                        ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
+                        : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     {minCount === 1 ? 'All (1+)' : `${minCount}+ visits`}
@@ -286,11 +286,11 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
 
             {frequentVisitors.length === 0 ? (
               <div className="px-5 py-10 text-center">
-                <TrendingUp className="w-7 h-7 text-zinc-300 mx-auto mb-2" />
-                <p className="text-sm font-medium text-zinc-700">
+                <TrendingUp className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-medium text-slate-700">
                   No students with {minVisitsFilter}+ visits in this period.
                 </p>
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   Try expanding the timeframe to All Time or switching threshold to All (1+).
                 </p>
                 {minVisitsFilter > 1 && allVisitorsInRange.length > 0 && (
@@ -304,41 +304,41 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                 )}
               </div>
             ) : (
-              <div className="divide-y divide-stone-100 max-h-[560px] overflow-y-auto">
+              <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
                 {frequentVisitors.map((item, idx) => (
                   <div
                     key={item.student.student_id}
-                    className="px-4 py-3 hover:bg-stone-50/70 transition-colors flex items-start justify-between gap-3"
+                    className="px-4 py-3 hover:bg-slate-50/70 transition-colors flex items-start justify-between gap-3"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs tabular-nums text-zinc-400 w-5 shrink-0">
+                        <span className="text-xs tabular-nums text-slate-400 w-5 shrink-0">
                           {String(idx + 1).padStart(2, '0')}.
                         </span>
-                        <span className="text-[13.5px] font-semibold text-zinc-900">
+                        <span className="text-[13.5px] font-semibold text-slate-900">
                           {item.student.full_name}
                         </span>
-                        <span className="text-xs text-zinc-500">
+                        <span className="text-xs text-slate-500">
                           {item.student.section} · Roll {item.student.roll_number}
                         </span>
                       </div>
 
-                      <div className="mt-1 pl-7 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600">
+                      <div className="mt-1 pl-7 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
                         <span
                           className={`font-semibold tabular-nums ${
                             item.totalVisits >= 4
                               ? 'text-rose-700'
                               : item.totalVisits >= 2
                                 ? 'text-amber-700'
-                                : 'text-zinc-700'
+                                : 'text-slate-700'
                           }`}
                         >
                           {item.totalVisits} {item.totalVisits === 1 ? 'visit' : 'visits'}
                         </span>
                         {(item.doctorCaseCount > 0 || item.opdCount > 0) && (
                           <>
-                            <span aria-hidden="true" className="text-zinc-300">·</span>
-                            <span className="text-zinc-500">
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="text-slate-500">
                               {[
                                 item.visitCount > 0 ? `${item.visitCount} infirmary` : '',
                                 item.doctorCaseCount > 0 ? `${item.doctorCaseCount} doctor` : '',
@@ -349,14 +349,14 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                             </span>
                           </>
                         )}
-                        <span aria-hidden="true" className="text-zinc-300">·</span>
-                        <span className="text-zinc-500">
+                        <span aria-hidden="true" className="text-slate-300">·</span>
+                        <span className="text-slate-500">
                           Last: {formatShortDate(item.lastVisitDate)}
                         </span>
                       </div>
 
                       {item.topReasons.length > 0 && (
-                        <div className="mt-1 pl-7 text-xs text-zinc-500">
+                        <div className="mt-1 pl-7 text-xs text-slate-500">
                           Recurring:{' '}
                           {item.topReasons
                             .map((r) => `${r.label.split(' / ')[0]} (${r.count})`)
@@ -384,36 +384,36 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
 
         {/* PANEL 2: COMMON ISSUES / ILLNESSES */}
         {(activeView === 'both' || activeView === 'issues') && (
-          <section className="bg-white rounded-xl border border-stone-200/90 shadow-2xs overflow-hidden">
-            <div className="px-4 py-3.5 border-b border-stone-100 flex items-center justify-between gap-2">
+          <section className="bg-white rounded-xl border border-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.03)] overflow-hidden">
+            <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <Activity className="w-4 h-4 text-teal-700 shrink-0" />
                 <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-zinc-900 truncate">
+                  <h2 className="text-sm font-semibold text-slate-900 truncate">
                     Common Issues &amp; Illnesses
                   </h2>
-                  <p className="text-[11.5px] text-zinc-500">
+                  <p className="text-[11.5px] text-slate-500">
                     Clustered symptoms &amp; class-wise spread to spot outbreaks early
                   </p>
                 </div>
               </div>
-              <span className="text-xs tabular-nums text-zinc-500 shrink-0">
+              <span className="text-xs tabular-nums text-slate-500 shrink-0">
                 {commonIssues.length} {commonIssues.length === 1 ? 'category' : 'categories'}
               </span>
             </div>
 
             {commonIssues.length === 0 ? (
               <div className="px-5 py-10 text-center">
-                <Activity className="w-7 h-7 text-zinc-300 mx-auto mb-2" />
-                <p className="text-sm font-medium text-zinc-700">
+                <Activity className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-medium text-slate-700">
                   No health complaints recorded in this timeframe.
                 </p>
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   Once student visits are logged, recurring complaints and classroom clusters appear here automatically.
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-stone-100 max-h-[560px] overflow-y-auto">
+              <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
                 {commonIssues.map((issue) => {
                   const isExpanded = expandedIssueKey === issue.issueKey;
                   const barPct = Math.max(8, Math.round((issue.totalCases / maxIssueCount) * 100));
@@ -428,12 +428,12 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                         onClick={() =>
                           setExpandedIssueKey(isExpanded ? null : issue.issueKey)
                         }
-                        className="w-full px-4 py-3.5 text-left hover:bg-stone-50/70 transition-colors cursor-pointer"
+                        className="w-full px-4 py-3.5 text-left hover:bg-slate-50/70 transition-colors cursor-pointer"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[13.5px] font-semibold text-zinc-900">
+                              <span className="text-[13.5px] font-semibold text-slate-900">
                                 {issue.label}
                               </span>
                               {hasClusterAlert && (
@@ -443,18 +443,18 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                               )}
                             </div>
 
-                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600">
-                              <span className="tabular-nums font-semibold text-zinc-900">
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600">
+                              <span className="tabular-nums font-semibold text-slate-900">
                                 {issue.totalCases} {issue.totalCases === 1 ? 'case' : 'cases'}
                               </span>
-                              <span aria-hidden="true" className="text-zinc-300">·</span>
+                              <span aria-hidden="true" className="text-slate-300">·</span>
                               <span className="tabular-nums">
                                 {issue.uniqueStudentCount}{' '}
                                 {issue.uniqueStudentCount === 1 ? 'student' : 'students'}
                               </span>
                               {issue.recent7dCount > 0 && (
                                 <>
-                                  <span aria-hidden="true" className="text-zinc-300">·</span>
+                                  <span aria-hidden="true" className="text-slate-300">·</span>
                                   <span className="text-teal-800 font-medium tabular-nums">
                                     {issue.recent7dCount} in last 7d
                                   </span>
@@ -463,7 +463,7 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                             </div>
 
                             {/* Proportional Frequency Bar */}
-                            <div className="mt-2 h-1.5 w-full rounded-full bg-stone-100 overflow-hidden">
+                            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${
                                   hasClusterAlert ? 'bg-amber-600' : 'bg-teal-700'
@@ -473,7 +473,7 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                             </div>
 
                             {/* Class-wise Spread */}
-                            <div className="mt-1.5 text-[11.5px] text-zinc-500">
+                            <div className="mt-1.5 text-[11.5px] text-slate-500">
                               Classes:{' '}
                               {issue.classBreakdown
                                 .slice(0, 5)
@@ -485,7 +485,7 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                             </div>
                           </div>
 
-                          <span className="text-zinc-400 mt-0.5 shrink-0">
+                          <span className="text-slate-400 mt-0.5 shrink-0">
                             {isExpanded ? (
                               <ChevronUp className="w-4 h-4" />
                             ) : (
@@ -497,11 +497,11 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
 
                       {/* Expandable Affected Students List */}
                       {isExpanded && (
-                        <div className="px-4 pb-3.5 pt-1 bg-stone-50/70 border-t border-stone-100 space-y-1.5">
-                          <div className="text-[11px] font-semibold text-zinc-500 py-1">
+                        <div className="px-4 pb-3.5 pt-1 bg-slate-50/70 border-t border-slate-100 space-y-1.5">
+                          <div className="text-[11px] font-semibold text-slate-500 py-1">
                             Affected Students ({issue.affectedStudents.length})
                           </div>
-                          <div className="divide-y divide-stone-200/60 bg-white rounded-lg border border-stone-200/80 overflow-hidden">
+                          <div className="divide-y divide-slate-200/60 bg-white rounded-lg border border-slate-200/80 overflow-hidden">
                             {issue.affectedStudents.map((entry) => (
                               <div
                                 key={entry.student.student_id}
@@ -509,15 +509,15 @@ export const HealthInsightsTab: React.FC<HealthInsightsTabProps> = ({
                               >
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-semibold text-zinc-900">
+                                    <span className="font-semibold text-slate-900">
                                       {entry.student.full_name}
                                     </span>
-                                    <span className="text-zinc-500">
+                                    <span className="text-slate-500">
                                       {entry.student.section} · Roll {entry.student.roll_number}
                                     </span>
                                   </div>
-                                  <div className="text-[11px] text-zinc-500 mt-0.5 truncate">
-                                    <span className="tabular-nums font-medium text-zinc-700">
+                                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                                    <span className="tabular-nums font-medium text-slate-700">
                                       {entry.count}×
                                     </span>{' '}
                                     · Last {formatShortDate(entry.lastDate)}

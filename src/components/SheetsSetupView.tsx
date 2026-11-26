@@ -24,24 +24,19 @@ import {
   Stethoscope,
   Building2,
   ClipboardCheck,
+  FileText,
+  History,
+  TrendingUp,
 } from 'lucide-react';
 import { GOOGLE_APPS_SCRIPT_CODE } from '../utils/appsScriptTemplate';
 import type { NurseDatabase } from '../utils/nurseLogic';
+import {
+  downloadSheetPdf,
+  type DownloadableExcelTab,
+  type DownloadableSheetTab,
+} from '../utils/pdfExport';
 
-export type DownloadableExcelTab =
-  | 'Students'
-  | 'Visits'
-  | 'Measurements'
-  | 'Health Profiles'
-  | 'Medicines'
-  | 'Items'
-  | 'Bills'
-  | 'Doctor Visits'
-  | 'External OPD'
-  | 'Medical Camps'
-  | 'Annual Checkups'
-  | 'Menstrual Log'
-  | 'All';
+export type { DownloadableExcelTab, DownloadableSheetTab };
 
 export interface SheetsActionResult {
   ok: boolean;
@@ -79,7 +74,8 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [isSavingUrl, setIsSavingUrl] = useState(false);
-  const [downloadingTab, setDownloadingTab] = useState<DownloadableExcelTab | null>(null);
+  const [downloadingExcelTab, setDownloadingExcelTab] = useState<DownloadableExcelTab | null>(null);
+  const [downloadingPdfTab, setDownloadingPdfTab] = useState<DownloadableSheetTab | null>(null);
   const [downloadFeedback, setDownloadFeedback] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -98,10 +94,11 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
   }, [appsScriptUrl]);
 
   const isCustomUrl = Boolean(isCustomAppsScriptUrl);
+  const isAnyDownloadBusy = downloadingExcelTab !== null || downloadingPdfTab !== null;
 
   const handleDownloadTabExcel = async (tab: DownloadableExcelTab) => {
-    if (!onDownloadExcelSheet || downloadingTab) return;
-    setDownloadingTab(tab);
+    if (!onDownloadExcelSheet || isAnyDownloadBusy) return;
+    setDownloadingExcelTab(tab);
     setDownloadFeedback(null);
     try {
       const res = await onDownloadExcelSheet(tab);
@@ -110,7 +107,22 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
         text: res.message,
       });
     } finally {
-      setDownloadingTab(null);
+      setDownloadingExcelTab(null);
+    }
+  };
+
+  const handleDownloadTabPdf = (tab: DownloadableSheetTab) => {
+    if (isAnyDownloadBusy) return;
+    setDownloadingPdfTab(tab);
+    setDownloadFeedback(null);
+    try {
+      const res = downloadSheetPdf(tab, db);
+      setDownloadFeedback({
+        type: res.ok ? 'success' : 'error',
+        text: res.message,
+      });
+    } finally {
+      setDownloadingPdfTab(null);
     }
   };
 
@@ -194,121 +206,129 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
   };
 
   const sheets: Array<{
-    tab: Exclude<DownloadableExcelTab, 'All'>;
-    filename: string;
+    tab: Exclude<DownloadableSheetTab, 'All'>;
+    title: string;
     description: string;
-    count: number;
-    unit: string;
+    countLabel: string;
+    supportsExcel: boolean;
     icon: React.ReactNode;
   }> = [
     {
       tab: 'Students',
-      filename: 'Students.xlsx',
-      description: 'Formatted student roster organized by class section, roll number, and active status.',
-      count: db.students.length,
-      unit: db.students.length === 1 ? 'student' : 'students',
+      title: 'Students Roster',
+      description: 'Formatted student roster organized by class section, roll number, GR number, and status.',
+      countLabel: `${db.students.length} ${db.students.length === 1 ? 'student' : 'students'}`,
+      supportsExcel: true,
       icon: <Users className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Visits',
-      filename: 'Visits.xlsx',
+      title: 'Infirmary Visits Register',
       description: 'Complete infirmary visit register with dates, symptoms, observations, care given, and medicines.',
-      count: db.visits.length,
-      unit: db.visits.length === 1 ? 'visit' : 'visits',
+      countLabel: `${db.visits.length} ${db.visits.length === 1 ? 'visit' : 'visits'}`,
+      supportsExcel: true,
       icon: <ClipboardList className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Measurements',
-      filename: 'Measurements.xlsx',
+      title: 'Height, Weight & BMI',
       description: 'Student height, weight, and auto-calculated BMI growth history across all classes.',
-      count: db.measurements.length,
-      unit: db.measurements.length === 1 ? 'record' : 'records',
+      countLabel: `${db.measurements.length} ${db.measurements.length === 1 ? 'record' : 'records'}`,
+      supportsExcel: true,
       icon: <Ruler className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Health Profiles',
-      filename: 'Health Profiles.xlsx',
+      title: 'Allergies & Health Profiles',
       description: 'Active and resolved allergies, chronic conditions, and medical notes linked to each student.',
-      count: db.healthProfiles.length,
-      unit: db.healthProfiles.length === 1 ? 'entry' : 'entries',
+      countLabel: `${db.healthProfiles.length} ${db.healthProfiles.length === 1 ? 'entry' : 'entries'}`,
+      supportsExcel: true,
       icon: <HeartPulse className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Medicines',
-      filename: 'Medicines.xlsx',
+      title: 'Medicines Stock',
       description: 'Current infirmary medicines stock, batch numbers, expiry dates, and low-stock status.',
-      count: (db.medicines || []).length,
-      unit: (db.medicines || []).length === 1 ? 'medicine' : 'medicines',
+      countLabel: `${(db.medicines || []).length} ${(db.medicines || []).length === 1 ? 'medicine' : 'medicines'}`,
+      supportsExcel: true,
       icon: <Pill className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Items',
-      filename: 'Items.xlsx',
+      title: 'Supplies & Items Stock',
       description: 'Bandages, sterile gauze, cotton, hygiene supplies, and infirmary consumables stock.',
-      count: (db.items || []).length,
-      unit: (db.items || []).length === 1 ? 'item' : 'items',
+      countLabel: `${(db.items || []).length} ${(db.items || []).length === 1 ? 'item' : 'items'}`,
+      supportsExcel: true,
       icon: <Package className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Bills',
-      filename: 'Bills.xlsx',
+      title: 'Bills & Pharmacy Receipts',
       description: 'Infirmary purchase bills, pharmacy invoice numbers, amounts, notes, and Drive receipt links.',
-      count: (db.bills || []).length,
-      unit: (db.bills || []).length === 1 ? 'bill' : 'bills',
+      countLabel: `${(db.bills || []).length} ${(db.bills || []).length === 1 ? 'bill' : 'bills'}`,
+      supportsExcel: true,
       icon: <Receipt className="w-4 h-4 text-teal-700" />,
     },
     {
+      tab: 'Stock Ledger',
+      title: 'Stock Movement Ledger',
+      description: 'Full audit trail of medicine & item deductions, bill restocks, and manual stock adjustments.',
+      countLabel: `${(db.stockTransactions || []).length} ${(db.stockTransactions || []).length === 1 ? 'movement' : 'movements'}`,
+      supportsExcel: true,
+      icon: <History className="w-4 h-4 text-teal-700" />,
+    },
+    {
       tab: 'Doctor Visits',
-      filename: 'Doctor_Visits.xlsx',
+      title: 'Weekly Doctor Visits',
       description: 'Weekly visiting doctor sessions paired with student complaints, clinical findings, and prescriptions.',
-      count: (db.doctorVisitCases || []).length || (db.doctorVisits || []).length,
-      unit:
+      countLabel:
         (db.doctorVisitCases || []).length > 0
-          ? (db.doctorVisitCases || []).length === 1
-            ? 'consultation'
-            : 'consultations'
-          : (db.doctorVisits || []).length === 1
-            ? 'session'
-            : 'sessions',
+          ? `${(db.doctorVisitCases || []).length} ${(db.doctorVisitCases || []).length === 1 ? 'consultation' : 'consultations'}`
+          : `${(db.doctorVisits || []).length} ${(db.doctorVisits || []).length === 1 ? 'session' : 'sessions'}`,
+      supportsExcel: true,
       icon: <Stethoscope className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'External OPD',
-      filename: 'External_OPD.xlsx',
+      title: 'External OPD Referrals',
       description: 'Outside hospital/clinic referrals, escort details, follow-up dates, status, and OPD slip Drive links.',
-      count: (db.opdRecords || []).length,
-      unit: (db.opdRecords || []).length === 1 ? 'referral' : 'referrals',
+      countLabel: `${(db.opdRecords || []).length} ${(db.opdRecords || []).length === 1 ? 'referral' : 'referrals'}`,
+      supportsExcel: true,
       icon: <Building2 className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Medical Camps',
-      filename: 'Medical_Camps.xlsx',
+      title: 'Medical Camps & Screenings',
       description: 'School dental, eye, vaccination, and annual health camps with student screening findings and referrals.',
-      count: (db.campScreenings || []).length || (db.medicalCamps || []).length,
-      unit:
+      countLabel:
         (db.campScreenings || []).length > 0
-          ? (db.campScreenings || []).length === 1
-            ? 'screening'
-            : 'screenings'
-          : (db.medicalCamps || []).length === 1
-            ? 'camp'
-            : 'camps',
+          ? `${(db.campScreenings || []).length} ${(db.campScreenings || []).length === 1 ? 'screening' : 'screenings'}`
+          : `${(db.medicalCamps || []).length} ${(db.medicalCamps || []).length === 1 ? 'camp' : 'camps'}`,
+      supportsExcel: true,
       icon: <HeartPulse className="w-4 h-4 text-teal-700" />,
     },
     {
       tab: 'Annual Checkups',
-      filename: 'Annual_Checkups.xlsx',
+      title: 'Annual Health Checkups',
       description: 'Academic-year physical examination records including height, weight, BMI, vision, dental, ENT, and blood group.',
-      count: (db.annualCheckups || []).length,
-      unit: (db.annualCheckups || []).length === 1 ? 'checkup' : 'checkups',
+      countLabel: `${(db.annualCheckups || []).length} ${(db.annualCheckups || []).length === 1 ? 'checkup' : 'checkups'}`,
+      supportsExcel: true,
       icon: <ClipboardCheck className="w-4 h-4 text-teal-700" />,
     },
     {
+      tab: 'Health Insights',
+      title: 'Health Insights (30-Day Summary)',
+      description: 'Analytics PDF summarizing frequent campus visitors and common illness clusters by class.',
+      countLabel: 'Analytics PDF',
+      supportsExcel: false,
+      icon: <TrendingUp className="w-4 h-4 text-teal-700" />,
+    },
+    {
       tab: 'Menstrual Log',
-      filename: 'Menstrual_Log_Private.xlsx',
-      description: 'Confidential Nurse & Admin opt-in export only (permanently excluded from Download All Sheets).',
-      count: (db.menstrualLogs || []).length,
-      unit: (db.menstrualLogs || []).length === 1 ? 'entry' : 'entries',
+      title: 'Menstrual Log (Private)',
+      description: 'Confidential Nurse & Admin opt-in export only (permanently excluded from Download All exports).',
+      countLabel: `${(db.menstrualLogs || []).length} ${(db.menstrualLogs || []).length === 1 ? 'entry' : 'entries'}`,
+      supportsExcel: true,
       icon: <Lock className="w-4 h-4 text-amber-700" />,
     },
   ];
@@ -320,53 +340,73 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
           <button
             type="button"
             onClick={onBackToHome}
-            className="px-3.5 py-2 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            className="px-3.5 py-2 text-xs font-medium text-zinc-700 bg-white border border-zinc-200/90 rounded-xl hover:bg-zinc-50 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Infirmary Desk
+            Back to Desk
           </button>
         </div>
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 border-b border-stone-200/80 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight">
-            {isAdmin ? 'Google Sheets & Protected Excel Backup' : 'Download Protected Sheets (.xlsx)'}
+          <h1 className="text-xl sm:text-2xl font-semibold text-zinc-950 font-display tracking-tight">
+            {isAdmin ? 'Sheets, PDF & Excel Exports' : 'Download PDF & Excel Sheets'}
           </h1>
-          <p className="text-sm text-zinc-600 mt-1">
+          <p className="text-xs text-zinc-500 mt-1">
             {isAdmin
-              ? 'Manage live Google Sheets synchronization, update the backup Apps Script link, and download password-protected Excel registers.'
-              : 'Download neatly formatted, password-protected Excel (.xlsx) registers for students, visits, measurements, and health profiles.'}
+              ? 'Manage Google Sheets synchronization and download formatted PDF registers or password-protected Excel workbooks.'
+              : 'Download formatted PDF registers or password-protected Excel (.xlsx) workbooks for every infirmary module.'}
           </p>
         </div>
-        <button
-          type="button"
-          disabled={downloadingTab !== null}
-          onClick={() => void handleDownloadTabExcel('All')}
-          className="self-start sm:self-end px-4 py-2 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] rounded-xl transition-all inline-flex items-center gap-1.5 shadow-xs shrink-0 disabled:opacity-60 cursor-pointer"
-        >
-          {downloadingTab === 'All' ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Download className="w-3.5 h-3.5" />
+        <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-center">
+          <button
+            type="button"
+            disabled={isAnyDownloadBusy}
+            onClick={() => handleDownloadTabPdf('All')}
+            className="h-9 px-3.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] rounded-xl transition-all inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60 cursor-pointer"
+          >
+            {downloadingPdfTab === 'All' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileText className="w-3.5 h-3.5" />
+            )}
+            <span>
+              {downloadingPdfTab === 'All' ? 'Building PDF...' : 'Download All PDF'}
+            </span>
+          </button>
+
+          {onDownloadExcelSheet && (
+            <button
+              type="button"
+              disabled={isAnyDownloadBusy}
+              onClick={() => void handleDownloadTabExcel('All')}
+              className="h-9 px-3.5 text-xs font-medium text-zinc-800 bg-white hover:bg-zinc-50 border border-zinc-200/90 active:scale-[0.99] rounded-xl transition-all inline-flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60 cursor-pointer"
+            >
+              {downloadingExcelTab === 'All' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-zinc-500" />
+              )}
+              <span>
+                {downloadingExcelTab === 'All' ? 'Encrypting...' : 'Download All Excel'}
+              </span>
+            </button>
           )}
-          <span>
-            {downloadingTab === 'All' ? 'Encrypting Workbook...' : 'Download All Sheets (.xlsx)'}
-          </span>
-        </button>
+        </div>
       </div>
 
       {/* ADMIN-ONLY: School Google Sheet Connection Status */}
       {isAdmin && (
-        <section className="bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+        <section className="bg-white border border-zinc-200/80 rounded-2xl p-5 sm:p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-zinc-900 font-display">
+              <h2 className="text-base font-semibold text-zinc-950 font-display">
                 School Google Sheet Connection
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-                Automated two-way sync every 10 seconds with your school Google Sheet backup. To switch to another sheet, update the Apps Script link in the Code.gs section below.
+                Automated two-way sync every 10 seconds with your school Google Sheet backup.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0 flex-wrap">
@@ -375,9 +415,9 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
                   type="button"
                   onClick={handlePushBackupNow}
                   disabled={isPushing}
-                  className="px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all disabled:opacity-60 cursor-pointer"
+                  className="h-9 px-3.5 text-xs font-medium text-zinc-800 bg-white hover:bg-zinc-50 border border-zinc-200/90 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all disabled:opacity-60 cursor-pointer"
                 >
-                  <UploadCloud className="w-3.5 h-3.5" />
+                  <UploadCloud className="w-3.5 h-3.5 text-zinc-500" />
                   <span>{isPushing ? 'Backing Up...' : 'Push Full Backup'}</span>
                 </button>
               )}
@@ -386,39 +426,29 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
                   type="button"
                   onClick={handleCheckConnection}
                   disabled={isSyncing}
-                  className="px-3.5 py-2 text-xs font-semibold text-zinc-800 bg-stone-100 hover:bg-stone-200/80 border border-stone-200/80 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all disabled:opacity-60 cursor-pointer"
+                  className="h-9 px-3.5 text-xs font-medium text-zinc-800 bg-zinc-100/80 hover:bg-zinc-200/70 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all disabled:opacity-60 cursor-pointer"
                 >
                   <RefreshCw
                     className={`w-3.5 h-3.5 text-zinc-600 ${isSyncing ? 'animate-spin' : ''}`}
                   />
-                  <span>{isSyncing ? 'Checking...' : 'Check Connection Now'}</span>
+                  <span>{isSyncing ? 'Checking...' : 'Check Connection'}</span>
                 </button>
               )}
             </div>
           </div>
 
-          <div className="px-4 py-3 rounded-xl bg-stone-50/90 border border-stone-200/70 text-xs font-mono text-zinc-700 break-all">
+          <div className="px-4 py-3 rounded-xl bg-zinc-50 border border-zinc-200/70 text-xs font-mono text-zinc-700 break-all">
             {syncStatusMessage ||
               `Connected to Google Sheet backend (${db.students.length} students, ${db.visits.length} visits).`}
           </div>
         </section>
       )}
 
-      {/* Downloadable Password-Protected Excel Sheets List */}
-      <section className="bg-white border border-stone-200/90 rounded-2xl shadow-xs overflow-hidden">
-        <div className="px-4 sm:px-6 py-3.5 bg-stone-50/80 border-b border-stone-200/70 flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-800">
-            <Lock className="w-3.5 h-3.5 text-teal-700" />
-            <span>AES-256 Password-Protected Excel Workbooks (.xlsx)</span>
-          </div>
-          <span className="text-[11px] text-zinc-500">
-            Formatted with frozen headers, auto-filters, print layout &amp; open-file password lock
-          </span>
-        </div>
-
+      {/* Downloadable PDF & Protected Excel Sheets List */}
+      <section className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden">
         {downloadFeedback && (
           <div
-            className={`px-4 sm:px-6 py-2.5 text-xs border-b flex items-center gap-2 ${
+            className={`px-5 py-3 text-xs border-b flex items-center gap-2 ${
               downloadFeedback.type === 'success'
                 ? 'bg-emerald-50/70 border-emerald-200/70 text-emerald-900'
                 : 'bg-rose-50/80 border-rose-200/70 text-rose-900'
@@ -433,46 +463,61 @@ export const SheetsSetupView: React.FC<SheetsSetupViewProps> = ({
           </div>
         )}
 
-        <div className="divide-y divide-stone-100">
+        <div className="divide-y divide-zinc-100">
           {sheets.map((sheet) => {
-            const isBusyThis = downloadingTab === sheet.tab;
+            const isBusyPdf = downloadingPdfTab === sheet.tab;
+            const isBusyExcel = downloadingExcelTab === sheet.tab;
             return (
               <div
                 key={sheet.tab}
-                className="p-4 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-stone-50/70 transition-colors"
+                className="p-4 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-50/70 transition-colors"
               >
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center shrink-0 mt-0.5">
-                    {sheet.icon}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-sm font-medium text-zinc-950">
+                      {sheet.title}
+                    </h2>
+                    <span className="text-xs text-zinc-300" aria-hidden="true">·</span>
+                    <span className="text-xs font-mono tabular-nums text-zinc-500">
+                      {sheet.countLabel}
+                    </span>
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-sm font-semibold text-zinc-900">
-                        {sheet.filename}
-                      </h2>
-                      <span className="text-[11px] font-mono tabular-nums text-zinc-500">
-                        {sheet.count} {sheet.unit}
-                      </span>
-                    </div>
-                    <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-                      {sheet.description}
-                    </p>
-                  </div>
+                  <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                    {sheet.description}
+                  </p>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={downloadingTab !== null}
-                  onClick={() => void handleDownloadTabExcel(sheet.tab)}
-                  className="self-start sm:self-center px-3.5 py-2 text-xs font-semibold text-zinc-800 bg-stone-100 hover:bg-stone-200/80 active:scale-[0.99] border border-stone-200/80 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all disabled:opacity-60 cursor-pointer"
-                >
-                  {isBusyThis ? (
-                    <Loader2 className="w-3.5 h-3.5 text-teal-700 animate-spin" />
-                  ) : (
-                    <Lock className="w-3.5 h-3.5 text-teal-700" />
+                <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                  <button
+                    type="button"
+                    disabled={isAnyDownloadBusy}
+                    onClick={() => handleDownloadTabPdf(sheet.tab)}
+                    className="h-8 px-3 text-xs font-medium text-zinc-800 bg-white hover:bg-zinc-50 active:scale-[0.99] border border-zinc-200/90 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all disabled:opacity-60 cursor-pointer"
+                  >
+                    {isBusyPdf ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                    )}
+                    <span>{isBusyPdf ? 'Building...' : 'PDF'}</span>
+                  </button>
+
+                  {sheet.supportsExcel && onDownloadExcelSheet && (
+                    <button
+                      type="button"
+                      disabled={isAnyDownloadBusy}
+                      onClick={() => void handleDownloadTabExcel(sheet.tab as DownloadableExcelTab)}
+                      className="h-8 px-3 text-xs font-medium text-zinc-700 bg-zinc-100/80 hover:bg-zinc-200/70 active:scale-[0.99] rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all disabled:opacity-60 cursor-pointer"
+                    >
+                      {isBusyExcel ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Lock className="w-3 h-3 text-zinc-500" />
+                      )}
+                      <span>{isBusyExcel ? 'Encrypting...' : 'Excel'}</span>
+                    </button>
                   )}
-                  <span>{isBusyThis ? 'Encrypting...' : `Download ${sheet.filename}`}</span>
-                </button>
+                </div>
               </div>
             );
           })}

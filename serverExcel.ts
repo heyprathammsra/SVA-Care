@@ -8,6 +8,7 @@ import type {
   HealthProfileRecord,
   MedicineInventoryRecord,
   ItemInventoryRecord,
+  StockTransactionRecord,
   BillRecord,
   DoctorVisitSession,
   DoctorVisitCase,
@@ -43,6 +44,7 @@ export type ClinicalExcelTab =
   | 'Medicines'
   | 'Items'
   | 'Bills'
+  | 'Stock Ledger'
   | 'Doctor Visits'
   | 'External OPD'
   | 'Medical Camps'
@@ -58,6 +60,7 @@ export const ALLOWED_EXCEL_TABS = new Set<ClinicalExcelTab>([
   'Medicines',
   'Items',
   'Bills',
+  'Stock Ledger',
   'Doctor Visits',
   'External OPD',
   'Medical Camps',
@@ -240,7 +243,7 @@ function addStudentsWorksheet(workbook: ExcelJS.Workbook, students: StudentRecor
 
   const columns = [
     { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
-    { header: 'Student ID', key: 'student_id', width: 17, alignment: { horizontal: 'center' as const } },
+    { header: 'GR Number', key: 'gr_number', width: 17, alignment: { horizontal: 'center' as const } },
     { header: 'Student Full Name', key: 'full_name', width: 32 },
     { header: 'Class Section', key: 'section', width: 16, alignment: { horizontal: 'center' as const } },
     { header: 'Roll No', key: 'roll_number', width: 11, alignment: { horizontal: 'center' as const } },
@@ -252,7 +255,7 @@ function addStudentsWorksheet(workbook: ExcelJS.Workbook, students: StudentRecor
   sorted.forEach((s, idx) => {
     const row = ws.addRow({
       sr: idx + 1,
-      student_id: sanitizeExcelText(s.student_id),
+      gr_number: sanitizeExcelText(s.gr_number || ''),
       full_name: sanitizeExcelText(s.full_name),
       section: sanitizeExcelText(s.section),
       roll_number: sanitizeExcelText(s.roll_number),
@@ -538,6 +541,62 @@ function addBillsWorksheet(
       total_amount: Number(b.total_amount) || 0,
       image_url: sanitizeExcelText(b.image_url || (b.image_data_url ? 'Attached in App' : '-')),
       notes: sanitizeExcelText(b.notes || '-'),
+    });
+    styleDataRow(row, idx, columns);
+  });
+}
+
+function addStockLedgerWorksheet(
+  workbook: ExcelJS.Workbook,
+  transactions: StockTransactionRecord[]
+): void {
+  const sorted = [...transactions].sort((a, b) =>
+    (b.created_at || '').localeCompare(a.created_at || '')
+  );
+  const columns = [
+    { header: 'Sr No', key: 'sr', width: 8, alignment: { horizontal: 'center' as const } },
+    { header: 'Transaction ID', key: 'txn_id', width: 17, alignment: { horizontal: 'center' as const } },
+    { header: 'Date & Time', key: 'created_at', width: 19, alignment: { horizontal: 'center' as const } },
+    { header: 'Type', key: 'target_type', width: 13, alignment: { horizontal: 'center' as const } },
+    { header: 'Medicine / Item', key: 'target_name', width: 28 },
+    { header: 'Change Qty', key: 'change_qty', width: 13, alignment: { horizontal: 'right' as const } },
+    { header: 'Balance After', key: 'balance_after', width: 14, alignment: { horizontal: 'right' as const } },
+    { header: 'Reason', key: 'reason', width: 18, alignment: { horizontal: 'center' as const } },
+    { header: 'Reference ID', key: 'reference_id', width: 17, alignment: { horizontal: 'center' as const } },
+    { header: 'Recorded By', key: 'recorded_by', width: 18 },
+    { header: 'Notes', key: 'notes', width: 30 },
+  ];
+
+  const ws = setupStyledSheet(
+    workbook,
+    'Stock Ledger',
+    'Inventory Stock Movement & Audit Ledger',
+    sorted.length,
+    columns
+  );
+
+  sorted.forEach((t, idx) => {
+    const reasonLabel =
+      t.reason === 'visit'
+        ? 'Student Visit'
+        : t.reason === 'bill_restock'
+          ? 'Bill Restock'
+          : t.reason === 'menstrual'
+            ? 'Hygiene Support'
+            : 'Manual Adjustment';
+    const qty = Number(t.change_qty) || 0;
+    const row = ws.addRow({
+      sr: idx + 1,
+      txn_id: sanitizeExcelText(t.txn_id),
+      created_at: sanitizeExcelText((t.created_at || '').slice(0, 16).replace('T', ' ')),
+      target_type: t.target_type === 'medicine' ? 'Medicine' : 'Item',
+      target_name: sanitizeExcelText(t.target_name || t.target_id),
+      change_qty: qty > 0 ? `+${qty}` : `${qty}`,
+      balance_after: t.balance_after !== undefined ? Number(t.balance_after) : '-',
+      reason: sanitizeExcelText(reasonLabel),
+      reference_id: sanitizeExcelText(t.reference_id || '-'),
+      recorded_by: sanitizeExcelText(t.recorded_by || 'Staff on Duty'),
+      notes: sanitizeExcelText(t.notes || '-'),
     });
     styleDataRow(row, idx, columns);
   });
@@ -928,6 +987,9 @@ export async function generateEncryptedExcelWorkbook(
   }
   if (tab === 'Bills' || tab === 'All') {
     addBillsWorksheet(workbook, db.bills || []);
+  }
+  if (tab === 'Stock Ledger' || tab === 'All') {
+    addStockLedgerWorksheet(workbook, db.stockTransactions || []);
   }
   if (tab === 'Doctor Visits' || tab === 'All') {
     addDoctorVisitsWorksheet(

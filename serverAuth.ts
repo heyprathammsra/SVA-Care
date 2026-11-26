@@ -506,6 +506,7 @@ export function sanitizeStateForRole(
 const NURSE_ALLOWED_MUTATIONS = new Set([
   'recordVisit',
   'createVisit',
+  'recordBulkVisits',
   'createStudent',
   'bulkImportStudents',
   'addMeasurement',

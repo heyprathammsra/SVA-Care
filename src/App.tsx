@@ -21,6 +21,7 @@ import {
   AlertCircle,
   Package,
   Stethoscope,
+  ListChecks,
 } from 'lucide-react';
 import {
   generatePermanentId,
@@ -73,6 +74,11 @@ import {
   DEFAULT_STAFF_NAME,
 } from './utils/seedData';
 import { VisitEntryForm } from './components/VisitEntryForm';
+import {
+  BulkVisitPanel,
+  type BulkVisitPayload,
+  type BulkVisitResult,
+} from './components/BulkVisitPanel';
 import { StudentProfileView } from './components/StudentProfileView';
 import { DailyLogView } from './components/DailyLogView';
 import {
@@ -350,7 +356,7 @@ export default function App() {
   const deferredHomeSearchQuery = useDeferredValue(homeSearchQuery);
   const [homeSectionFilter, setHomeSectionFilter] = useState<string>('ALL');
   const [rosterFilter, setRosterFilter] = useState<RosterFilterMode>('all');
-  const [mobileHomeTab, setMobileHomeTab] = useState<'roster' | 'visits'>('roster');
+  const [mobileHomeTab, setMobileHomeTab] = useState<'roster' | 'visits' | 'bulk'>('roster');
 
   // Scrub any legacy browser localStorage caches immediately on mount
   useEffect(() => {
@@ -825,11 +831,63 @@ export default function App() {
     }
   };
 
+  const handleSaveBulkVisits = async (
+    payload: BulkVisitPayload
+  ): Promise<BulkVisitResult> => {
+    try {
+      const res = await authFetch('/api/mutate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'recordBulkVisits',
+          studentIds: payload.studentIds,
+          template: payload.template,
+          deviceId,
+        }),
+      });
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json')
+        ? ((await res.json()) as Record<string, unknown>)
+        : null;
+
+      if (!res.ok) {
+        const errMsg =
+          (data && typeof data.message === 'string' && data.message) ||
+          `Could not save bulk visits (HTTP ${res.status}).`;
+        setSaveErrorBanner(errMsg);
+        throw new Error(errMsg);
+      }
+
+      setSaveErrorBanner(null);
+      if (data?.db) {
+        if (typeof data.updatedAt === 'string') {
+          lastServerUpdatedAtRef.current = data.updatedAt;
+        }
+        setDb(normalizeDatabaseSections(data.db as NurseDatabase));
+      }
+      return {
+        count: Number(data?.count) || payload.studentIds.length,
+        totalMedDeducted: Number(data?.totalMedDeducted) || 0,
+        totalItemDeducted: Number(data?.totalItemDeducted) || 0,
+      };
+    } catch (err) {
+      if (err instanceof Error && err.message) {
+        setSaveErrorBanner(err.message);
+        throw err;
+      }
+      const netMsg =
+        'Network error while saving bulk visits. Please verify your connection and try again.';
+      setSaveErrorBanner(netMsg);
+      throw new Error(netMsg);
+    }
+  };
+
   const handleCreateStudent = (
     fullName: string,
     section: string,
     rollNumber: string,
-    activeStatus: 'Active' | 'Inactive' = 'Active'
+    activeStatus: 'Active' | 'Inactive' = 'Active',
+    grNumber: string = ''
   ): StudentRecord => {
     const studentId = generatePermanentId(
       'STU',
@@ -838,8 +896,10 @@ export default function App() {
     const nowIso = new Date().toISOString();
     const cleanSection = sanitizeClassSectionName(section) || normalizeSectionName(section);
     const rawRoll = String(rollNumber || '').trim();
+    const cleanGr = String(grNumber || '').trim();
     const newStudent: StudentRecord = {
       student_id: studentId,
+      ...(cleanGr ? { gr_number: cleanGr } : {}),
       full_name: fullName.trim(),
       section: cleanSection,
       roll_number: /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll,
@@ -900,7 +960,8 @@ export default function App() {
     fullName: string,
     section: string,
     rollNumber: string,
-    activeStatus: 'Active' | 'Inactive' = 'Active'
+    activeStatus: 'Active' | 'Inactive' = 'Active',
+    grNumber: string = ''
   ): Promise<AdminActionResult> => {
     const cleanSection = sanitizeClassSectionName(section) || normalizeSectionName(section);
     if (!cleanSection) {
@@ -912,8 +973,10 @@ export default function App() {
     );
     const nowIso = new Date().toISOString();
     const rawRoll = String(rollNumber || '').trim();
+    const cleanGr = String(grNumber || '').trim();
     const newStudent: StudentRecord = {
       student_id: studentId,
+      ...(cleanGr ? { gr_number: cleanGr } : {}),
       full_name: fullName.trim(),
       section: cleanSection,
       roll_number: /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll,
@@ -1633,9 +1696,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FBFAF8] text-zinc-900 selection:bg-teal-100 selection:text-teal-900">
-      {/* DESKTOP HEADER (GPU-promoted chrome without per-frame backdrop-blur jank) */}
-      <header className="no-print hidden sm:flex sticky top-0 z-30 chrome-sticky bg-[#FBFAF8]/98 border-b border-stone-200/80 px-8 py-2.5 items-center justify-between gap-8">
+    <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-zinc-950 selection:bg-zinc-900 selection:text-white">
+      {/* DESKTOP HEADER */}
+      <header className="no-print hidden sm:flex sticky top-0 z-30 chrome-sticky bg-white/95 border-b border-zinc-200/80 px-8 h-16 items-center justify-between gap-8">
         {/* Zone 1: Official Crest + School Name */}
         <a
           href="#home"
@@ -1643,7 +1706,7 @@ export default function App() {
             e.preventDefault();
             setActiveScreen('home');
           }}
-          className="flex items-center gap-2.5 text-base font-semibold tracking-tight text-zinc-900 whitespace-nowrap shrink-0 font-display min-w-0"
+          className="flex items-center gap-3 text-[15px] font-semibold tracking-tight text-zinc-950 whitespace-nowrap shrink-0 font-display min-w-0"
         >
           <img
             src={SCHOOL_LOGO_URL}
@@ -1654,15 +1717,15 @@ export default function App() {
               }
             }}
             alt={`${SCHOOL_NAME} logo`}
-            className="h-9 w-auto object-contain shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.06)]"
+            className="h-8 w-8 object-contain shrink-0"
           />
           <span className="truncate">{SCHOOL_NAME}</span>
         </a>
 
-        {/* Zone 2: Clean 5-Item Navigation Bar (mirrors mobile 1-to-1) */}
+        {/* Zone 2: Clean 5-Item Navigation Bar */}
         <nav
           aria-label="Primary navigation"
-          className="flex items-center justify-center gap-6 text-sm font-medium text-zinc-500"
+          className="flex items-center justify-center gap-1 text-[13px] font-medium text-zinc-500"
         >
           <a
             href="#home"
@@ -1671,10 +1734,10 @@ export default function App() {
               setSelectedProfileStudentId(null);
               setActiveScreen('home');
             }}
-            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+            className={`px-3.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
               effectiveScreen === 'home' || effectiveScreen === 'students'
-                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                : ''
+                ? 'text-zinc-950 bg-zinc-100/90 font-semibold'
+                : 'hover:text-zinc-900 hover:bg-zinc-50'
             }`}
           >
             Infirmary
@@ -1685,10 +1748,10 @@ export default function App() {
               e.preventDefault();
               setActiveScreen('daily-log');
             }}
-            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+            className={`px-3.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
               effectiveScreen === 'daily-log'
-                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                : ''
+                ? 'text-zinc-950 bg-zinc-100/90 font-semibold'
+                : 'hover:text-zinc-900 hover:bg-zinc-50'
             }`}
           >
             Daily Log
@@ -1699,10 +1762,10 @@ export default function App() {
               e.preventDefault();
               setActiveScreen('operations');
             }}
-            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+            className={`px-3.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
               effectiveScreen === 'operations'
-                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                : ''
+                ? 'text-zinc-950 bg-zinc-100/90 font-semibold'
+                : 'hover:text-zinc-900 hover:bg-zinc-50'
             }`}
           >
             Stock &amp; Bills
@@ -1713,10 +1776,10 @@ export default function App() {
               e.preventDefault();
               openProgramsTab('hub');
             }}
-            className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+            className={`px-3.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
               effectiveScreen === 'programs'
-                ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                : ''
+                ? 'text-zinc-950 bg-zinc-100/90 font-semibold'
+                : 'hover:text-zinc-900 hover:bg-zinc-50'
             }`}
           >
             Programs
@@ -1728,10 +1791,10 @@ export default function App() {
                 e.preventDefault();
                 setActiveScreen('admin-panel');
               }}
-              className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+              className={`px-3.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 effectiveScreen === 'admin-panel' || effectiveScreen === 'sheets-setup'
-                  ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                  : ''
+                  ? 'text-zinc-950 bg-zinc-100/90 font-semibold'
+                  : 'hover:text-zinc-900 hover:bg-zinc-50'
               }`}
             >
               Admin
@@ -1743,10 +1806,10 @@ export default function App() {
                 e.preventDefault();
                 setActiveScreen('sheets-setup');
               }}
-              className={`hover:text-zinc-900 transition-colors whitespace-nowrap shrink-0 py-0.5 ${
+              className={`px-3.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 effectiveScreen === 'sheets-setup'
-                  ? 'text-zinc-900 font-semibold underline decoration-2 underline-offset-8'
-                  : ''
+                  ? 'text-zinc-950 bg-zinc-100/90 font-semibold'
+                  : 'hover:text-zinc-900 hover:bg-zinc-50'
               }`}
             >
               Exports
@@ -1768,7 +1831,7 @@ export default function App() {
             className={`h-9 px-2.5 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 border cursor-pointer ${
               activeDispatches.length > 0
                 ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                : 'bg-white text-zinc-500 border-stone-200/90 hover:text-zinc-900 hover:bg-stone-50'
+                : 'bg-white text-zinc-500 border-zinc-200/90 hover:text-zinc-900 hover:bg-zinc-50'
             }`}
           >
             <Bell className={`w-4 h-4 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-400'}`} />
@@ -1788,7 +1851,7 @@ export default function App() {
                   : ''
               )
             }
-            className="h-9 px-3.5 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-xs bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99] cursor-pointer"
+            className="h-9 px-3.5 text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99] cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.25]" />
             <span>Record Visit</span>
@@ -1799,26 +1862,26 @@ export default function App() {
             onClick={handleLogout}
             aria-label="Lock infirmary terminal"
             title="Lock infirmary terminal"
-            className="h-9 w-9 text-zinc-500 bg-white border border-stone-200/90 rounded-xl hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+            className="h-9 w-9 text-zinc-400 bg-white border border-zinc-200/90 rounded-xl hover:text-zinc-900 hover:bg-zinc-50 transition-colors flex items-center justify-center shrink-0 cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* MOBILE HEADER (School Branding given full space - GPU-promoted without blur jank) */}
-      <header className="no-print sm:hidden sticky top-0 z-40 chrome-sticky bg-[#FBFAF8]/98 border-b border-stone-200/80 px-3 py-2.5 flex items-center justify-between gap-2 shadow-2xs">
+      {/* MOBILE HEADER */}
+      <header className="no-print sm:hidden sticky top-0 z-40 chrome-sticky bg-white/95 border-b border-zinc-200/80 px-4 h-14 flex items-center justify-between gap-2">
         {activeScreen === 'new-visit' ? (
           <div className="flex items-center justify-between w-full gap-2">
             <button
               type="button"
               onClick={() => setActiveScreen('home')}
-              className="h-8 px-2.5 text-xs font-semibold text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 active:bg-stone-100 shrink-0 shadow-2xs"
+              className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-zinc-100/80 rounded-lg flex items-center gap-1.5 active:bg-zinc-200 shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
-            <span className="text-xs font-bold text-zinc-900 font-display truncate">
+            <span className="text-xs font-semibold text-zinc-950 font-display truncate">
               Record Infirmary Visit
             </span>
             <span className="w-8" />
@@ -1828,13 +1891,13 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveScreen('home')}
-              className="h-8 px-2.5 text-xs font-semibold text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 active:bg-stone-100 shrink-0 shadow-2xs"
+              className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-zinc-100/80 rounded-lg flex items-center gap-1.5 active:bg-zinc-200 shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Infirmary</span>
             </button>
-            <span className="text-xs font-bold text-zinc-900 font-display truncate">
-              {isAdmin ? 'Google Sheets & Excel' : 'Protected Sheets (.xlsx)'}
+            <span className="text-xs font-semibold text-zinc-950 font-display truncate">
+              {isAdmin ? 'Sheets, PDF & Excel' : 'PDF & Excel Sheets'}
             </span>
             <span className="w-8" />
           </div>
@@ -1843,12 +1906,12 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveScreen('home')}
-              className="h-8 px-2.5 text-xs font-semibold text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 active:bg-stone-100 shrink-0 shadow-2xs"
+              className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-zinc-100/80 rounded-lg flex items-center gap-1.5 active:bg-zinc-200 shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Infirmary</span>
             </button>
-            <span className="text-xs font-bold text-zinc-900 font-display truncate">
+            <span className="text-xs font-semibold text-zinc-950 font-display truncate">
               Admin Console
             </span>
             <button
@@ -1856,7 +1919,7 @@ export default function App() {
               onClick={() => setActiveScreen('sheets-setup')}
               aria-label="Open Google Sheets"
               title="Google Sheets"
-              className="h-8 px-2 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 rounded-lg flex items-center gap-1 shrink-0"
+              className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-zinc-100/80 rounded-lg flex items-center gap-1 shrink-0"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
             </button>
@@ -1866,18 +1929,18 @@ export default function App() {
             <button
               type="button"
               onClick={() => setSelectedProfileStudentId(null)}
-              className="h-8 px-2.5 text-xs font-semibold text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 active:bg-stone-100 shrink-0 shadow-2xs"
+              className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-zinc-100/80 rounded-lg flex items-center gap-1.5 active:bg-zinc-200 shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Students</span>
+              <span>Roster</span>
             </button>
-            <span className="text-xs font-bold text-zinc-900 font-display truncate max-w-[170px]">
+            <span className="text-xs font-semibold text-zinc-950 font-display truncate max-w-[170px]">
               {db.students.find((s) => s.student_id === selectedProfileStudentId)?.full_name || 'Profile'}
             </span>
             <button
               type="button"
               onClick={() => startNewVisitForStudent(selectedProfileStudentId)}
-              className="h-8 px-2.5 text-xs font-bold text-white bg-teal-700 rounded-lg active:bg-teal-800 flex items-center gap-1 shrink-0 shadow-2xs"
+              className="h-8 px-2.5 text-xs font-semibold text-white bg-zinc-900 rounded-lg active:bg-zinc-800 flex items-center gap-1 shrink-0"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Visit</span>
@@ -1891,7 +1954,7 @@ export default function App() {
                 e.preventDefault();
                 setActiveScreen('home');
               }}
-              className="flex items-center gap-2 flex-1 min-w-0 pr-1"
+              className="flex items-center gap-2.5 flex-1 min-w-0 pr-1"
             >
               <img
                 src={SCHOOL_LOGO_URL}
@@ -1902,16 +1965,11 @@ export default function App() {
                   }
                 }}
                 alt={`${SCHOOL_NAME} crest`}
-                className="h-8 w-8 object-contain shrink-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.06)]"
+                className="h-7 w-7 object-contain shrink-0"
               />
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xs min-[360px]:text-sm font-bold text-zinc-900 font-display leading-tight tracking-tight truncate">
-                  {SCHOOL_NAME}
-                </h1>
-                <p className="text-[10px] font-semibold text-teal-800 tracking-wide uppercase leading-tight truncate">
-                  School Infirmary
-                </p>
-              </div>
+              <h1 className="text-sm font-semibold text-zinc-950 font-display tracking-tight truncate">
+                {SCHOOL_NAME}
+              </h1>
             </a>
 
             <div className="flex items-center gap-1.5 shrink-0">
@@ -1920,13 +1978,13 @@ export default function App() {
                 onClick={() => setShowIncomingDispatches(true)}
                 aria-label="Hostel passes"
                 title="Hostel passes"
-                className={`relative h-9 min-w-[36px] px-2 rounded-xl border shadow-2xs flex items-center justify-center gap-1 text-xs font-medium transition-colors ${
+                className={`relative h-8 min-w-[34px] px-2 rounded-lg border flex items-center justify-center gap-1 text-xs font-medium transition-colors ${
                   activeDispatches.length > 0
                     ? 'bg-amber-50 text-amber-900 border-amber-300'
-                    : 'bg-white text-zinc-600 border-stone-200/90'
+                    : 'bg-white text-zinc-500 border-zinc-200/80'
                 }`}
               >
-                <Bell className={`w-4 h-4 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-500'}`} />
+                <Bell className={`w-3.5 h-3.5 ${activeDispatches.length > 0 ? 'text-amber-600' : 'text-zinc-500'}`} />
                 {activeDispatches.length > 0 && (
                   <span className="w-4 h-4 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">
                     {activeDispatches.length}
@@ -1939,9 +1997,9 @@ export default function App() {
                   onClick={() => setActiveScreen('admin-panel')}
                   aria-label="Admin Console"
                   title="Admin Console"
-                  className="h-9 w-9 rounded-xl bg-white border border-stone-200/90 shadow-2xs flex items-center justify-center text-teal-800 active:bg-teal-50 transition-colors"
+                  className="h-8 w-8 rounded-lg bg-white border border-zinc-200/80 flex items-center justify-center text-zinc-600 active:bg-zinc-100 transition-colors"
                 >
-                  <ShieldCheck className="w-4 h-4" />
+                  <ShieldCheck className="w-3.5 h-3.5" />
                 </button>
               ) : (
                 <button
@@ -1949,9 +2007,9 @@ export default function App() {
                   onClick={() => setActiveScreen('sheets-setup')}
                   aria-label="Download Protected Sheets"
                   title="Download Protected Sheets"
-                  className="h-9 w-9 rounded-xl bg-white border border-stone-200/90 shadow-2xs flex items-center justify-center text-teal-800 active:bg-teal-50 transition-colors"
+                  className="h-8 w-8 rounded-lg bg-white border border-zinc-200/80 flex items-center justify-center text-zinc-600 active:bg-zinc-100 transition-colors"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
                 </button>
               )}
               <button
@@ -1959,9 +2017,9 @@ export default function App() {
                 onClick={handleLogout}
                 aria-label="Lock infirmary"
                 title="Lock infirmary"
-                className="h-9 w-9 rounded-xl bg-white border border-stone-200/90 shadow-2xs flex items-center justify-center text-zinc-600 active:bg-rose-50 active:text-rose-700 transition-colors"
+                className="h-8 w-8 rounded-lg bg-white border border-zinc-200/80 flex items-center justify-center text-zinc-500 active:bg-rose-50 active:text-rose-700 transition-colors"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-3.5 h-3.5" />
               </button>
             </div>
           </>
@@ -1969,11 +2027,11 @@ export default function App() {
       </header>
 
       {/* MAIN CONTENT VIEWPORT */}
-      <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-8 py-3.5 sm:py-8 pb-28 sm:pb-8">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-4 sm:py-8 pb-28 sm:pb-10">
         {saveErrorBanner && (
           <div
             role="alert"
-            className="mb-4 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-medium flex items-center justify-between gap-3 shadow-2xs"
+            className="mb-4 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-medium flex items-center justify-between gap-3"
           >
             <span className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -1991,29 +2049,43 @@ export default function App() {
         )}
         {/* SCREEN 1: INFIRMARY WORKSPACE */}
         {effectiveScreen === 'home' && (
-          <div key="screen-home" className="view-enter-animate space-y-3.5 sm:space-y-6">
-            {/* Desktop-only Workspace Title & Header (Preserved for PC) */}
-            <div className="hidden sm:flex items-end justify-between gap-3">
+          <div key="screen-home" className="view-enter-animate space-y-4 sm:space-y-6">
+            {/* Desktop Workspace Header */}
+            <div className="hidden sm:flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-xs font-medium text-teal-700">
-                  School Infirmary &amp; Health Department
-                </p>
-                <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-tight">
-                  Who is visiting the infirmary?
+                <h1 className="text-2xl font-semibold text-zinc-950 font-display tracking-tight">
+                  Infirmary Desk
                 </h1>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Search any student to view their health profile or record a new infirmary visit.
+                </p>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMobileHomeTab((prev) => (prev === 'bulk' ? 'roster' : 'bulk'))
+                  }
+                  className={`h-9 px-3.5 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer border ${
+                    mobileHomeTab === 'bulk'
+                      ? 'bg-zinc-900 text-white border-zinc-900 hover:bg-zinc-800'
+                      : 'text-zinc-800 bg-white border-zinc-200/90 hover:bg-zinc-50'
+                  }`}
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  <span>{mobileHomeTab === 'bulk' ? 'Back to Desk' : 'Bulk Visit'}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setSelectedProfileStudentId(null);
                     setActiveScreen('students');
                   }}
-                  className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200/90 rounded-xl hover:bg-stone-50 active:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs cursor-pointer"
+                  className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-200/90 rounded-xl hover:bg-zinc-50 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  <Users className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>Student Directory</span>
+                  <Users className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Directory</span>
                 </button>
                 <button
                   type="button"
@@ -2024,25 +2096,25 @@ export default function App() {
                       entries: todayEntries,
                     })
                   }
-                  className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200/90 rounded-xl hover:bg-stone-50 active:bg-stone-100 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-2xs cursor-pointer"
+                  className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-200/90 rounded-xl hover:bg-zinc-50 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  <Printer className="w-3.5 h-3.5 text-zinc-500" />
-                  <span>Print Today&apos;s Log ({todayEntries.length})</span>
+                  <Printer className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Print Log ({todayEntries.length})</span>
                 </button>
               </div>
             </div>
 
-            {/* Minimal 4-Column Summary Strip */}
-            <div className="hidden sm:grid grid-cols-4 bg-white/80 border border-stone-200/75 rounded-xl divide-x divide-stone-200/60">
+            {/* Minimal 4-Column Summary Strip (Desktop) */}
+            <div className="hidden sm:grid grid-cols-4 bg-white border border-zinc-200/80 rounded-2xl divide-x divide-zinc-100">
               <button
                 type="button"
                 onClick={() => setActiveScreen('daily-log')}
-                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0 first:rounded-l-xl"
+                className="group flex items-center justify-between gap-2 px-5 py-3.5 hover:bg-zinc-50/70 transition-colors cursor-pointer min-w-0 first:rounded-l-2xl"
               >
-                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors truncate">
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-900 transition-colors truncate">
                   Today&apos;s Visits
                 </span>
-                <span className="text-sm font-semibold tabular-nums text-zinc-900 shrink-0">
+                <span className="text-sm font-semibold tabular-nums text-zinc-950 shrink-0">
                   {todayEntries.length}
                 </span>
               </button>
@@ -2050,9 +2122,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveScreen('operations')}
-                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0"
+                className="group flex items-center justify-between gap-2 px-5 py-3.5 hover:bg-zinc-50/70 transition-colors cursor-pointer min-w-0"
               >
-                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors truncate">
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-900 transition-colors truncate">
                   Inventory
                 </span>
                 {homeQuickSummary.totalStockAlerts > 0 ? (
@@ -2063,21 +2135,21 @@ export default function App() {
                 ) : (db.medicines || []).length + (db.items || []).length === 0 ? (
                   <span className="text-sm text-zinc-400 shrink-0">—</span>
                 ) : (
-                  <span className="text-xs font-semibold text-teal-800 shrink-0">Healthy</span>
+                  <span className="text-xs font-medium text-emerald-700 shrink-0">In stock</span>
                 )}
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowIncomingDispatches(true)}
-                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0"
+                className="group flex items-center justify-between gap-2 px-5 py-3.5 hover:bg-zinc-50/70 transition-colors cursor-pointer min-w-0"
               >
-                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors truncate">
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-900 transition-colors truncate">
                   Hostel Passes
                 </span>
                 <span
                   className={`text-sm font-semibold tabular-nums shrink-0 ${
-                    activeDispatches.length > 0 ? 'text-amber-700' : 'text-zinc-900'
+                    activeDispatches.length > 0 ? 'text-amber-700' : 'text-zinc-950'
                   }`}
                 >
                   {activeDispatches.length}
@@ -2087,9 +2159,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => openProgramsTab('insights')}
-                className="group flex items-center justify-between gap-2 px-4 py-2.5 hover:bg-stone-50 transition-colors cursor-pointer min-w-0 last:rounded-r-xl"
+                className="group flex items-center justify-between gap-2 px-5 py-3.5 hover:bg-zinc-50/70 transition-colors cursor-pointer min-w-0 last:rounded-r-2xl"
               >
-                <span className="text-xs text-zinc-500 group-hover:text-zinc-800 transition-colors shrink-0">
+                <span className="text-xs text-zinc-500 group-hover:text-zinc-900 transition-colors shrink-0">
                   Top Trend
                 </span>
                 <span className="flex items-baseline gap-1 min-w-0">
@@ -2105,16 +2177,13 @@ export default function App() {
               </button>
             </div>
 
-            {/* Mobile-only Clinic Status Hub (<sm only): Clean Hero + 2-segment switcher */}
-            <div className="sm:hidden bg-white border border-stone-200/80 rounded-2xl p-3.5 shadow-2xs space-y-3">
-              <div className="flex items-start justify-between gap-2">
+            {/* Mobile-only Unboxed Header + Sleek Segmented Switcher */}
+            <div className="sm:hidden space-y-3">
+              <div className="flex items-center justify-between gap-2 px-0.5">
                 <div className="min-w-0">
-                  <span className="text-[11px] font-semibold text-teal-700">
-                    Infirmary Desk
-                  </span>
-                  <h2 className="text-base font-bold text-zinc-900 font-display truncate">
+                  <h2 className="text-lg font-semibold text-zinc-950 font-display tracking-tight truncate">
                     {todayEntries.length === 0
-                      ? '0 visits today'
+                      ? 'No visits today'
                       : `${todayEntries.length} visit${todayEntries.length === 1 ? '' : 's'} today`}
                   </h2>
                 </div>
@@ -2126,9 +2195,9 @@ export default function App() {
                       setSelectedProfileStudentId(null);
                       setActiveScreen('students');
                     }}
-                    className="h-8 px-2.5 text-xs font-medium text-teal-800 bg-teal-50/70 border border-teal-200/80 rounded-lg flex items-center gap-1 shrink-0 shadow-2xs active:bg-teal-100 whitespace-nowrap"
+                    className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-200/80 rounded-lg flex items-center gap-1.5 shrink-0 active:bg-zinc-100 whitespace-nowrap"
                   >
-                    <Users className="w-3.5 h-3.5 text-teal-700" />
+                    <Users className="w-3.5 h-3.5 text-zinc-400" />
                     <span>Directory</span>
                   </button>
                   <button
@@ -2140,63 +2209,89 @@ export default function App() {
                         entries: todayEntries,
                       })
                     }
-                    className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-lg flex items-center gap-1.5 shrink-0 shadow-2xs active:bg-stone-100 whitespace-nowrap"
+                    className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-200/80 rounded-lg flex items-center gap-1.5 shrink-0 active:bg-zinc-100 whitespace-nowrap"
                   >
-                    <Printer className="w-3.5 h-3.5 text-zinc-500" />
-                    <span>Log ({todayEntries.length})</span>
+                    <Printer className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Print</span>
                   </button>
                 </div>
               </div>
 
-              {/* Segmented Switcher: Today's Activity vs Class Roster */}
+              {/* Segmented Switcher: Roster | Visits | Bulk Visit */}
               <div
                 role="tablist"
                 aria-label="Mobile workspace view"
-                className="grid grid-cols-2 gap-1 p-1 bg-stone-200/80 rounded-xl text-xs font-semibold"
+                className="grid grid-cols-3 gap-1 p-1 bg-zinc-200/60 rounded-xl text-xs font-medium"
               >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={mobileHomeTab === 'visits'}
-                  onClick={() => setMobileHomeTab('visits')}
-                  className={`py-2 px-3 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 ${
-                    mobileHomeTab === 'visits'
-                      ? 'bg-white text-zinc-900 shadow-xs font-bold'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  <ClipboardList className="w-3.5 h-3.5" />
-                  <span>Today&apos;s Visits ({todayEntries.length})</span>
-                </button>
-
                 <button
                   type="button"
                   role="tab"
                   aria-selected={mobileHomeTab === 'roster'}
                   onClick={() => setMobileHomeTab('roster')}
-                  className={`py-2 px-3 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 ${
+                  className={`py-2 px-2 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 whitespace-nowrap ${
                     mobileHomeTab === 'roster'
-                      ? 'bg-white text-zinc-900 shadow-xs font-bold'
+                      ? 'bg-white text-zinc-950 shadow-2xs font-semibold'
                       : 'text-zinc-600 hover:text-zinc-900'
                   }`}
                 >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Class Roster ({db.students.length})</span>
+                  <span>Roster ({db.students.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mobileHomeTab === 'visits'}
+                  onClick={() => setMobileHomeTab('visits')}
+                  className={`py-2 px-2 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                    mobileHomeTab === 'visits'
+                      ? 'bg-white text-zinc-950 shadow-2xs font-semibold'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  <span>Today ({todayEntries.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mobileHomeTab === 'bulk'}
+                  onClick={() => setMobileHomeTab('bulk')}
+                  className={`py-2 px-2 rounded-lg transition-all text-center flex items-center justify-center gap-1.5 whitespace-nowrap ${
+                    mobileHomeTab === 'bulk'
+                      ? 'bg-zinc-900 text-white shadow-2xs font-semibold'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  <span>Bulk Visit</span>
                 </button>
               </div>
             </div>
 
-            {/* 2-Column Split on Desktop (Aligned Height) | Instant Tab View on Mobile */}
+            {mobileHomeTab === 'bulk' ? (
+              <BulkVisitPanel
+                students={db.students}
+                availableClasses={homeAvailableSections}
+                visitedTodayStudentIds={visitedTodayStudentIds}
+                medicines={db.medicines || []}
+                items={db.items || []}
+                settings={db.settings || DEFAULT_INFIRMARY_SETTINGS}
+                activeNurseName={currentUser?.displayName || 'School Nurse'}
+                onSaveBulkVisits={handleSaveBulkVisits}
+                onViewTodaysVisits={() => setMobileHomeTab('visits')}
+                onClose={() => setMobileHomeTab('roster')}
+              />
+            ) : (
+            /* 2-Column Split on Desktop | Instant Tab View on Mobile */
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* LEFT COLUMN (7 COLS): CLASS ROSTER WITH INSTANT SEARCH & FILTERS */}
               <section
                 className={`${
                   mobileHomeTab === 'roster' ? 'block' : 'hidden lg:flex'
-                } lg:col-span-7 lg:flex-col lg:h-[600px] bg-white border border-stone-200/80 rounded-2xl shadow-2xs overflow-hidden`}
+                } lg:col-span-7 lg:flex-col lg:h-[600px] bg-white border border-zinc-200/80 rounded-2xl overflow-hidden`}
               >
                 {/* Search Input Bar */}
-                <div className="relative border-b border-stone-100 shrink-0">
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 sm:left-4 top-3.5 sm:top-4 pointer-events-none" />
+                <div className="relative border-b border-zinc-100 shrink-0">
+                  <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-3.5 sm:top-4 pointer-events-none" />
                   <input
                     id="home-student-search"
                     type="text"
@@ -2216,7 +2311,7 @@ export default function App() {
                       }
                     }}
                     placeholder="Search name, roll number, or class..."
-                    className="w-full h-11 sm:h-12 pl-9 sm:pl-11 pr-11 text-sm text-zinc-900 bg-transparent placeholder:text-zinc-400 focus:outline-none"
+                    className="w-full h-11 sm:h-12 pl-10 sm:pl-11 pr-11 text-sm text-zinc-950 bg-transparent placeholder:text-zinc-400 focus:outline-none"
                   />
                   {homeSearchQuery ? (
                     <button
@@ -2230,16 +2325,16 @@ export default function App() {
                   ) : (
                     <kbd
                       aria-hidden="true"
-                      className="hidden sm:inline-flex items-center justify-center absolute right-3.5 top-1/2 -translate-y-1/2 h-5 min-w-[20px] px-1.5 text-[11px] font-medium text-zinc-400 bg-stone-100/90 border border-stone-200/80 rounded pointer-events-none"
+                      className="hidden sm:inline-flex items-center justify-center absolute right-4 top-1/2 -translate-y-1/2 h-5 min-w-[20px] px-1.5 text-[11px] font-medium text-zinc-400 bg-zinc-100 rounded pointer-events-none"
                     >
                       /
                     </kbd>
                   )}
                 </div>
 
-                {/* Roster Filter Bar (Single line on mobile and desktop) */}
-                <div className="px-3 sm:px-4 py-2 bg-stone-50/70 border-b border-stone-100 flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                {/* Roster Filter Bar */}
+                <div className="px-4 py-2.5 border-b border-zinc-100 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <CustomSelect
                       ariaLabel="Filter by class section"
                       size="sm"
@@ -2258,10 +2353,10 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setRosterFilter('all')}
-                      className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                      className={`px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                         rosterFilter === 'all'
                           ? 'bg-zinc-900 text-white'
-                          : 'text-zinc-600 hover:text-zinc-900 hover:bg-stone-200/60'
+                          : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
                       }`}
                     >
                       All
@@ -2269,10 +2364,10 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setRosterFilter('visited-today')}
-                      className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                      className={`px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                         rosterFilter === 'visited-today'
                           ? 'bg-zinc-900 text-white'
-                          : 'text-zinc-600 hover:text-zinc-900 hover:bg-stone-200/60'
+                          : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
                       }`}
                     >
                       Seen Today ({visitedTodayStudentIds.size})
@@ -2280,10 +2375,10 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setRosterFilter('health-notes')}
-                      className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                      className={`px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                         rosterFilter === 'health-notes'
                           ? 'bg-zinc-900 text-white'
-                          : 'text-zinc-600 hover:text-zinc-900 hover:bg-stone-200/60'
+                          : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
                       }`}
                     >
                       <span className="sm:hidden">Notes ({healthNoteByStudentId.size})</span>
@@ -2291,18 +2386,18 @@ export default function App() {
                     </button>
                   </div>
 
-                  <span className="hidden sm:inline text-[11px] text-zinc-400 tabular-nums shrink-0">
-                    {homeFilteredStudents.length} of {db.students.length}
+                  <span className="hidden sm:inline text-xs text-zinc-400 tabular-nums shrink-0">
+                    {homeFilteredStudents.length} shown
                   </span>
                 </div>
 
-                {/* Student Rows (Natural page scroll on mobile, equal-height smooth scrollable panel on lg desktop) */}
+                {/* Student Rows */}
                 <div
                   data-testid="home-search-results"
-                  className="divide-y divide-stone-100 lg:flex-1 lg:overflow-y-auto smooth-scroll-list"
+                  className="divide-y divide-zinc-100 lg:flex-1 lg:overflow-y-auto smooth-scroll-list"
                 >
                   {homeFilteredStudents.length === 0 ? (
-                    <div className="py-12 px-6 text-center text-xs text-zinc-500">
+                    <div className="py-14 px-6 text-center text-xs text-zinc-500">
                       No student matching current filter.{' '}
                       <button
                         type="button"
@@ -2310,7 +2405,7 @@ export default function App() {
                           setHomeSearchQuery('');
                           setRosterFilter('all');
                         }}
-                        className="text-teal-700 font-semibold hover:underline ml-1"
+                        className="text-zinc-900 font-semibold hover:underline ml-1"
                       >
                         Reset filter
                       </button>
@@ -2334,19 +2429,19 @@ export default function App() {
                               openStudentProfile(stu.student_id);
                             }
                           }}
-                          className="list-row-opt group px-3.5 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-stone-50/90 active:bg-stone-100/70 transition-colors cursor-pointer select-none focus:outline-none focus-visible:bg-stone-50"
+                          className="list-row-opt group px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-zinc-50/80 active:bg-zinc-100/60 transition-colors cursor-pointer select-none focus:outline-none focus-visible:bg-zinc-50"
                         >
-                          <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
-                            <span className="w-8 h-8 rounded-lg bg-stone-100 text-zinc-700 group-hover:bg-teal-50 group-hover:text-teal-800 font-mono tabular-nums text-xs font-semibold flex items-center justify-center shrink-0 transition-colors">
+                          <div className="flex items-center gap-3.5 min-w-0 flex-1 overflow-hidden">
+                            <span className="w-8 h-8 rounded-lg bg-zinc-100 text-zinc-600 group-hover:bg-zinc-200/70 group-hover:text-zinc-900 font-mono tabular-nums text-xs font-medium flex items-center justify-center shrink-0 transition-colors">
                               {stu.roll_number}
                             </span>
                             <div className="min-w-0 flex-1">
-                              <span className="text-sm font-semibold text-zinc-900 group-hover:text-teal-700 truncate block text-left transition-colors">
+                              <span className="text-sm font-medium text-zinc-950 truncate block text-left">
                                 {stu.full_name}
                               </span>
 
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-400 mt-0.5">
-                                <span className="text-zinc-500 font-medium">{stu.section}</span>
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-400 mt-0.5">
+                                <span className="text-zinc-500">{stu.section}</span>
                                 {latestMeas && (
                                   <>
                                     <span aria-hidden="true" className="text-zinc-300">·</span>
@@ -2358,7 +2453,7 @@ export default function App() {
                                 {seenToday && (
                                   <>
                                     <span aria-hidden="true" className="text-zinc-300">·</span>
-                                    <span className="text-[11px] font-semibold text-teal-700">
+                                    <span className="text-teal-700 font-medium">
                                       Seen today
                                     </span>
                                   </>
@@ -2366,8 +2461,8 @@ export default function App() {
                                 {healthNote && (
                                   <>
                                     <span aria-hidden="true" className="text-zinc-300">·</span>
-                                    <span className="text-[11px] font-medium text-amber-800 truncate max-w-[200px] sm:max-w-[260px]">
-                                      Note: {healthNote.condition_or_note}
+                                    <span className="text-amber-700 font-medium truncate max-w-[200px] sm:max-w-[260px]">
+                                      {healthNote.condition_or_note}
                                     </span>
                                   </>
                                 )}
@@ -2383,9 +2478,9 @@ export default function App() {
                                 startNewVisitForStudent(stu.student_id);
                               }}
                               aria-label={`Record visit for ${stu.full_name}`}
-                              className="h-8 px-3 text-xs font-semibold text-teal-800 bg-teal-50/90 hover:bg-teal-100 active:bg-teal-200/70 border border-teal-200/60 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1"
+                              className="h-8 px-3 text-xs font-medium text-zinc-700 bg-zinc-100/80 hover:bg-zinc-900 hover:text-white active:bg-zinc-800 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1"
                             >
-                              <Plus className="w-3 h-3" />
+                              <Plus className="w-3.5 h-3.5" />
                               <span>Visit</span>
                             </button>
                           </div>
@@ -2394,55 +2489,37 @@ export default function App() {
                     })
                   )}
                 </div>
-
-                <div className="px-4 sm:px-5 py-3 bg-stone-50/60 border-t border-stone-100 flex items-center justify-between gap-2 text-xs text-zinc-500 shrink-0">
-                  <span className="truncate">Tap any student row for health dossier</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedProfileStudentId(null);
-                      setActiveScreen('students');
-                    }}
-                    className="font-medium text-zinc-700 hover:text-zinc-900 flex items-center gap-1 whitespace-nowrap shrink-0"
-                  >
-                    Manage Roster
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
               </section>
 
-              {/* RIGHT COLUMN (5 COLS): RECENT & TODAY'S INFIRMARY VISITS (NEWEST FIRST) */}
+              {/* RIGHT COLUMN (5 COLS): RECENT & TODAY'S INFIRMARY VISITS */}
               <section
                 className={`${
                   mobileHomeTab === 'visits' ? 'block' : 'hidden lg:flex'
-                } lg:col-span-5 lg:flex-col lg:h-[600px] bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-2xs`}
+                } lg:col-span-5 lg:flex-col lg:h-[600px] bg-white border border-zinc-200/80 rounded-2xl overflow-hidden`}
               >
-                <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-stone-100 flex items-center justify-between gap-3 shrink-0">
+                <div className="px-5 py-4 border-b border-zinc-100 flex items-center justify-between gap-3 shrink-0">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-teal-700" />
-                      <h2 className="text-base font-semibold text-zinc-900 font-display">
-                        Recent Infirmary Visits
-                      </h2>
-                    </div>
+                    <h2 className="text-sm font-semibold text-zinc-950 font-display">
+                      Recent Infirmary Visits
+                    </h2>
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      Newest first · {todayEntries.length} recorded today
+                      {todayEntries.length} recorded today
                     </p>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setActiveScreen('daily-log')}
-                    className="px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-stone-100 hover:bg-stone-200/70 rounded-lg flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors"
+                    className="px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-950 bg-zinc-100/80 hover:bg-zinc-200/70 rounded-lg flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors"
                   >
                     Daily Log
                     <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
 
-                <div className="divide-y divide-stone-100 lg:flex-1 lg:overflow-y-auto smooth-scroll-list">
+                <div className="divide-y divide-zinc-100 lg:flex-1 lg:overflow-y-auto smooth-scroll-list">
                   {recentVisits.length === 0 ? (
-                    <div className="py-12 px-6 text-center text-xs text-zinc-500">
+                    <div className="py-14 px-6 text-center text-xs text-zinc-500">
                       No visits recorded yet. Tap <strong>+ Visit</strong> next to any student.
                     </div>
                   ) : (
@@ -2458,29 +2535,24 @@ export default function App() {
                             openStudentProfile(student.student_id);
                           }
                         }}
-                        className="group p-4 sm:px-5 flex items-start justify-between gap-3 hover:bg-stone-50/80 active:bg-stone-100/60 transition-colors cursor-pointer select-none"
+                        className="group px-5 py-4 flex items-start justify-between gap-3 hover:bg-zinc-50/80 active:bg-zinc-100/60 transition-colors cursor-pointer select-none"
                       >
                         <div className="space-y-1 min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                            <span className="text-sm font-semibold text-zinc-900 group-hover:text-teal-700 text-left transition-colors">
+                            <span className="text-sm font-medium text-zinc-950 text-left">
                               {student.full_name}
                             </span>
                             <span className="text-zinc-300" aria-hidden="true">·</span>
                             <span className="font-mono text-zinc-500">
-                              Roll {student.roll_number}
+                              {student.section} · Roll {student.roll_number}
                             </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-zinc-400">
                             <span>
                               {extractDatePart(visit.visit_datetime)} · {formatTimeFromDatetime(visit.visit_datetime)}
                             </span>
-                            <span
-                              className={`font-sans font-semibold ${
-                                resolveVisitShiftPeriod(visit, db.settings) === 'night'
-                                  ? 'text-indigo-700'
-                                  : 'text-teal-700'
-                              }`}
-                            >
+                            <span className="text-zinc-300" aria-hidden="true">·</span>
+                            <span className="font-sans font-medium text-zinc-500">
                               {formatShiftPeriodLabel(resolveVisitShiftPeriod(visit, db.settings), true)}
                             </span>
                           </div>
@@ -2488,7 +2560,7 @@ export default function App() {
                           <p className="text-xs font-medium text-zinc-800 pt-0.5">
                             {visit.reason}
                           </p>
-                          <p className="text-xs text-zinc-500 line-clamp-2">
+                          <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed">
                             {visit.action_taken} · <span className="text-zinc-700 font-medium">{formatMedicineDisplay(visit)}</span>
                           </p>
                         </div>
@@ -2504,7 +2576,7 @@ export default function App() {
                             });
                           }}
                           aria-label={`Print visit slip for ${student.full_name}`}
-                          className="h-8 px-2.5 text-xs font-medium text-zinc-500 hover:text-zinc-900 border border-stone-200/80 bg-white hover:bg-stone-100 rounded-lg inline-flex items-center gap-1 shrink-0 transition-colors"
+                          className="h-8 px-2.5 text-xs font-medium text-zinc-500 hover:text-zinc-900 border border-zinc-200/80 bg-white hover:bg-zinc-50 rounded-lg inline-flex items-center gap-1 shrink-0 transition-colors"
                         >
                           <Printer className="w-3 h-3" />
                           Slip
@@ -2513,20 +2585,9 @@ export default function App() {
                     ))
                   )}
                 </div>
-
-                <div className="px-4 sm:px-5 py-3 bg-stone-50/60 border-t border-stone-100 flex items-center justify-between gap-2 text-xs text-zinc-500 shrink-0">
-                  <span className="truncate">Tap any visit card for student history</span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveScreen('daily-log')}
-                    className="font-medium text-zinc-700 hover:text-zinc-900 flex items-center gap-1 whitespace-nowrap shrink-0"
-                  >
-                    Full Register
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
               </section>
             </div>
+            )}
           </div>
         )}
 
@@ -2692,6 +2753,7 @@ export default function App() {
             onCreateBill={handleCreateBill}
             onUpdateBill={handleUpdateBill}
             onDeleteBill={handleDeleteBill}
+            onDownloadExcelSheet={handleDownloadExcelSheet}
           />
         )}
 
@@ -2724,6 +2786,7 @@ export default function App() {
             onDeleteAnnualCheckup={handleDeleteAnnualCheckup}
             onUpsertMenstrualLog={handleUpsertMenstrualLog}
             onDeleteMenstrualLog={handleDeleteMenstrualLog}
+            onDownloadExcelSheet={handleDownloadExcelSheet}
             onSelectStudent={(student) => openStudentProfile(student.student_id)}
             initialTab={programsTargetTab}
             initialTabNonce={programsTargetNonce}
@@ -2800,12 +2863,12 @@ export default function App() {
               {isAdmin ? (
                 <>
                   <FileSpreadsheet className="w-3.5 h-3.5" />
-                  Google Sheets &amp; Excel Backup
+                  Google Sheets, PDF &amp; Excel
                 </>
               ) : (
                 <>
                   <Download className="w-3.5 h-3.5" />
-                  Download Protected Sheets (.xlsx)
+                  Download Sheets (PDF &amp; Excel)
                 </>
               )}
             </button>
@@ -2813,26 +2876,26 @@ export default function App() {
         </div>
       </footer>
 
-      {/* MOBILE FIXED 5-ITEM BOTTOM NAVIGATION BAR WITH CENTRAL RECORD VISIT ACTION */}
+      {/* MOBILE FIXED 5-ITEM BOTTOM NAVIGATION BAR */}
       {activeScreen !== 'new-visit' && (
         <nav
           aria-label="Mobile Bottom Navigation"
-          className="no-print sm:hidden fixed bottom-0 inset-x-0 z-40 chrome-sticky bg-white/98 border-t border-stone-200/90 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1"
+          className="no-print sm:hidden fixed bottom-0 inset-x-0 z-40 chrome-sticky bg-white/95 border-t border-zinc-200/80 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1.5"
         >
           <div className="grid grid-cols-5 items-center px-1">
             <button
               type="button"
               onClick={() => setActiveScreen('home')}
-              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all ${
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all ${
                 activeScreen === 'home' || activeScreen === 'students'
-                  ? 'text-teal-900 font-bold'
+                  ? 'text-zinc-950 font-semibold'
                   : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
               }`}
             >
               <div
                 className={`p-1 rounded-lg transition-colors ${
                   activeScreen === 'home' || activeScreen === 'students'
-                    ? 'bg-teal-100/80 text-teal-800'
+                    ? 'bg-zinc-100 text-zinc-950'
                     : ''
                 }`}
               >
@@ -2844,20 +2907,20 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveScreen('daily-log')}
-              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all relative ${
                 activeScreen === 'daily-log'
-                  ? 'text-teal-900 font-bold'
+                  ? 'text-zinc-950 font-semibold'
                   : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
               }`}
             >
               <div
                 className={`p-1 rounded-lg relative transition-colors ${
-                  activeScreen === 'daily-log' ? 'bg-teal-100/80 text-teal-800' : ''
+                  activeScreen === 'daily-log' ? 'bg-zinc-100 text-zinc-950' : ''
                 }`}
               >
                 <ClipboardList className="w-5 h-5" />
                 {todayEntries.length > 0 && (
-                  <span className="absolute -top-1 -right-1 px-1.5 min-w-[18px] h-[18px] bg-teal-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-white">
+                  <span className="absolute -top-1 -right-1 px-1.5 min-w-[17px] h-[17px] bg-zinc-900 text-white text-[10px] font-semibold rounded-full flex items-center justify-center ring-2 ring-white">
                     {todayEntries.length}
                   </span>
                 )}
@@ -2865,7 +2928,7 @@ export default function App() {
               <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Daily Log</span>
             </button>
 
-            {/* Central Prominent Record Visit Action Button */}
+            {/* Central Record Visit Action Button */}
             <div className="flex flex-col items-center justify-center py-0.5 px-0.5">
               <button
                 type="button"
@@ -2877,11 +2940,11 @@ export default function App() {
                   )
                 }
                 aria-label="Record visit"
-                className="w-11 h-11 rounded-full bg-zinc-900 text-white shadow-md flex items-center justify-center active:scale-95 transition-all hover:bg-zinc-800 border border-zinc-700/60"
+                className="w-10 h-10 rounded-full bg-zinc-900 text-white shadow-sm flex items-center justify-center active:scale-95 transition-all hover:bg-zinc-800"
               >
-                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <Plus className="w-5 h-5 stroke-[2.25]" />
               </button>
-              <span className="text-[10px] font-semibold text-zinc-900 leading-tight mt-0.5 whitespace-nowrap">
+              <span className="text-[10px] font-medium text-zinc-700 leading-tight mt-0.5 whitespace-nowrap">
                 Record
               </span>
             </div>
@@ -2889,15 +2952,15 @@ export default function App() {
             <button
               type="button"
               onClick={() => openProgramsTab('hub')}
-              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all relative ${
                 effectiveScreen === 'programs'
-                  ? 'text-teal-900 font-bold'
+                  ? 'text-zinc-950 font-semibold'
                   : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
               }`}
             >
               <div
                 className={`p-1 rounded-lg relative transition-colors ${
-                  effectiveScreen === 'programs' ? 'bg-teal-100/80 text-teal-800' : ''
+                  effectiveScreen === 'programs' ? 'bg-zinc-100 text-zinc-950' : ''
                 }`}
               >
                 <Stethoscope className="w-5 h-5" />
@@ -2908,15 +2971,15 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveScreen('operations')}
-              className={`flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all relative ${
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all relative ${
                 effectiveScreen === 'operations'
-                  ? 'text-teal-900 font-bold'
+                  ? 'text-zinc-950 font-semibold'
                   : 'text-zinc-400 hover:text-zinc-700 active:scale-95'
               }`}
             >
               <div
                 className={`p-1 rounded-lg relative transition-colors ${
-                  effectiveScreen === 'operations' ? 'bg-teal-100/80 text-teal-800' : ''
+                  effectiveScreen === 'operations' ? 'bg-zinc-100 text-zinc-950' : ''
                 }`}
               >
                 <Package className="w-5 h-5" />

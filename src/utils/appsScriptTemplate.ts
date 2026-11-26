@@ -65,7 +65,7 @@ const DRIVE_DOCS_FOLDER_NAME = 'SVA Infirmary Documents';
 
 const SHEET_SCHEMAS = {
   'Students': [
-    'student_id', 'full_name', 'section', 'roll_number',
+    'student_id', 'gr_number', 'full_name', 'section', 'roll_number',
     'active_status', 'created_at', 'updated_at'
   ],
   'Visits': [
@@ -224,6 +224,8 @@ function upsertSettingKey(key, value, updatedAt) {
   const sheet = ss.getSheetByName('Settings');
   if (!sheet) return;
   const ts = updatedAt || new Date().toISOString();
+  const rawVal = String(value || '').trim();
+  const safeVal = /^\d{1,2}:\d{2}$/.test(rawVal) ? "'" + rawVal : rawVal;
   if (sheet.getLastRow() >= 2) {
     const range = sheet.getDataRange();
     const values = range.getValues();
@@ -233,14 +235,14 @@ function upsertSettingKey(key, value, updatedAt) {
     const updIdx = headers.indexOf('updated_at');
     for (let r = 1; r < values.length; r++) {
       if (String(values[r][keyIdx] || '').trim() === key) {
-        if (valIdx !== -1) values[r][valIdx] = value;
+        if (valIdx !== -1) values[r][valIdx] = safeVal;
         if (updIdx !== -1) values[r][updIdx] = ts;
         range.setValues(values);
         return;
       }
     }
   }
-  appendRowBySchema('Settings', { key: key, value: value, updated_at: ts });
+  appendRowBySchema('Settings', { key: key, value: safeVal, updated_at: ts });
 }
 
 /**

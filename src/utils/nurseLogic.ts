@@ -1,5 +1,6 @@
 export interface StudentRecord {
   student_id: string;
+  gr_number?: string;
   full_name: string;
   section: string;
   roll_number: string;
@@ -186,6 +187,13 @@ export interface DoctorVisitCase {
 
 export type OpdStatus = 'Referred' | 'Returned' | 'Follow-up';
 
+export interface OpdImageAttachment {
+  drive_file_id?: string;
+  image_url?: string;
+  image_data_url?: string; // Compressed local fallback preview
+  label?: string;
+}
+
 export interface OpdRecord {
   opd_id: string;
   student_id: string;
@@ -203,9 +211,35 @@ export interface OpdRecord {
   drive_file_id?: string;
   image_url?: string;
   image_data_url?: string; // Compressed local fallback preview
+  images?: OpdImageAttachment[]; // Multiple OPD slip / prescription / report photos
   notes?: string;
   recorded_by?: string;
   created_at: string;
+}
+
+/**
+ * Returns the unified list of image attachments for an OPD record, seamlessly
+ * supporting both multi-image records (`images[]`) and legacy single-photo records.
+ */
+export function getOpdImages(
+  opd: Partial<OpdRecord> | null | undefined
+): OpdImageAttachment[] {
+  if (!opd) return [];
+  if (Array.isArray(opd.images) && opd.images.length > 0) {
+    return opd.images.filter(
+      (img) => Boolean(img && (img.image_data_url || img.image_url || img.drive_file_id))
+    );
+  }
+  if (opd.image_data_url || opd.image_url || opd.drive_file_id) {
+    return [
+      {
+        drive_file_id: opd.drive_file_id,
+        image_url: opd.image_url,
+        image_data_url: opd.image_data_url,
+      },
+    ];
+  }
+  return [];
 }
 
 export interface MedicalCampRecord {
@@ -363,16 +397,113 @@ export interface DailyLogEntry {
 }
 
 /**
- * Normalizes a 24-hour HH:mm string, falling back cleanly if invalid.
+ * Normalizes a 24-hour HH:mm string, including Google Sheets auto-parsed 1899 Date strings
+ * (e.g. "Sat Dec 30 1899 08:00:00 GMT+0521 (...)"), leading-apostrophe plain text ("'08:00"),
+ * and 12-hour AM/PM times, falling back cleanly if invalid.
  */
 export function normalizeHHMM(raw: string | undefined | null, fallback: string): string {
-  const clean = String(raw || '').trim();
-  const match = clean.match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return fallback;
-  const h = parseInt(match[1], 10);
-  const m = parseInt(match[2], 10);
-  if (h < 0 || h > 23 || m < 0 || m > 59) return fallback;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const clean = String(raw || '')
+    .trim()
+    .replace(/^'+/, '')
+    .trim();
+  if (!clean) return fallback;
+
+  // 1. Direct 24-hour HH:mm or HH:mm:ss
+  const direct = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (direct) {
+    const h = parseInt(direct[1], 10);
+    const m = parseInt(direct[2], 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return fallback;
+  }
+
+  // 2. 12-hour format (e.g. "8:00 AM", "03:30 PM")
+  const ampm = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = parseInt(ampm[2], 10);
+    const mer = ampm[3].toUpperCase();
+    if (h >= 1 && h <= 12 && m >= 0 && m <= 59) {
+      if (mer === 'AM' && h === 12) h = 0;
+      else if (mer === 'PM' && h < 12) h += 12;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return fallback;
+  }
+
+  // 3. Google Sheets Date.toString() (e.g. "Sat Dec 30 1899 08:00:00 GMT+0521 (...)")
+  // Extract the wall-clock HH:mm directly so Node/server UTC timezone never shifts school timings.
+  const sheetDateClock = clean.match(/\b(\d{1,2}):(\d{2}):\d{2}\s+GMT/i);
+  if (sheetDateClock) {
+    const h = parseInt(sheetDateClock[1], 10);
+    const m = parseInt(sheetDateClock[2], 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+  }
+
+  // 4. Local ISO datetime string without UTC Z (e.g. "1899-12-30T08:00:00")
+  const isoLocalClock = clean.match(/^\d{4}-\d{2}-\d{2}T(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (isoLocalClock) {
+    const h = parseInt(isoLocalClock[1], 10);
+    const m = parseInt(isoLocalClock[2], 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+  }
+
+  return fallback;
+}
+
+/**
+ * Parses decimal or fractional quantities (e.g. "0.5", "1/2", "½", "1/4", "¼", "3/4", "1 1/2")
+ * into a rounded non-negative decimal number (up to 2 decimal places), or null if invalid.
+ */
+export function parseFractionalQuantity(raw: string | number | undefined | null): number | null {
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || raw < 0) return null;
+    return Number(raw.toFixed(2));
+  }
+  const clean = String(raw || '')
+    .trim()
+    .replace(/^'+/, '')
+    .replace(/¼/g, ' 1/4')
+    .replace(/½/g, ' 1/2')
+    .replace(/¾/g, ' 3/4')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return null;
+
+  const mixed = clean.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/);
+  if (mixed) {
+    const whole = parseInt(mixed[1], 10);
+    const num = parseInt(mixed[2], 10);
+    const den = parseInt(mixed[3], 10);
+    if (den > 0) {
+      return Number((whole + num / den).toFixed(2));
+    }
+    return null;
+  }
+
+  const frac = clean.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (frac) {
+    const num = parseInt(frac[1], 10);
+    const den = parseInt(frac[2], 10);
+    if (den > 0) {
+      return Number((num / den).toFixed(2));
+    }
+    return null;
+  }
+
+  if (/^\d+(?:\.\d+)?$/.test(clean)) {
+    const val = Number(clean);
+    if (Number.isFinite(val) && val >= 0) {
+      return Number(val.toFixed(2));
+    }
+  }
+  return null;
 }
 
 export function formatHHMMTo12h(hhmm: string): string {
@@ -564,7 +695,8 @@ export function searchStudents(
       const rollLower = student.roll_number.toLowerCase();
       const rollNumeric = String(parseInt(student.roll_number, 10));
       const idLower = student.student_id.toLowerCase();
-      const textCombined = `${nameLower} ${sectionLower} ${rollLower} ${rollNumeric} ${idLower}`;
+      const grLower = (student.gr_number || '').trim().toLowerCase();
+      const textCombined = `${nameLower} ${sectionLower} ${rollLower} ${rollNumeric} ${grLower} ${idLower}`;
 
       const matchesAll = tokens.every((tok) => {
         if (/^\d{1,2}$/.test(tok)) {
@@ -572,7 +704,8 @@ export function searchStudents(
           return (
             rollLower === tok ||
             rollNumeric === tokNum ||
-            rollLower.includes(tok)
+            rollLower.includes(tok) ||
+            (grLower !== '' && grLower === tok)
           );
         }
         return textCombined.includes(tok);
@@ -581,6 +714,8 @@ export function searchStudents(
 
       let score = 0;
       const qNum = /^\d{1,2}$/.test(q) ? String(parseInt(q, 10)) : '';
+      if (grLower && grLower === q) score += 220;
+      else if (grLower && grLower.startsWith(q)) score += 120;
       if (rollLower === q || (qNum && rollNumeric === qNum)) score += 200;
       else if (rollLower.startsWith(q)) score += 100;
       if (nameLower.startsWith(q)) score += 80;
@@ -635,11 +770,8 @@ export function formatMedicineDisplay(
     ? `${cleanDose}${(visit.dosage_unit || '').trim() ? ' ' + visit.dosage_unit.trim() : ''}`
     : '';
   const routePart = (visit.route || '').trim() ? `(${visit.route.trim()})` : '';
-  const timePart = (visit.administration_time || '').trim()
-    ? `at ${normalizeTimeOnlyString(visit.administration_time)}`
-    : '';
 
-  return [baseName, dosePart, routePart, timePart].filter(Boolean).join(' ');
+  return [baseName, dosePart, routePart].filter(Boolean).join(' ');
 }
 
 /**
@@ -1073,7 +1205,10 @@ export function parseStudentImportText(
     if (
       firstColLower.includes('name') ||
       secondColLower.includes('section') ||
-      firstColLower === 'student_id'
+      firstColLower === 'student_id' ||
+      firstColLower === 'gr_number' ||
+      firstColLower === 'gr number' ||
+      firstColLower === 'gr no'
     ) {
       rollFirstMode = false;
       continue;
@@ -1430,8 +1565,15 @@ export function normalizeSheetSyncPayload(
     assignedIds.add(studentId);
     usedRemoteIds.add(studentId);
 
+    const remoteGrRaw = row?.gr_number ?? row?.gr_no ?? row?.gr;
+    const grNumber =
+      remoteGrRaw !== undefined && remoteGrRaw !== null && String(remoteGrRaw).trim() !== ''
+        ? String(remoteGrRaw).trim()
+        : matchedLocal?.gr_number || '';
+
     normalizedRemoteStudents.push({
       student_id: studentId,
+      ...(grNumber ? { gr_number: grNumber } : {}),
       full_name: fullName,
       section,
       roll_number: rollNum,
@@ -1805,16 +1947,11 @@ export function normalizeSheetSyncPayload(
   const existingValidUsers = (currentDb.users || []).filter(
     (u) => !isPlaceholderSheetPassword(u.password)
   );
-  let finalUsers: AppUserRecord[] = existingValidUsers;
-  if (normalizedRemoteUsers.length > 0) {
-    const remoteUserMap = new Map(
-      normalizedRemoteUsers.map((u) => [u.username.toLowerCase(), u])
-    );
-    const preservedExisting = existingValidUsers.filter(
-      (u) => !remoteUserMap.has(u.username.toLowerCase())
-    );
-    finalUsers = [...normalizedRemoteUsers, ...preservedExisting];
-  }
+  // Treat a non-empty remote Users tab from Google Sheets as authoritative so deleted accounts
+  // (including deleted default/seed users) never resurrect after server restarts or background syncs.
+  // Pending local creations/edits/deletions are preserved on the server via applyAdminOverridesToDb().
+  const finalUsers: AppUserRecord[] =
+    normalizedRemoteUsers.length > 0 ? normalizedRemoteUsers : existingValidUsers;
   const mergedClasses = getAllClassSections(finalStudents, [
     ...(Array.isArray(currentDb.classes) ? currentDb.classes : []),
     ...(Array.isArray(payload.classes) ? payload.classes : []),
@@ -2054,6 +2191,77 @@ export function normalizeSheetSyncPayload(
       rawStatus === 'Returned' || rawStatus === 'Follow-up' ? rawStatus : 'Referred';
     const prevLocal = localOpdById.get(id);
     const rawFollowUp = String(row?.follow_up_date || '').trim();
+
+    // Parse multi-image URLs/IDs from Google Sheets (newline-separated) or structured `row.images`
+    const prevLocalImages = getOpdImages(prevLocal);
+    const parsedRemoteImages: OpdImageAttachment[] = [];
+
+    if (Array.isArray(row?.images) && row.images.length > 0) {
+      for (const item of row.images) {
+        if (!item || typeof item !== 'object') continue;
+        const safeUrl = /^https:\/\/[^\s]+$/i.test(String(item.image_url || '').trim())
+          ? String(item.image_url).trim()
+          : undefined;
+        const safeDriveId = String(item.drive_file_id || '').trim() || undefined;
+        const safeLabel = String(item.label || '').trim() || undefined;
+        if (safeUrl || safeDriveId) {
+          parsedRemoteImages.push({
+            drive_file_id: safeDriveId,
+            image_url: safeUrl,
+            label: safeLabel,
+          });
+        }
+      }
+    } else {
+      const remoteUrls = String(row?.image_url || '')
+        .split(/[\r\n]+/)
+        .map((u) => u.trim())
+        .filter((u) => /^https:\/\/[^\s]+$/i.test(u));
+      const remoteIds = String(row?.drive_file_id || '')
+        .split(/[\r\n]+/)
+        .map((d) => d.trim())
+        .filter(Boolean);
+      const count = Math.max(remoteUrls.length, remoteIds.length);
+      for (let i = 0; i < count; i++) {
+        parsedRemoteImages.push({
+          drive_file_id: remoteIds[i] || undefined,
+          image_url: remoteUrls[i] || undefined,
+        });
+      }
+    }
+
+    let mergedImages: OpdImageAttachment[] = [];
+    if (parsedRemoteImages.length > 0) {
+      mergedImages = parsedRemoteImages.map((rem, idx) => {
+        const matchedLocal =
+          prevLocalImages.find(
+            (l) =>
+              (rem.drive_file_id && l.drive_file_id === rem.drive_file_id) ||
+              (rem.image_url && l.image_url === rem.image_url)
+          ) || prevLocalImages[idx];
+        return {
+          drive_file_id: rem.drive_file_id || matchedLocal?.drive_file_id,
+          image_url: rem.image_url || matchedLocal?.image_url,
+          image_data_url: matchedLocal?.image_data_url,
+          label: rem.label || matchedLocal?.label,
+        };
+      });
+      // Preserve any extra local-only images not yet uploaded to Drive
+      for (const loc of prevLocalImages) {
+        if (
+          loc.image_data_url &&
+          !loc.drive_file_id &&
+          !loc.image_url &&
+          !mergedImages.some((m) => m.image_data_url === loc.image_data_url)
+        ) {
+          mergedImages.push(loc);
+        }
+      }
+    } else if (prevLocalImages.length > 0) {
+      mergedImages = prevLocalImages;
+    }
+
+    const primaryImg = mergedImages[0];
     normalizedRemoteOpd.push({
       opd_id: id,
       student_id: stuId,
@@ -2071,14 +2279,10 @@ export function normalizeSheetSyncPayload(
       diagnosis_and_advice: String(row?.diagnosis_and_advice || '').trim() || undefined,
       follow_up_date: rawFollowUp ? normalizeDateOnlyString(rawFollowUp, '') : undefined,
       status,
-      drive_file_id: String(row?.drive_file_id || '').trim() || prevLocal?.drive_file_id || undefined,
-      image_url:
-        (/^https:\/\/[^\s]+$/i.test(String(row?.image_url || '').trim())
-          ? String(row?.image_url || '').trim()
-          : undefined) ||
-        prevLocal?.image_url ||
-        undefined,
-      image_data_url: prevLocal?.image_data_url,
+      drive_file_id: primaryImg?.drive_file_id || undefined,
+      image_url: primaryImg?.image_url || undefined,
+      image_data_url: primaryImg?.image_data_url || undefined,
+      images: mergedImages.length > 0 ? mergedImages : undefined,
       notes: String(row?.notes || '').trim() || undefined,
       recorded_by: String(row?.recorded_by || '').trim() || undefined,
       created_at: String(row?.created_at || '').trim() || nowIso,
@@ -2748,6 +2952,49 @@ export function computeCommonIssues(params: {
       if (b.uniqueStudentCount !== a.uniqueStudentCount) return b.uniqueStudentCount - a.uniqueStudentCount;
       return a.label.localeCompare(b.label);
     });
+}
+
+/**
+ * Merges default stock categories with custom categories already saved on
+ * inventory records or cached locally, deduplicating case-insensitively while
+ * keeping fallback buckets like "General" / "Other" at the end of the list.
+ */
+export function mergeUniqueCategories(
+  defaults: readonly string[],
+  ...sources: Array<ReadonlyArray<string | undefined | null> | undefined>
+): string[] {
+  const seen = new Set<string>();
+  const baseList: string[] = [];
+  const trailingBuckets: string[] = [];
+
+  for (const raw of defaults) {
+    const clean = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (key === 'general' || key === 'other') {
+      trailingBuckets.push(clean);
+    } else {
+      baseList.push(clean);
+    }
+  }
+
+  const customList: string[] = [];
+  for (const source of sources) {
+    if (!source) continue;
+    for (const raw of source) {
+      const clean = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (!clean) continue;
+      const key = clean.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      customList.push(clean);
+    }
+  }
+
+  customList.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return [...baseList, ...customList, ...trailingBuckets];
 }
 
 

@@ -57,7 +57,13 @@ interface StudentProfileViewProps {
     condition_or_note: string;
     status: 'Active' | 'Monitoring' | 'Resolved';
   }) => Promise<void>;
-  onCreateStudent: (fullName: string, section: string, rollNumber: string) => StudentRecord;
+  onCreateStudent: (
+    fullName: string,
+    section: string,
+    rollNumber: string,
+    activeStatus?: 'Active' | 'Inactive',
+    grNumber?: string
+  ) => StudentRecord;
   onUpdateStudent?: (student: StudentRecord) => Promise<{ ok: boolean; message: string }>;
   onBulkImportStudents: (
     rows: Array<{ rollNumber: string; fullName: string; section: string }>,
@@ -107,6 +113,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentSection, setNewStudentSection] = useState('Sparkle');
   const [newStudentRoll, setNewStudentRoll] = useState('');
+  const [newStudentGrNumber, setNewStudentGrNumber] = useState('');
 
   // Bulk Paste Class List Modal
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
@@ -133,6 +140,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   const [editStuName, setEditStuName] = useState('');
   const [editStuSection, setEditStuSection] = useState('');
   const [editStuRoll, setEditStuRoll] = useState('');
+  const [editStuGrNumber, setEditStuGrNumber] = useState('');
   const [editStuStatus, setEditStuStatus] = useState<'Active' | 'Inactive'>('Active');
   const [editStuSaving, setEditStuSaving] = useState(false);
 
@@ -247,10 +255,13 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
     const created = onCreateStudent(
       newStudentName.trim(),
       cleanSection,
-      newStudentRoll.trim().padStart(2, '0')
+      newStudentRoll.trim().padStart(2, '0'),
+      'Active',
+      newStudentGrNumber.trim()
     );
     setNewStudentName('');
     setNewStudentRoll('');
+    setNewStudentGrNumber('');
     setShowAddStudentForm(false);
     onSelectStudentId(created.student_id);
   };
@@ -259,6 +270,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
     setEditStuName(stu.full_name);
     setEditStuSection(stu.section);
     setEditStuRoll(stu.roll_number);
+    setEditStuGrNumber(stu.gr_number || '');
     setEditStuStatus(stu.active_status === 'Inactive' ? 'Inactive' : 'Active');
     setShowEditStudentModal(true);
   };
@@ -274,6 +286,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
     try {
       await onUpdateStudent({
         ...selectedStudent,
+        gr_number: editStuGrNumber.trim(),
         full_name: cleanName,
         section: cleanSection,
         roll_number: /^\d+$/.test(cleanRoll) ? cleanRoll.padStart(2, '0') : cleanRoll,
@@ -411,8 +424,14 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                   <span className="font-semibold text-teal-700">{selectedStudent.section}</span>
                   <span className="text-zinc-300" aria-hidden="true">·</span>
                   <span className="font-mono">Roll #{selectedStudent.roll_number}</span>
-                  <span className="text-zinc-300 hidden sm:inline" aria-hidden="true">·</span>
-                  <span className="font-mono text-zinc-400 hidden sm:inline">{selectedStudent.student_id}</span>
+                  {selectedStudent.gr_number && (
+                    <>
+                      <span className="text-zinc-300 hidden sm:inline" aria-hidden="true">·</span>
+                      <span className="font-mono text-zinc-500 hidden sm:inline">
+                        GR No: {selectedStudent.gr_number}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <h1 className="text-xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-snug">
                   {selectedStudent.full_name}
@@ -528,8 +547,10 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 </dd>
               </div>
               <div>
-                <dt className="text-zinc-400">Permanent Student ID</dt>
-                <dd className="text-sm font-mono text-zinc-600 mt-1">{selectedStudent.student_id}</dd>
+                <dt className="text-zinc-400">GR Number</dt>
+                <dd className="text-sm font-mono text-zinc-600 mt-1">
+                  {selectedStudent.gr_number || 'Not uploaded'}
+                </dd>
               </div>
               <div>
                 <dt className="text-zinc-400">Latest Height &amp; Weight</dt>
@@ -956,7 +977,11 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
           onClose={() => setShowEditStudentModal(false)}
           title="Edit Student Information"
           titleId="profile-edit-student-title"
-          subtitle={selectedStudent.student_id}
+          subtitle={
+            selectedStudent.gr_number
+              ? `GR Number · ${selectedStudent.gr_number}`
+              : 'GR Number · Not uploaded'
+          }
           icon={<Pencil className="w-4 h-4 text-teal-700" />}
           maxWidthClass="max-w-md"
           footer={
@@ -1030,6 +1055,19 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               </div>
             </div>
             <div>
+              <label htmlFor="profile-edit-gr" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                GR Number
+              </label>
+              <input
+                id="profile-edit-gr"
+                type="text"
+                value={editStuGrNumber}
+                onChange={(e) => setEditStuGrNumber(e.target.value)}
+                placeholder="Optional — enter or upload later"
+                className="w-full h-10 px-3 text-sm font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
+              />
+            </div>
+            <div>
               <label htmlFor="profile-edit-status" className="block text-xs font-semibold text-zinc-700 mb-1.5">
                 Enrollment Status
               </label>
@@ -1056,17 +1094,14 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   // DIRECTORY VIEW (ALL CLASS SECTIONS)
   // ============================================================================
   return (
-    <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-4">
+    <div className="max-w-4xl mx-auto space-y-5 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <p className="text-[11px] sm:text-xs font-medium text-teal-700">
-            Student Directory · All Sections
-          </p>
-          <h1 className="text-xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5">
-            School Student Roster ({students.length})
+          <h1 className="text-xl sm:text-2xl font-semibold text-zinc-950 font-display tracking-tight">
+            Student Directory ({students.length})
           </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 mt-1">
-            Tap any student row to open their health profile or log a visit.
+          <p className="text-xs text-zinc-500 mt-1">
+            Select any student to view their health profile or record an infirmary visit.
           </p>
         </div>
 
@@ -1077,7 +1112,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               setShowBulkImportModal((v) => !v);
               setShowAddStudentForm(false);
             }}
-            className="h-9 px-3 sm:px-3.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+            className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-zinc-200/90 rounded-xl hover:bg-zinc-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
           >
             <Upload className="w-3.5 h-3.5" />
             <span>Import List</span>
@@ -1088,7 +1123,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               setShowAddStudentForm((v) => !v);
               setShowBulkImportModal(false);
             }}
-            className="h-9 px-3 sm:px-3.5 text-xs font-semibold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+            className="h-9 px-3.5 text-xs font-semibold text-white bg-zinc-900 rounded-xl hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Student</span>
@@ -1115,10 +1150,10 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
       {showBulkImportModal && (
         <form
           onSubmit={handleBulkImportSubmit}
-          className="bg-white border border-stone-200 rounded-2xl p-4 sm:p-6 space-y-4 shadow-xs"
+          className="bg-white border border-zinc-200/80 rounded-2xl p-4 sm:p-6 space-y-4"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-zinc-900 font-display">
+            <h2 className="text-base font-semibold text-zinc-950 font-display">
               Paste Class Teacher Student List
             </h2>
             <button
@@ -1140,7 +1175,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 list="school-classes-datalist"
                 value={bulkSection}
                 onChange={(e) => setBulkSection(e.target.value)}
-                className="w-full h-9 px-3 text-xs bg-stone-50 border border-stone-200 rounded-lg"
+                className="w-full h-9 px-3 text-xs bg-zinc-50 border border-zinc-200 rounded-lg"
               />
             </div>
             <div className="flex items-end pb-1.5">
@@ -1164,7 +1199,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               value={bulkRawText}
               onChange={(e) => setBulkRawText(e.target.value)}
               placeholder={`01 Aarav Sharma\n02 Diya Patel\n03 Rohan Deshmukh`}
-              className="w-full p-3 text-xs font-mono bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none"
+              className="w-full p-3 text-xs font-mono bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:outline-none"
             />
           </div>
           <div className="flex items-center justify-between">
@@ -1185,10 +1220,10 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
       {showAddStudentForm && (
         <form
           onSubmit={handleCreateStudentSubmit}
-          className="bg-white border border-stone-200 rounded-2xl p-4 sm:p-6 space-y-4 shadow-xs"
+          className="bg-white border border-zinc-200/80 rounded-2xl p-4 sm:p-6 space-y-4"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-zinc-900 font-display">
+            <h2 className="text-base font-semibold text-zinc-950 font-display">
               Add Student Record
             </h2>
             <button
@@ -1199,7 +1234,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               Cancel
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
             <input
               id="dir-student-name"
               type="text"
@@ -1207,7 +1242,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               value={newStudentName}
               onChange={(e) => setNewStudentName(e.target.value)}
               placeholder="Student Full Name *"
-              className="sm:col-span-2 h-9 px-3 text-xs bg-stone-50 border border-stone-200 rounded-lg"
+              className="sm:col-span-2 h-9 px-3 text-xs bg-zinc-50 border border-zinc-200 rounded-lg"
             />
             <input
               id="dir-student-section"
@@ -1217,7 +1252,16 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
               value={newStudentSection}
               onChange={(e) => setNewStudentSection(e.target.value)}
               placeholder="Class (e.g. Sparkle)"
-              className="h-9 px-3 text-xs bg-stone-50 border border-stone-200 rounded-lg"
+              className="h-9 px-3 text-xs bg-zinc-50 border border-zinc-200 rounded-lg"
+            />
+            <input
+              id="dir-student-gr"
+              type="text"
+              aria-label="GR Number"
+              value={newStudentGrNumber}
+              onChange={(e) => setNewStudentGrNumber(e.target.value)}
+              placeholder="GR No. (optional)"
+              className="h-9 px-3 text-xs font-mono bg-zinc-50 border border-zinc-200 rounded-lg"
             />
             <div className="flex gap-2">
               <input
@@ -1227,7 +1271,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 value={newStudentRoll}
                 onChange={(e) => setNewStudentRoll(e.target.value)}
                 placeholder="Roll #"
-                className="w-20 h-9 px-2.5 text-xs font-mono bg-stone-50 border border-stone-200 rounded-lg"
+                className="w-20 h-9 px-2.5 text-xs font-mono bg-zinc-50 border border-zinc-200 rounded-lg"
               />
               <button
                 type="submit"
@@ -1247,16 +1291,16 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
       </datalist>
 
       {/* Search & Class Filters */}
-      <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-[0_4px_24px_rgb(0,0,0,0.02)]">
+      <div className="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden">
         {/* Class Filter Pills */}
-        <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-1.5 overflow-x-auto sm:flex-wrap no-scrollbar">
+        <div className="px-4 py-3 border-b border-zinc-100 flex items-center gap-1.5 overflow-x-auto sm:flex-wrap no-scrollbar">
           <button
             type="button"
             onClick={() => setSelectedSectionFilter('All')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-xl whitespace-nowrap transition-colors ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
               selectedSectionFilter === 'All'
                 ? 'bg-zinc-900 text-white font-semibold'
-                : 'bg-stone-100 text-zinc-600 hover:bg-stone-200'
+                : 'bg-zinc-100/80 text-zinc-600 hover:bg-zinc-200/70'
             }`}
           >
             All Classes ({students.length})
@@ -1269,10 +1313,10 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 key={cls}
                 type="button"
                 onClick={() => setSelectedSectionFilter(cls)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-xl whitespace-nowrap transition-colors ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
                   isSelected
-                    ? 'bg-teal-700 text-white font-semibold'
-                    : 'bg-stone-100 text-zinc-600 hover:bg-stone-200'
+                    ? 'bg-zinc-900 text-white font-semibold'
+                    : 'bg-zinc-100/80 text-zinc-600 hover:bg-zinc-200/70'
                 }`}
               >
                 {cls} ({count})

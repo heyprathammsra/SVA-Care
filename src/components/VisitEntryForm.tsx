@@ -27,6 +27,7 @@ import {
   resolveVisitShiftPeriod,
   formatShiftPeriodLabel,
   formatHHMMTo12h,
+  parseFractionalQuantity,
   DEFAULT_INFIRMARY_SETTINGS,
   type StudentRecord,
   type VisitRecord,
@@ -72,6 +73,12 @@ const QUICK_REASONS = [
   'Stomach Ache',
   'Fever / Sore Throat',
   'Allergic Sneezing',
+  'Swelling',
+  'Cold',
+  'Cough',
+  'Skin problem',
+  'Eye problem',
+  'Ear problem',
 ];
 
 const QUICK_ACTIONS = [
@@ -79,7 +86,37 @@ const QUICK_ACTIONS = [
   'Oral hydration (ORS 200 ml) & 20 mins rest',
   'Temperature checked; cold sponging & observation',
   'Parent informed via school office',
+  'Cold ice pack compression',
+  'Steam inhalation',
+  'NA',
+  'Skin inspection done',
+  'Eye inspection done',
+  'Ear inspection done',
 ];
+
+const QUICK_QTY_PRESETS = [
+  { label: '¼', qty: '0.25', dose: '1/4' },
+  { label: '½', qty: '0.5', dose: '1/2' },
+  { label: '1', qty: '1', dose: '1' },
+  { label: '2', qty: '2', dose: '2' },
+];
+
+function isCountableMedicineUnit(unitStr: string | undefined | null): boolean {
+  return /\b(?:tab|tabs|tablet|tablets|cap|caps|capsule|capsules|pill|pills|sachet|sachets|strip|strips|pcs|piece|pieces)\b/i.test(
+    String(unitStr || '')
+  );
+}
+
+function inferDosageUnitFromInventory(unitStr: string | undefined | null): string | null {
+  const u = String(unitStr || '').trim().toLowerCase();
+  if (!u) return null;
+  if (/tab|cap|pill/.test(u)) return 'tablet';
+  if (/drop/.test(u)) return 'drops';
+  if (/ml|syrup|susp|liquid|bottle/.test(u)) return 'ml';
+  if (/mg/.test(u)) return 'mg';
+  if (/oint|cream|gel|tube|apply|topical/.test(u)) return 'application';
+  return null;
+}
 
 interface ClinicalTemplate {
   id: string;
@@ -418,8 +455,8 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
     e.preventDefault();
     if (isSubmitting) return;
 
-    const parsedMedQty = Math.max(0, Number(medicineQty) || 0);
-    const parsedItemQty = Math.max(0, Number(itemQty) || 0);
+    const parsedMedQty = Math.max(0, parseFractionalQuantity(medicineQty) ?? 0);
+    const parsedItemQty = Math.max(0, parseFractionalQuantity(itemQty) ?? 0);
 
     const formInput: VisitFormInput = {
       student_id: selectedStudentId,
@@ -573,25 +610,25 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto space-y-3.5 sm:space-y-6">
-      {/* Desktop Header (Preserved for PC) */}
+      {/* Desktop Header */}
       <div className="hidden sm:flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-teal-700">
-            Infirmary Clinical Entry
-          </p>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5">
+          <h1 className="text-2xl font-semibold text-zinc-950 font-display tracking-tight">
             Record Infirmary Visit
           </h1>
+          <p className="text-xs text-zinc-500 mt-1">
+            Select a student, log symptoms and care provided, and record any medicine dispensed.
+          </p>
         </div>
 
         {onCancel && (
           <button
             type="button"
             onClick={onCancel}
-            className="h-9 px-3 text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-white border border-stone-200/80 rounded-xl flex items-center gap-1.5 transition-colors shrink-0 shadow-2xs"
+            className="h-9 px-3.5 text-xs font-medium text-zinc-700 hover:text-zinc-950 bg-white border border-zinc-200/90 hover:bg-zinc-50 rounded-xl flex items-center gap-1.5 transition-colors shrink-0"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Infirmary</span>
+            <span>Back to Desk</span>
           </button>
         )}
       </div>
@@ -900,23 +937,36 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                 className="w-full h-10 px-3.5 text-sm bg-stone-50/60 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900 transition-colors"
               />
               {errors.reason && <p className="text-xs text-red-600 mt-1">{errors.reason}</p>}
-              {!reason && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {QUICK_REASONS.map((preset) => (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {QUICK_REASONS.map((preset) => {
+                  const isIncluded = reason
+                    .split(',')
+                    .map((p) => p.trim().toLowerCase())
+                    .includes(preset.toLowerCase());
+                  return (
                     <button
                       key={preset}
                       type="button"
                       onClick={() => {
-                        setReason(preset);
+                        const trimmed = reason.trim();
+                        if (!trimmed) {
+                          setReason(preset);
+                        } else if (!isIncluded) {
+                          setReason(`${trimmed}, ${preset}`);
+                        }
                         if (errors.reason) setErrors((prev) => ({ ...prev, reason: '' }));
                       }}
-                      className="px-2 py-0.5 text-[11px] text-zinc-500 hover:text-zinc-900 bg-stone-100/70 hover:bg-stone-200/60 rounded-md transition-colors whitespace-nowrap shrink-0"
+                      className={`px-2 py-0.5 text-[11px] rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        isIncluded
+                          ? 'bg-teal-50 text-teal-800 border border-teal-200/80 font-medium'
+                          : 'text-zinc-500 hover:text-zinc-900 bg-stone-100/70 hover:bg-stone-200/60'
+                      }`}
                     >
-                      + {preset}
+                      {isIncluded ? `✓ ${preset}` : `+ ${preset}`}
                     </button>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
 
             <div>
@@ -937,23 +987,38 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
               {errors.action_taken && (
                 <p className="text-xs text-red-600 mt-1">{errors.action_taken}</p>
               )}
-              {!actionTaken && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  {QUICK_ACTIONS.map((preset) => (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {QUICK_ACTIONS.map((preset) => {
+                  const isIncluded = actionTaken
+                    .split(',')
+                    .map((p) => p.trim().toLowerCase())
+                    .includes(preset.toLowerCase());
+                  return (
                     <button
                       key={preset}
                       type="button"
                       onClick={() => {
-                        setActionTaken(preset);
+                        const trimmed = actionTaken.trim();
+                        if (preset === 'NA') {
+                          setActionTaken('NA');
+                        } else if (!trimmed || trimmed.toUpperCase() === 'NA') {
+                          setActionTaken(preset);
+                        } else if (!isIncluded) {
+                          setActionTaken(`${trimmed}, ${preset}`);
+                        }
                         if (errors.action_taken) setErrors((prev) => ({ ...prev, action_taken: '' }));
                       }}
-                      className="px-2 py-0.5 text-[11px] text-zinc-500 hover:text-zinc-900 bg-stone-100/70 hover:bg-stone-200/60 rounded-md transition-colors text-left"
+                      className={`px-2 py-0.5 text-[11px] rounded-md transition-colors text-left cursor-pointer ${
+                        isIncluded
+                          ? 'bg-teal-50 text-teal-800 border border-teal-200/80 font-medium'
+                          : 'text-zinc-500 hover:text-zinc-900 bg-stone-100/70 hover:bg-stone-200/60'
+                      }`}
                     >
-                      + {preset}
+                      {isIncluded ? `✓ ${preset}` : `+ ${preset}`}
                     </button>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
 
             {/* MEDICATION TOGGLE (CONSISTENT TOP-ALIGNED LABEL) */}
@@ -1030,6 +1095,19 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                                   ? `${found.name} (${found.form_strength})`
                                   : found.name
                               );
+                              const inferredUnit = inferDosageUnitFromInventory(found.unit);
+                              if (inferredUnit) {
+                                setDosageUnit(inferredUnit);
+                              }
+                              const parsedDose = parseFractionalQuantity(dosage);
+                              if (
+                                isCountableMedicineUnit(found.unit) &&
+                                parsedDose !== null &&
+                                parsedDose > 0 &&
+                                parsedDose <= 100
+                              ) {
+                                setMedicineQty(String(parsedDose));
+                              }
                               if (!adminTime && visitDatetime.length >= 16) {
                                 setAdminTime(visitDatetime.slice(11, 16));
                               }
@@ -1054,19 +1132,59 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                         </label>
                         <input
                           id="medicine-deduct-qty"
-                          type="number"
-                          min="0"
-                          step="any"
+                          type="text"
+                          inputMode="decimal"
                           disabled={!selectedMedicineId}
                           value={medicineQty}
                           onChange={(e) => setMedicineQty(e.target.value)}
+                          placeholder="0.5 or 1"
                           className="w-full h-9 px-2.5 text-xs font-mono bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900 disabled:opacity-50"
                         />
-                        {selectedMedicineRecord && (
-                          <p className="text-[11px] font-mono text-teal-700 mt-1 truncate">
-                            In stock: {selectedMedicineRecord.current_stock} {selectedMedicineRecord.unit}
-                          </p>
-                        )}
+                        {selectedMedicineRecord && (() => {
+                          const parsedDeduct = parseFractionalQuantity(medicineQty) ?? 0;
+                          const stockAfter = Math.max(
+                            0,
+                            Number((selectedMedicineRecord.current_stock - parsedDeduct).toFixed(2))
+                          );
+                          return (
+                            <div className="mt-1.5 space-y-1">
+                              <div className="flex items-center gap-1">
+                                {QUICK_QTY_PRESETS.map((q) => {
+                                  const isActive = parsedDeduct === Number(q.qty);
+                                  return (
+                                    <button
+                                      key={q.qty}
+                                      type="button"
+                                      onClick={() => {
+                                        setMedicineQty(q.qty);
+                                        if (
+                                          dosageUnit === 'tablet' ||
+                                          isCountableMedicineUnit(selectedMedicineRecord.unit)
+                                        ) {
+                                          setDosage(q.dose);
+                                          setDosageUnit('tablet');
+                                        }
+                                      }}
+                                      className={`flex-1 py-0.5 text-[11px] font-mono rounded-md border transition-colors cursor-pointer ${
+                                        isActive
+                                          ? 'bg-teal-700 border-teal-700 text-white font-semibold'
+                                          : 'bg-white border-stone-200 text-zinc-600 hover:bg-stone-100'
+                                      }`}
+                                      title={`Deduct ${q.qty} ${selectedMedicineRecord.unit}`}
+                                    >
+                                      {q.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-[11px] font-mono text-teal-700 truncate">
+                                {parsedDeduct > 0
+                                  ? `Stock: ${selectedMedicineRecord.current_stock} → ${stockAfter} ${selectedMedicineRecord.unit}`
+                                  : `In stock: ${selectedMedicineRecord.current_stock} ${selectedMedicineRecord.unit}`}
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -1131,8 +1249,21 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                         id="medicine-dosage"
                         type="text"
                         value={dosage}
-                        onChange={(e) => setDosage(e.target.value)}
-                        placeholder="5"
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDosage(val);
+                          if (
+                            selectedMedicineRecord &&
+                            (dosageUnit === 'tablet' ||
+                              isCountableMedicineUnit(selectedMedicineRecord.unit))
+                          ) {
+                            const parsed = parseFractionalQuantity(val);
+                            if (parsed !== null && parsed > 0 && parsed <= 100) {
+                              setMedicineQty(String(parsed));
+                            }
+                          }
+                        }}
+                        placeholder="1/2 or 5"
                         className="w-full h-9 px-2.5 text-xs font-mono bg-white border border-stone-200 rounded-lg focus:outline-none focus:border-zinc-900"
                       />
                     </div>
@@ -1145,7 +1276,15 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                         ariaLabel="Medicine dosage unit"
                         size="sm"
                         value={dosageUnit}
-                        onChange={setDosageUnit}
+                        onChange={(unitVal) => {
+                          setDosageUnit(unitVal);
+                          if (selectedMedicineRecord && unitVal === 'tablet') {
+                            const parsed = parseFractionalQuantity(dosage);
+                            if (parsed !== null && parsed > 0 && parsed <= 100) {
+                              setMedicineQty(String(parsed));
+                            }
+                          }
+                        }}
                         options={[
                           { value: 'ml', label: 'ml' },
                           { value: 'mg', label: 'mg' },
@@ -1388,20 +1527,20 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
         {/* RIGHT COLUMN (5 COLS): STUDENT HEALTH CONTEXT SIDEBAR */}
         <aside className="lg:col-span-5 space-y-5">
           {selectedStudent ? (
-            <div className="bg-white border border-stone-200/80 rounded-2xl p-5 sm:p-6 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
-              <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-stone-100">
+            <div className="bg-white border border-zinc-200/80 rounded-2xl p-5 sm:p-6 space-y-5">
+              <div className="flex items-center justify-between gap-2 pb-3.5 border-b border-zinc-100">
                 <div>
-                  <span className="text-[11px] font-semibold text-teal-700">
-                    Student Health Context
-                  </span>
-                  <h3 className="text-base font-semibold text-zinc-900 font-display">
+                  <h3 className="text-base font-semibold text-zinc-950 font-display">
                     {selectedStudent.full_name}
                   </h3>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    {selectedStudent.section} · Roll {selectedStudent.roll_number}
+                  </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => onOpenStudentProfile(selectedStudent.student_id)}
-                  className="px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-stone-100 hover:bg-stone-200/70 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                  className="px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-950 bg-zinc-100/80 hover:bg-zinc-200/70 rounded-lg transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
                 >
                   Full Profile
                   <ArrowRight className="w-3 h-3" />
@@ -1410,20 +1549,19 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
 
               {/* 1. Allergies & Medical Conditions */}
               <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
-                  <HeartPulse className="w-3.5 h-3.5 text-teal-700" />
-                  <span>Medical Conditions &amp; Allergies</span>
+                <div className="text-xs font-semibold text-zinc-900">
+                  Medical Conditions &amp; Allergies
                 </div>
                 {selectedStudentConditions.length === 0 ? (
-                  <p className="text-xs text-zinc-500 bg-stone-50/80 px-3 py-2 rounded-xl border border-stone-200/50">
-                    No pre-existing conditions or medication allergies recorded on file.
+                  <p className="text-xs text-zinc-500">
+                    No pre-existing conditions or medication allergies on file.
                   </p>
                 ) : (
                   <div className="space-y-2">
                     {selectedStudentConditions.map((cond) => (
                       <div
                         key={cond.health_record_id}
-                        className="p-3 bg-amber-50/80 border border-amber-200/70 rounded-xl text-xs text-amber-950 space-y-0.5"
+                        className="p-3 bg-amber-50/70 border border-amber-200/70 rounded-xl text-xs text-amber-950 space-y-0.5"
                       >
                         <p className="font-medium">{cond.condition_or_note}</p>
                         <p className="text-[11px] text-amber-700 font-mono">
@@ -1436,49 +1574,45 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
               </div>
 
               {/* 2. Latest Height & Weight */}
-              <div className="space-y-2 pt-3 border-t border-stone-100">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
-                  <Ruler className="w-3.5 h-3.5 text-teal-700" />
-                  <span>Height &amp; Weight (Care Reference)</span>
+              <div className="space-y-1.5 pt-3.5 border-t border-zinc-100">
+                <div className="text-xs font-semibold text-zinc-900">
+                  Height &amp; Weight
                 </div>
                 {selectedStudentLatestMeas ? (
-                  <div className="p-3 bg-stone-50/80 border border-stone-200/60 rounded-xl flex items-center justify-between text-xs">
-                    <div className="font-mono font-semibold text-zinc-900">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-mono font-semibold text-zinc-900">
                       {selectedStudentLatestMeas.height_cm} cm · {selectedStudentLatestMeas.weight_kg} kg
-                    </div>
+                    </span>
                     <span className="font-mono text-[11px] text-zinc-400">
                       Recorded {selectedStudentLatestMeas.measurement_date}
                     </span>
                   </div>
                 ) : (
-                  <p className="text-xs text-zinc-500 bg-stone-50/80 px-3 py-2 rounded-xl border border-stone-200/50">
+                  <p className="text-xs text-zinc-500">
                     Height and weight not recorded yet.
                   </p>
                 )}
               </div>
 
               {/* 3. Past Infirmary Visits for This Student */}
-              <div className="space-y-2.5 pt-3 border-t border-stone-100">
-                <div className="flex items-center justify-between text-xs font-semibold text-zinc-800">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-teal-700" />
-                    Previous Visits ({selectedStudentVisits.length})
-                  </span>
+              <div className="space-y-2.5 pt-3.5 border-t border-zinc-100">
+                <div className="text-xs font-semibold text-zinc-900">
+                  Previous Visits ({selectedStudentVisits.length})
                 </div>
 
                 {selectedStudentVisits.length === 0 ? (
-                  <p className="text-xs text-zinc-500 bg-stone-50/80 px-3 py-2 rounded-xl border border-stone-200/50">
+                  <p className="text-xs text-zinc-500">
                     First infirmary visit for {selectedStudent.full_name}.
                   </p>
                 ) : (
-                  <div className="divide-y divide-stone-100 border border-stone-200/60 rounded-xl overflow-hidden">
+                  <div className="divide-y divide-zinc-100 border border-zinc-200/70 rounded-xl overflow-hidden">
                     {selectedStudentVisits.slice(0, 4).map((v) => (
                       <div key={v.visit_id} className="p-3 bg-white space-y-1 text-xs">
                         <div className="flex items-center justify-between font-mono text-[11px] text-zinc-400">
                           <span>{extractDatePart(v.visit_datetime)}</span>
                           <span>{formatTimeFromDatetime(v.visit_datetime)}</span>
                         </div>
-                        <p className="font-semibold text-zinc-900">{v.reason}</p>
+                        <p className="font-medium text-zinc-900">{v.reason}</p>
                         <p className="text-zinc-500">{formatMedicineDisplay(v)}</p>
                       </div>
                     ))}
@@ -1487,44 +1621,41 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
               </div>
             </div>
           ) : (
-            <div className="hidden lg:block bg-white border border-stone-200/80 rounded-2xl p-6 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-4">
+            <div className="hidden lg:block bg-white border border-zinc-200/80 rounded-2xl p-6 space-y-4">
               <div>
-                <span className="text-[11px] font-semibold text-teal-700">
-                  Care &amp; Visit Overview
-                </span>
-                <h3 className="text-base font-semibold text-zinc-900 font-display mt-0.5">
-                  Students with Health Notes &amp; Recent Visits
+                <h3 className="text-sm font-semibold text-zinc-950 font-display">
+                  Quick Select Students
                 </h3>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Select a student with an active health note or recent infirmary visit to load their profile right away.
+                  Students with active health notes or recent infirmary visits.
                 </p>
               </div>
 
-              <div className="divide-y divide-stone-100 border border-stone-200/70 rounded-xl overflow-hidden">
+              <div className="divide-y divide-zinc-100 border border-zinc-200/70 rounded-xl overflow-hidden">
                 {clinicalPriorityStudents.map(({ student: stu, badge, detail, isAlert }) => (
                   <button
                     key={stu.student_id}
                     type="button"
                     onClick={() => handleSelectStudent(stu)}
-                    className="w-full p-3.5 text-left hover:bg-stone-50 transition-colors flex items-start justify-between gap-3 text-xs"
+                    className="w-full p-3.5 text-left hover:bg-zinc-50 transition-colors flex items-start justify-between gap-3 text-xs"
                   >
-                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <span className="w-6 h-6 rounded-md bg-stone-100 text-zinc-700 font-mono text-[11px] font-semibold flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <span className="w-7 h-7 rounded-lg bg-zinc-100 text-zinc-600 font-mono text-xs font-medium flex items-center justify-center shrink-0">
                         {stu.roll_number}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold text-zinc-900 truncate">
+                          <span className="font-medium text-zinc-950 truncate">
                             {stu.full_name}
                           </span>
                           <span
-                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${
+                            className={`text-[11px] shrink-0 ${
                               isAlert
-                                ? 'bg-amber-50 text-amber-800 border border-amber-200/60 font-medium'
-                                : 'bg-stone-100 text-zinc-500'
+                                ? 'text-amber-700 font-medium'
+                                : 'text-zinc-400'
                             }`}
                           >
-                            {badge}
+                            · {badge}
                           </span>
                         </div>
                         <p className="text-[11px] text-zinc-500 truncate mt-0.5">
@@ -1532,9 +1663,6 @@ export const VisitEntryForm: React.FC<VisitEntryFormProps> = ({
                         </p>
                       </div>
                     </div>
-                    <span className="text-[11px] text-teal-700 font-semibold shrink-0 pt-0.5">
-                      Select →
-                    </span>
                   </button>
                 ))}
               </div>

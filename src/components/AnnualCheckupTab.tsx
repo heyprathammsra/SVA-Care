@@ -284,31 +284,31 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
       )}
 
       {/* Unified 3-Column Metric Strip + Completion Progress */}
-      <div className="bg-white rounded-xl border border-stone-200/90 shadow-2xs overflow-hidden">
-        <div className="grid grid-cols-3 divide-x divide-stone-100">
+      <div className="bg-white rounded-xl border border-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.03)] overflow-hidden">
+        <div className="grid grid-cols-3 divide-x divide-slate-100">
           <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-            <div className="text-[11px] font-medium text-zinc-500 whitespace-nowrap">
+            <div className="text-[11px] font-medium text-slate-500 whitespace-nowrap">
               Screened ({selectedYear})
             </div>
             <div className="mt-0.5 flex items-baseline gap-1.5">
               <span className="text-lg sm:text-xl font-semibold text-teal-800 tabular-nums">
                 {metrics.screened}
               </span>
-              <span className="text-xs text-zinc-400 tabular-nums">
+              <span className="text-xs text-slate-400 tabular-nums">
                 / {metrics.total}
               </span>
             </div>
           </div>
           <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-            <div className="text-[11px] font-medium text-zinc-500 whitespace-nowrap">
+            <div className="text-[11px] font-medium text-slate-500 whitespace-nowrap">
               Pending
             </div>
-            <div className="mt-0.5 text-lg sm:text-xl font-semibold text-zinc-900 tabular-nums">
+            <div className="mt-0.5 text-lg sm:text-xl font-semibold text-slate-900 tabular-nums">
               {metrics.pending}
             </div>
           </div>
           <div className="px-3 py-2.5 sm:px-4 sm:py-3">
-            <div className="text-[11px] font-medium text-zinc-500 whitespace-nowrap">
+            <div className="text-[11px] font-medium text-slate-500 whitespace-nowrap">
               Parent Referrals
             </div>
             <div className="mt-0.5 text-lg sm:text-xl font-semibold text-amber-700 tabular-nums">
@@ -316,14 +316,14 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
             </div>
           </div>
         </div>
-        <div className="px-3 sm:px-4 py-2 bg-stone-50/70 border-t border-stone-100 flex items-center gap-3">
-          <div className="flex-1 h-1.5 rounded-full bg-stone-200/80 overflow-hidden">
+        <div className="px-3 sm:px-4 py-2 bg-slate-50/70 border-t border-slate-100 flex items-center gap-3">
+          <div className="flex-1 h-1.5 rounded-full bg-slate-200/80 overflow-hidden">
             <div
               className="h-full bg-teal-700 rounded-full transition-all duration-300"
               style={{ width: `${metrics.pct}%` }}
             />
           </div>
-          <span className="text-[11.5px] tabular-nums font-medium text-zinc-600 whitespace-nowrap">
+          <span className="text-[11.5px] tabular-nums font-medium text-slate-600 whitespace-nowrap">
             {metrics.pct}% complete
           </span>
         </div>
@@ -333,13 +333,13 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2 flex-1">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search student, roll no, blood group, remarks..."
-              className="w-full h-10 pl-9 pr-3 rounded-xl border border-stone-200 bg-white text-[13px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-500/15"
+              className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/5"
             />
           </div>
           <div className="w-32 shrink-0">
@@ -364,7 +364,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
         </div>
 
         <div className="flex items-center justify-between sm:justify-end gap-2">
-          <div className="inline-flex items-center p-1 bg-stone-100 rounded-xl border border-stone-200/70">
+          <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl border border-slate-200/70">
             {(
               [
                 ['all', 'All'],
@@ -379,8 +379,8 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 onClick={() => setStatusFilter(val)}
                 className={`px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                   statusFilter === val
-                    ? 'bg-white text-zinc-900 shadow-2xs'
-                    : 'text-zinc-600 hover:text-zinc-900'
+                    ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {label}
@@ -391,7 +391,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
           <button
             type="button"
             onClick={() => openModalForStudent(null, null)}
-            className="h-10 px-3.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            className="h-10 px-3.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Record Checkup</span>
@@ -400,33 +400,33 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
       </div>
 
       {/* Student Screening Roster */}
-      <div className="bg-white rounded-xl border border-stone-200/90 shadow-2xs overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.03)] overflow-hidden">
         {filteredRows.length === 0 ? (
           <div className="px-6 py-12 text-center">
-            <ClipboardCheck className="w-8 h-8 text-zinc-300 mx-auto mb-2.5" />
-            <p className="text-sm font-medium text-zinc-800">
+            <ClipboardCheck className="w-8 h-8 text-slate-300 mx-auto mb-2.5" />
+            <p className="text-sm font-medium text-slate-800">
               No students match the current annual checkup filters.
             </p>
-            <p className="text-xs text-zinc-500 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Switch the academic year, class, or status filter, or record a new annual physical exam.
             </p>
             <button
               type="button"
               onClick={() => openModalForStudent(null, null)}
-              className="mt-4 px-4 py-2 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
+              className="mt-4 px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Record Checkup</span>
             </button>
           </div>
         ) : (
-          <div className="divide-y divide-stone-100">
+          <div className="divide-y divide-slate-100">
             {filteredRows.map(({ student, checkup }) => {
               const bmiVal = checkup ? checkup.bmi ?? calculateBmi(checkup.height_cm, checkup.weight_kg) : undefined;
               return (
                 <div
                   key={student.student_id}
-                  className="px-4 py-3.5 hover:bg-stone-50/70 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  className="px-4 py-3.5 hover:bg-slate-50/70 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -434,16 +434,16 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                         <button
                           type="button"
                           onClick={() => onSelectStudent(student)}
-                          className="text-[14px] font-semibold text-zinc-900 hover:text-teal-800 hover:underline text-left cursor-pointer"
+                          className="text-[14px] font-semibold text-slate-900 hover:text-teal-800 hover:underline text-left cursor-pointer"
                         >
                           {student.full_name}
                         </button>
                       ) : (
-                        <span className="text-[14px] font-semibold text-zinc-900">
+                        <span className="text-[14px] font-semibold text-slate-900">
                           {student.full_name}
                         </span>
                       )}
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-slate-500">
                         {student.section} · Roll {student.roll_number}
                       </span>
                       {checkup ? (
@@ -460,18 +460,18 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                           {checkup.parent_referral ? ' (Parent Referral)' : ''}
                         </span>
                       ) : (
-                        <span className="text-xs text-zinc-400">· Not screened yet</span>
+                        <span className="text-xs text-slate-400">· Not screened yet</span>
                       )}
                     </div>
 
                     {checkup ? (
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-zinc-600">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-600">
                         <span className="tabular-nums">
                           {formatShortDate(checkup.checkup_date)}
                         </span>
                         {(checkup.height_cm || checkup.weight_kg) && (
                           <>
-                            <span aria-hidden="true" className="text-zinc-300">·</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
                             <span className="tabular-nums">
                               {checkup.height_cm ? `${checkup.height_cm} cm` : '—'} /{' '}
                               {checkup.weight_kg ? `${checkup.weight_kg} kg` : '—'}
@@ -481,7 +481,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                         )}
                         {(checkup.vision_left || checkup.vision_right) && (
                           <>
-                            <span aria-hidden="true" className="text-zinc-300">·</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
                             <span>
                               Vision {checkup.vision_left || '—'} / {checkup.vision_right || '—'}
                             </span>
@@ -489,31 +489,31 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                         )}
                         {checkup.dental_status && (
                           <>
-                            <span aria-hidden="true" className="text-zinc-300">·</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
                             <span>Dental: {checkup.dental_status}</span>
                           </>
                         )}
                         {checkup.blood_group && (
                           <>
-                            <span aria-hidden="true" className="text-zinc-300">·</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
                             <span className="font-mono">Blood: {checkup.blood_group}</span>
                           </>
                         )}
                         {checkup.hemoglobin && (
                           <>
-                            <span aria-hidden="true" className="text-zinc-300">·</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
                             <span className="font-mono">Hb: {checkup.hemoglobin}</span>
                           </>
                         )}
                       </div>
                     ) : (
-                      <div className="mt-1 text-xs text-zinc-400">
+                      <div className="mt-1 text-xs text-slate-400">
                         Pending {selectedYear} annual physical examination
                       </div>
                     )}
 
                     {checkup && (checkup.ent_notes || checkup.doctor_remarks) && (
-                      <div className="mt-1 text-xs text-zinc-500 line-clamp-2">
+                      <div className="mt-1 text-xs text-slate-500 line-clamp-2">
                         {[
                           checkup.ent_notes ? `ENT: ${checkup.ent_notes}` : '',
                           checkup.doctor_remarks ? `Remarks: ${checkup.doctor_remarks}` : '',
@@ -530,7 +530,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                         <button
                           type="button"
                           onClick={() => openModalForStudent(student, checkup)}
-                          className="h-9 px-3 text-xs font-medium text-zinc-700 bg-white hover:bg-stone-100 border border-stone-200 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                          className="h-9 px-3 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                           <span>Edit</span>
@@ -539,7 +539,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                           type="button"
                           onClick={() => setDeleteTarget(checkup)}
                           aria-label={`Delete checkup for ${student.full_name}`}
-                          className="h-9 w-9 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg inline-flex items-center justify-center cursor-pointer transition-colors"
+                          className="h-9 w-9 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg inline-flex items-center justify-center cursor-pointer transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -578,7 +578,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
           {targetStudent ? (
             <div className="px-3.5 py-2.5 rounded-xl bg-teal-50/70 border border-teal-200/80 flex items-center justify-between gap-2">
               <div>
-                <div className="text-sm font-semibold text-zinc-900">
+                <div className="text-sm font-semibold text-slate-900">
                   {targetStudent.full_name}
                 </div>
                 <div className="text-xs text-teal-800">
@@ -600,20 +600,20 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
             </div>
           ) : (
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1.5">
+              <label className="block text-xs font-medium text-slate-700 mb-1.5">
                 Select Student *
               </label>
               <div className="relative mb-2">
-                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={pickerQuery}
                   onChange={(e) => setPickerQuery(e.target.value)}
                   placeholder="Type student name, class, or roll number..."
-                  className="w-full h-9 pl-8.5 pr-3 rounded-lg border border-stone-200 bg-white text-[13px] text-zinc-900 focus:outline-none focus:border-teal-600"
+                  className="w-full h-9 pl-8.5 pr-3 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-900 focus:outline-none focus:border-teal-600"
                 />
               </div>
-              <div className="max-h-36 overflow-y-auto rounded-xl border border-stone-200 divide-y divide-stone-100">
+              <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
                 {pickerFilteredStudents.map((stu) => {
                   const alreadyScreened = checkupByStudentId.has(stu.student_id);
                   return (
@@ -626,13 +626,13 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                       }}
                       className="w-full px-3 py-2 text-left hover:bg-teal-50/70 flex items-center justify-between text-xs cursor-pointer"
                     >
-                      <span className="font-medium text-zinc-900">
+                      <span className="font-medium text-slate-900">
                         {stu.full_name}{' '}
-                        <span className="text-zinc-500 font-normal">
+                        <span className="text-slate-500 font-normal">
                           · {stu.section} Roll {stu.roll_number}
                         </span>
                       </span>
-                      <span className={alreadyScreened ? 'text-emerald-700 font-medium' : 'text-zinc-400'}>
+                      <span className={alreadyScreened ? 'text-emerald-700 font-medium' : 'text-slate-400'}>
                         {alreadyScreened ? 'Screened' : 'Pending'}
                       </span>
                     </button>
@@ -644,7 +644,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Checkup Date *
               </label>
               <input
@@ -652,11 +652,11 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 required
                 value={checkupDate}
                 onChange={(e) => setCheckupDate(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Height (cm)
               </label>
               <input
@@ -667,11 +667,11 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 value={heightCm}
                 onChange={(e) => setHeightCm(e.target.value)}
                 placeholder="e.g. 148.5"
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm tabular-nums text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm tabular-nums text-slate-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Weight (kg){liveBmi !== undefined ? ` · BMI ${liveBmi}` : ''}
               </label>
               <input
@@ -682,14 +682,14 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 value={weightKg}
                 onChange={(e) => setWeightKg(e.target.value)}
                 placeholder="e.g. 41.2"
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm tabular-nums text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm tabular-nums text-slate-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Vision (Left)
               </label>
               <input
@@ -697,11 +697,11 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 value={visionLeft}
                 onChange={(e) => setVisionLeft(e.target.value)}
                 placeholder="6/6"
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Vision (Right)
               </label>
               <input
@@ -709,11 +709,11 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 value={visionRight}
                 onChange={(e) => setVisionRight(e.target.value)}
                 placeholder="6/6"
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-teal-600"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Blood Group
               </label>
               <CustomSelect
@@ -724,7 +724,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Hemoglobin (g/dL)
               </label>
               <input
@@ -732,14 +732,14 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 value={hemoglobin}
                 onChange={(e) => setHemoglobin(e.target.value)}
                 placeholder="e.g. 12.6 g/dL"
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm font-mono text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm font-mono text-slate-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Dental Status
               </label>
               <input
@@ -748,7 +748,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 value={dentalStatus}
                 onChange={(e) => setDentalStatus(e.target.value)}
                 placeholder="Healthy / Caries noted / Cleaning advised"
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-teal-600"
               />
               <datalist id="dental-status-presets">
                 {DENTAL_PRESETS.map((p) => (
@@ -757,7 +757,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
               </datalist>
             </div>
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 ENT Notes
               </label>
               <input
@@ -765,14 +765,14 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 value={entNotes}
                 onChange={(e) => setEntNotes(e.target.value)}
                 placeholder="Normal / Ear wax / Tonsils"
-                className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm text-zinc-900 focus:outline-none focus:border-teal-600"
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-teal-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
             <div>
-              <label className="block text-xs font-medium text-zinc-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 General Fitness
               </label>
               <CustomSelect
@@ -787,16 +787,16 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
                 type="checkbox"
                 checked={parentReferral}
                 onChange={(e) => setParentReferral(e.target.checked)}
-                className="w-4 h-4 rounded border-stone-300 text-teal-700 focus:ring-teal-600"
+                className="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600"
               />
-              <span className="text-sm text-zinc-800 font-medium">
+              <span className="text-sm text-slate-800 font-medium">
                 Notify parents / specialist follow-up advised
               </span>
             </label>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-zinc-700 mb-1">
+            <label className="block text-xs font-medium text-slate-700 mb-1">
               Doctor Remarks & Advice
             </label>
             <textarea
@@ -804,23 +804,23 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
               value={doctorRemarks}
               onChange={(e) => setDoctorRemarks(e.target.value)}
               placeholder="Clinical summary, glasses checkup advice, dietary notes..."
-              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm text-zinc-900 focus:outline-none focus:border-teal-600 resize-none"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900 focus:outline-none focus:border-teal-600 resize-none"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button
               type="button"
               disabled={busy}
               onClick={() => setModalOpen(false)}
-              className="h-10 px-4 text-xs font-medium text-zinc-700 bg-white hover:bg-stone-100 border border-stone-200 rounded-xl cursor-pointer"
+              className="h-10 px-4 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={busy || (!targetStudent && !pickerStudentId)}
-              className="h-10 px-5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl disabled:opacity-50 cursor-pointer"
+              className="h-10 px-5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl disabled:opacity-50 cursor-pointer"
             >
               {busy ? 'Saving...' : editingCheckup ? 'Save Changes' : 'Save Annual Checkup'}
             </button>
@@ -837,7 +837,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
         maxWidthClass="max-w-sm"
       >
         <div className="space-y-4">
-          <p className="text-sm text-zinc-700">
+          <p className="text-sm text-slate-700">
             Remove the <span className="font-semibold">{deleteTarget?.academic_year}</span> annual checkup
             for <span className="font-semibold">{deleteTarget?.student_name || 'this student'}</span>?
           </p>
@@ -846,7 +846,7 @@ export const AnnualCheckupTab: React.FC<AnnualCheckupTabProps> = ({
               type="button"
               disabled={busy}
               onClick={() => setDeleteTarget(null)}
-              className="h-9 px-3.5 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-lg cursor-pointer"
+              className="h-9 px-3.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg cursor-pointer"
             >
               Cancel
             </button>

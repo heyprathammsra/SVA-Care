@@ -117,7 +117,7 @@ test('formatMedicineDisplay distinguishes no medicine, not recorded, and given m
       route: 'Oral',
       administration_time: '10:30 AM',
     }),
-    'Paracetamol Syrup 5 ml (Oral) at 10:30 AM'
+    'Paracetamol Syrup 5 ml (Oral)'
   );
 });
 
@@ -1226,6 +1226,7 @@ test('generateEncryptedExcelWorkbook produces AES password-protected formatted w
     'Medicines',
     'Items',
     'Bills',
+    'Stock Ledger',
     'Doctor Visits',
     'External OPD',
     'Medical Camps',
@@ -2242,8 +2243,9 @@ test('normalizeDosageString & normalizeSlashTextString recover Sheets auto-parse
     route: 'Oral',
     administration_time: '09:38 AM',
   });
-  assert.equal(formatted, 'T.MEFTAL SPSS 1/5 tablet (Oral) at 09:38 AM');
+  assert.equal(formatted, 'T.MEFTAL SPSS 1/5 tablet (Oral)');
   assert.ok(!formatted.includes('GMT'));
+  assert.ok(!formatted.includes('09:38 AM'));
 
   // normalizeSheetSyncPayload cleans corrupted dosages and drops orphaned unreadable encrypted visit stubs
   const currentDb: NurseDatabase = {
@@ -2288,6 +2290,517 @@ test('normalizeDosageString & normalizeSlashTextString recover Sheets auto-parse
   assert.equal(synced.visits[0].dosage, '1/5');
 });
 
+test('normalizeHHMM recovers Google Sheets 1899 Date strings, apostrophe-prefixed times, and 12-hour strings', async () => {
+  const { normalizeHHMM } = await import('./nurseLogic.ts');
 
+  assert.equal(
+    normalizeHHMM('Sat Dec 30 1899 08:00:00 GMT+0521 (インド標準時)', '07:30'),
+    '08:00'
+  );
+  assert.equal(
+    normalizeHHMM('Sat Dec 30 1899 15:30:00 GMT+0521 (インド標準時)', '15:30'),
+    '15:30'
+  );
+  assert.equal(normalizeHHMM("'08:15", '07:30'), '08:15');
+  assert.equal(normalizeHHMM('8:05 AM', '07:30'), '08:05');
+  assert.equal(normalizeHHMM('3:45 PM', '15:30'), '15:45');
+  assert.equal(normalizeHHMM('12:00 AM', '07:30'), '00:00');
+  assert.equal(normalizeHHMM('12:30 PM', '15:30'), '12:30');
+  assert.equal(normalizeHHMM('1899-12-30T09:10:00', '07:30'), '09:10');
+  assert.equal(normalizeHHMM('not-a-time', '07:30'), '07:30');
+  assert.equal(normalizeHHMM('', '15:30'), '15:30');
+});
 
+test('normalizeSheetSyncPayload does not resurrect deleted seed users and preserves 1899 Date school hours from Google Sheets', () => {
+  const seedDbWithDeletedUser: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    users: [
+      {
+        username: 'admin',
+        password: 'scrypt$adminHash',
+        role: 'admin',
+        display_name: 'Infirmary Administrator',
+        badge_title: 'System Admin',
+        active_status: 'Active',
+      },
+      {
+        username: 'nurse',
+        password: 'scrypt$nurseHash',
+        role: 'nurse',
+        display_name: 'School Nurse',
+        badge_title: 'Infirmary Nurse',
+        active_status: 'Active',
+      },
+      {
+        username: 'agnel',
+        password: 'scrypt$agnelHash',
+        role: 'warden',
+        display_name: 'Agnel (Hostel Warden)',
+        badge_title: 'Hostel Warden',
+        active_status: 'Active',
+      },
+    ],
+    settings: {
+      school_hours_start: '07:30',
+      school_hours_end: '15:30',
+    },
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: sampleStudents,
+      users: [
+        { username: 'admin', password: 'scrypt$adminHash', role: 'admin', active_status: 'Active' },
+        { username: 'nurse', password: 'scrypt$nurseHash', role: 'nurse', active_status: 'Active' },
+        { username: 'warden', password: 'CHANGE_WARDEN_PASSWORD', role: 'warden', active_status: 'Active' },
+        { username: 'umanandula', password: 'scrypt$umaHash', role: 'warden', active_status: 'Active' },
+      ],
+      settings: {
+        school_hours_start: 'Sat Dec 30 1899 08:00:00 GMT+0521 (インド標準時)',
+        school_hours_end: 'Sat Dec 30 1899 16:00:00 GMT+0521 (インド標準時)',
+        updated_at: '2026-11-24T05:39:55.027Z',
+      },
+    },
+    seedDbWithDeletedUser
+  );
+
+  // Deleted seed user 'agnel' and placeholder row 'warden' must NOT appear
+  const usernames = (synced.users || []).map((u) => u.username).sort();
+  assert.deepEqual(usernames, ['admin', 'nurse', 'umanandula']);
+  assert.equal(synced.users?.some((u) => u.username === 'agnel'), false);
+  assert.equal(synced.users?.some((u) => u.username === 'warden'), false);
+
+  // School hours stored as 1899 Date strings in Google Sheets must parse cleanly instead of reverting to 07:30
+  assert.equal(synced.settings?.school_hours_start, '08:00');
+  assert.equal(synced.settings?.school_hours_end, '16:00');
+});
+
+test('parseFractionalQuantity converts half/quarter tablet strings and decimals accurately for stock deduction', async () => {
+  const { parseFractionalQuantity } = await import('./nurseLogic.ts');
+
+  assert.equal(parseFractionalQuantity('0.5'), 0.5);
+  assert.equal(parseFractionalQuantity('1/2'), 0.5);
+  assert.equal(parseFractionalQuantity('½'), 0.5);
+  assert.equal(parseFractionalQuantity('1/4'), 0.25);
+  assert.equal(parseFractionalQuantity('¼'), 0.25);
+  assert.equal(parseFractionalQuantity('3/4'), 0.75);
+  assert.equal(parseFractionalQuantity('¾'), 0.75);
+  assert.equal(parseFractionalQuantity('1 1/2'), 1.5);
+  assert.equal(parseFractionalQuantity('1½'), 1.5);
+  assert.equal(parseFractionalQuantity('2'), 2);
+  assert.equal(parseFractionalQuantity(0.5), 0.5);
+  assert.equal(parseFractionalQuantity('1/0'), null);
+  assert.equal(parseFractionalQuantity('abc'), null);
+  assert.equal(parseFractionalQuantity(''), null);
+});
+
+test('mergeUniqueCategories merges saved custom stock categories case-insensitively and keeps General/Other last', async () => {
+  const { mergeUniqueCategories } = await import('./nurseLogic.ts');
+
+  const mergedMeds = mergeUniqueCategories(
+    ['Fever & Pain', 'Hydration / ORS', 'General'],
+    ['fever & pain', 'Vitamins & Supplements', '  Dental Care  ', 'general', ''],
+    ['vitamins & supplements', 'Skin Care']
+  );
+
+  assert.deepEqual(mergedMeds, [
+    'Fever & Pain',
+    'Hydration / ORS',
+    'Dental Care',
+    'Skin Care',
+    'Vitamins & Supplements',
+    'General',
+  ]);
+
+  const mergedItems = mergeUniqueCategories(
+    ['First Aid', 'Other'],
+    ['Sports Recovery', 'first aid', null, undefined],
+    ['Ice & Cold Packs']
+  );
+
+  assert.deepEqual(mergedItems, [
+    'First Aid',
+    'Ice & Cold Packs',
+    'Sports Recovery',
+    'Other',
+  ]);
+});
+
+test('isMutationAllowedForRole allows nurse and admin to recordBulkVisits while blocking warden', async () => {
+  const { isMutationAllowedForRole } = await import('../../serverAuth.ts');
+
+  assert.equal(isMutationAllowedForRole('recordBulkVisits', 'nurse'), true);
+  assert.equal(isMutationAllowedForRole('recordBulkVisits', 'admin'), true);
+  assert.equal(isMutationAllowedForRole('recordBulkVisits', 'warden'), false);
+});
+
+test('normalizeSheetSyncPayload and getOpdImages preserve multiple OPD photos across Google Sheets sync', async () => {
+  const { getOpdImages } = await import('./nurseLogic.ts');
+
+  const localDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    opdRecords: [
+      {
+        opd_id: 'OPD-2026-0010',
+        student_id: 'STU-2026-0001',
+        referral_datetime: '2026-11-25T10:30',
+        hospital_or_clinic: 'City Care Hospital',
+        reason: 'Persistent cough & X-ray',
+        status: 'Follow-up',
+        drive_file_id: 'drive-id-1',
+        image_url: 'https://drive.google.com/uc?export=view&id=drive-id-1',
+        image_data_url: 'data:image/jpeg;base64,LOCALIMG1',
+        images: [
+          {
+            drive_file_id: 'drive-id-1',
+            image_url: 'https://drive.google.com/uc?export=view&id=drive-id-1',
+            image_data_url: 'data:image/jpeg;base64,LOCALIMG1',
+          },
+          {
+            drive_file_id: 'drive-id-2',
+            image_url: 'https://drive.google.com/uc?export=view&id=drive-id-2',
+            image_data_url: 'data:image/jpeg;base64,LOCALIMG2',
+          },
+        ],
+        created_at: '2026-11-25T10:30:00Z',
+      },
+    ],
+  };
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: sampleStudents,
+      opdRecords: [
+        {
+          opd_id: 'OPD-2026-0010',
+          student_id: 'STU-2026-0001',
+          referral_datetime: '2026-11-25T10:30',
+          hospital_or_clinic: 'City Care Hospital',
+          reason: 'Persistent cough & X-ray',
+          status: 'Follow-up',
+          drive_file_id: 'drive-id-1\ndrive-id-2',
+          image_url:
+            'https://drive.google.com/uc?export=view&id=drive-id-1\nhttps://drive.google.com/uc?export=view&id=drive-id-2',
+        },
+      ],
+    },
+    localDb
+  );
+
+  const opd = synced.opdRecords?.[0];
+  assert.ok(opd);
+  assert.equal(opd?.image_url, 'https://drive.google.com/uc?export=view&id=drive-id-1');
+  assert.equal(opd?.image_data_url, 'data:image/jpeg;base64,LOCALIMG1');
+  const imgs = getOpdImages(opd);
+  assert.equal(imgs.length, 2);
+  assert.equal(imgs[0].drive_file_id, 'drive-id-1');
+  assert.equal(imgs[0].image_data_url, 'data:image/jpeg;base64,LOCALIMG1');
+  assert.equal(imgs[1].drive_file_id, 'drive-id-2');
+  assert.equal(imgs[1].image_url, 'https://drive.google.com/uc?export=view&id=drive-id-2');
+  assert.equal(imgs[1].image_data_url, 'data:image/jpeg;base64,LOCALIMG2');
+});
+
+test('searchStudents and normalizeSheetSyncPayload support student GR Number without breaking internal student_id', async () => {
+  const { normalizeSheetSyncPayload } = await import('./nurseLogic.ts');
+  const studentsWithGr: StudentRecord[] = [
+    { ...sampleStudents[0], gr_number: 'GR-2024-101' },
+    { ...sampleStudents[1], gr_number: '202455' },
+  ];
+
+  const matchByGr = searchStudents(studentsWithGr, 'GR-2024-101');
+  assert.equal(matchByGr.length, 1);
+  assert.equal(matchByGr[0].student_id, sampleStudents[0].student_id);
+
+  const matchByNumericGr = searchStudents(studentsWithGr, '202455');
+  assert.equal(matchByNumericGr.length, 1);
+  assert.equal(matchByNumericGr[0].student_id, sampleStudents[1].student_id);
+
+  const synced = normalizeSheetSyncPayload(
+    {
+      students: [
+        {
+          student_id: sampleStudents[0].student_id,
+          gr_number: 'GR-2024-999',
+          full_name: sampleStudents[0].full_name,
+          section: sampleStudents[0].section,
+          roll_number: sampleStudents[0].roll_number,
+        },
+        {
+          student_id: sampleStudents[1].student_id,
+          full_name: sampleStudents[1].full_name,
+          section: sampleStudents[1].section,
+          roll_number: sampleStudents[1].roll_number,
+        },
+      ],
+    },
+    {
+      students: studentsWithGr,
+      visits: [],
+      measurements: [],
+      healthProfiles: [],
+    }
+  );
+
+  const s0 = synced.students.find((s) => s.student_id === sampleStudents[0].student_id);
+  const s1 = synced.students.find((s) => s.student_id === sampleStudents[1].student_id);
+  assert.equal(s0?.gr_number, 'GR-2024-999');
+  assert.equal(s1?.gr_number, '202455');
+});
+
+test('generateEncryptedExcelWorkbook supports Stock Ledger tab with password protection', async () => {
+  const { generateEncryptedExcelWorkbook, ALLOWED_EXCEL_TABS, getExcelExportPassword } =
+    await import('../../serverExcel.ts');
+  const ExcelJS = (await import('exceljs')).default;
+  const officeCryptoMod = await import('officecrypto-tool');
+  const officeCrypto = (officeCryptoMod.default || officeCryptoMod) as unknown as {
+    isEncrypted: (buf: Buffer) => boolean;
+    decrypt: (buf: Buffer, opts: { password: string }) => Promise<Buffer>;
+  };
+
+  assert.equal(ALLOWED_EXCEL_TABS.has('Stock Ledger'), true);
+
+  const testDb: NurseDatabase = {
+    students: sampleStudents,
+    visits: [],
+    measurements: [],
+    healthProfiles: [],
+    stockTransactions: [
+      {
+        txn_id: 'TXN-2026-0001',
+        target_type: 'medicine',
+        target_id: 'MED-2026-0001',
+        target_name: 'Paracetamol 500mg',
+        change_qty: 50,
+        balance_after: 120,
+        reason: 'bill_restock',
+        reference_id: 'BILL-2026-0001',
+        recorded_by: 'School Nurse',
+        notes: 'Pharmacy invoice restock',
+        created_at: '2026-11-25T09:15:00Z',
+      },
+    ],
+  };
+
+  const { buffer, filename } = await generateEncryptedExcelWorkbook(testDb, 'Stock Ledger');
+  assert.ok(filename.includes('Stock_Ledger') && filename.endsWith('.xlsx'));
+  assert.equal(officeCrypto.isEncrypted(buffer), true);
+
+  const decrypted = await officeCrypto.decrypt(buffer, { password: getExcelExportPassword() });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(decrypted as unknown as Parameters<typeof wb.xlsx.load>[0]);
+  assert.deepEqual(
+    wb.worksheets.map((ws) => ws.name),
+    ['Stock Ledger']
+  );
+  const ws = wb.getWorksheet('Stock Ledger')!;
+  const values: string[] = [];
+  ws.eachRow((r) => r.eachCell((c) => values.push(String(c.value ?? ''))));
+  assert.ok(values.includes('Paracetamol 500mg'));
+  assert.ok(values.includes('Bill Restock'));
+});
+
+test('PDF export generates valid .pdf documents for reports, stock/bills, all programs, and omits Student ID & private Menstrual Log from All', async () => {
+  const {
+    buildPrintReportPdfDoc,
+    buildSheetPdfDoc,
+    getPrintReportPdfFilename,
+    getSheetPdfFilename,
+  } = await import('./pdfExport.ts');
+
+  const student: StudentRecord = {
+    ...sampleStudents[0],
+    gr_number: 'GR-2026-445',
+  };
+  const visit: VisitRecord = {
+    visit_id: 'VIS-2026-0201',
+    student_id: student.student_id,
+    visit_datetime: '2026-11-25T10:45',
+    reason: 'Seasonal cold & fever',
+    observations: 'Temp 100.2 F',
+    action_taken: 'Rest in infirmary',
+    medicine_status: 'given',
+    medicine_name: 'Paracetamol',
+    dosage: '1',
+    dosage_unit: 'tablet',
+    route: 'Oral',
+    administration_time: '10:45 AM',
+    notes: 'Parent informed',
+    recorded_by: 'School Nurse',
+    created_at: '2026-11-25T10:45:00Z',
+  };
+
+  const dailyFilename = getPrintReportPdfFilename({
+    type: 'daily-log',
+    date: '2026-11-25',
+    entries: [],
+  });
+  assert.equal(dailyFilename, 'Infirmary-Daily-Log-2026-11-25.pdf');
+
+  const singleVisitResult = buildPrintReportPdfDoc(
+    {
+      type: 'single-visit',
+      student,
+      visit,
+    },
+    'School Nurse',
+    '2026-11-25'
+  );
+  assert.ok(singleVisitResult.filename.endsWith('.pdf'));
+  const singlePdfBytes = new Uint8Array(singleVisitResult.doc.output('arraybuffer'));
+  const singleHeader = String.fromCharCode(...singlePdfBytes.slice(0, 5));
+  assert.equal(singleHeader, '%PDF-');
+  const singlePageStream = JSON.stringify(
+    (singleVisitResult.doc.internal as unknown as { pages: unknown[] }).pages
+  );
+  assert.ok(!singlePageStream.includes(student.student_id));
+  assert.ok(singlePageStream.includes('GR-2026-445'));
+
+  const historyResult = buildPrintReportPdfDoc(
+    {
+      type: 'student-history',
+      student,
+      visits: [visit],
+      healthProfiles: [],
+    },
+    'School Nurse',
+    '2026-11-25'
+  );
+  assert.ok(historyResult.filename.endsWith('.pdf'));
+  const historyPageStream = JSON.stringify(
+    (historyResult.doc.internal as unknown as { pages: unknown[] }).pages
+  );
+  assert.ok(!historyPageStream.includes(student.student_id));
+
+  const fullDb: NurseDatabase = {
+    students: [student],
+    visits: [visit],
+    measurements: [
+      {
+        measurement_id: 'MSR-1',
+        student_id: student.student_id,
+        measurement_date: '2026-11-20',
+        height_cm: 148,
+        weight_kg: 42,
+        notes: 'Annual check',
+        updated_at: '2026-11-20T09:00:00Z',
+      },
+    ],
+    healthProfiles: [],
+    medicines: [
+      {
+        medicine_id: 'MED-1',
+        name: 'Paracetamol',
+        category: 'Fever & Pain',
+        form_strength: '500mg Tablet',
+        batch_number: 'B101',
+        expiry_date: '2028-01-01',
+        current_stock: 40,
+        unit: 'tablets',
+        min_stock_alert: 10,
+        updated_at: '2026-11-25T08:00:00Z',
+      },
+    ],
+    items: [
+      {
+        item_id: 'ITM-1',
+        name: 'Cotton Roll',
+        category: 'First Aid',
+        current_stock: 15,
+        unit: 'rolls',
+        min_stock_alert: 5,
+        updated_at: '2026-11-25T08:00:00Z',
+      },
+    ],
+    bills: [
+      {
+        bill_id: 'BILL-1',
+        vendor_name: 'MedPlus Pharmacy',
+        bill_number: 'INV-998',
+        bill_date: '2026-11-24',
+        category: 'Medicines',
+        total_amount: 1250,
+        created_at: '2026-11-24T12:00:00Z',
+      },
+    ],
+    stockTransactions: [
+      {
+        txn_id: 'TXN-1',
+        target_type: 'medicine',
+        target_id: 'MED-1',
+        target_name: 'Paracetamol',
+        change_qty: -1,
+        balance_after: 40,
+        reason: 'visit',
+        reference_id: visit.visit_id,
+        recorded_by: 'School Nurse',
+        created_at: '2026-11-25T10:45:00Z',
+      },
+    ],
+    doctorVisits: [
+      {
+        doctor_visit_id: 'DOC-1',
+        visit_date: '2026-11-22',
+        doctor_name: 'Dr. Kulkarni',
+        specialization: 'Pediatrician',
+        created_at: '2026-11-22T10:00:00Z',
+      },
+    ],
+    doctorVisitCases: [],
+    opdRecords: [],
+    medicalCamps: [],
+    campScreenings: [],
+    annualCheckups: [],
+    menstrualLogs: [
+      {
+        menstrual_id: 'MEN-1',
+        student_id: student.student_id,
+        student_name: student.full_name,
+        cycle_start_date: '2026-11-21',
+        pads_issued: 2,
+        irregular_flag: false,
+        private_notes: 'SECRET_MENSTRUAL_NOTE_ONLY',
+        recorded_by: 'School Nurse',
+        created_at: '2026-11-21T09:00:00Z',
+      },
+    ],
+  };
+
+  assert.equal(getSheetPdfFilename('Stock Ledger', '2026-11-25'), 'SVA_Stock_Ledger_2026-11-25.pdf');
+  assert.equal(getSheetPdfFilename('All', '2026-11-25'), 'SVA_Infirmary_All_Sheets_2026-11-25.pdf');
+
+  for (const tab of [
+    'Stock Ledger',
+    'Bills',
+    'Medicines',
+    'Items',
+    'Doctor Visits',
+    'External OPD',
+    'Medical Camps',
+    'Annual Checkups',
+    'Health Insights',
+    'Menstrual Log',
+    'All',
+  ] as const) {
+    const res = buildSheetPdfDoc(tab, fullDb, { todayIso: '2026-11-25' });
+    assert.ok(res.filename.endsWith('.pdf'));
+    const bytes = new Uint8Array(res.doc.output('arraybuffer'));
+    assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-');
+    const pagesDump = JSON.stringify(
+      (res.doc.internal as unknown as { pages: unknown[] }).pages
+    );
+    if (tab === 'All') {
+      assert.ok(!pagesDump.includes('SECRET_MENSTRUAL_NOTE_ONLY'));
+      assert.ok(!pagesDump.includes('Menstrual Health Register'));
+    }
+    if (tab === 'Menstrual Log') {
+      assert.ok(pagesDump.includes('SECRET_MENSTRUAL_NOTE_ONLY'));
+    }
+  }
+});
 

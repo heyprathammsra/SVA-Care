@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createInitialSeedDatabase } from './src/utils/seedData.ts';
 import {
@@ -58,6 +59,7 @@ import {
   isOrphanedEncryptedVisit,
   isUnreadableEncryptedPlaceholder,
   normalizeHHMM,
+  parseFractionalQuantity,
   classifyVisitShift,
   resolveVisitShiftPeriod,
   generatePermanentId,
@@ -79,7 +81,9 @@ import {
   type BillRecord,
   type DoctorVisitSession,
   type DoctorVisitCase,
+  getOpdImages,
   type OpdRecord,
+  type OpdImageAttachment,
   type OpdStatus,
   type MedicalCampRecord,
   type CampScreeningRecord,
@@ -100,6 +104,16 @@ const DEFAULT_APPS_SCRIPT_URL =
   (process.env.APPS_SCRIPT_URL || '').trim() ||
   'https://script.google.com/macros/s/AKfycbxpB8pHEpmaZwnp6Zgzksl5xpFRi55EdE_srVOC7STWHcwiWp-lN-t4R1Zt207diPaLqQ/exec';
 
+interface QueuedSheetWrite {
+  id: string;
+  action: string;
+  payload: Record<string, unknown>;
+  entityKey?: string;
+  createdAt: string;
+  attempts: number;
+  nextRetryAt?: number;
+}
+
 interface ServerState {
   db: NurseDatabase;
   appsScriptUrl: string;
@@ -109,6 +123,8 @@ interface ServerState {
   adminUserOverrides?: Record<string, AppUserRecord>;
   deletedUsernames?: string[];
   classRenames?: Record<string, string>;
+  adminSettingsOverride?: InfirmarySettings | null;
+  pendingSheetQueue?: QueuedSheetWrite[];
 }
 
 function normalizeDbSections(db: NurseDatabase): NurseDatabase {
@@ -273,7 +289,10 @@ function normalizeDbSections(db: NurseDatabase): NurseDatabase {
 
 function applyAdminOverridesToDb(
   baseDb: NurseDatabase,
-  state: Pick<ServerState, 'adminStudentOverrides' | 'adminUserOverrides' | 'deletedUsernames' | 'classRenames'>
+  state: Pick<
+    ServerState,
+    'adminStudentOverrides' | 'adminUserOverrides' | 'deletedUsernames' | 'classRenames' | 'adminSettingsOverride'
+  >
 ): NurseDatabase {
   const classRenames = state.classRenames || {};
   const mapClass = (sec: string): string => {
@@ -322,17 +341,43 @@ function applyAdminOverridesToDb(
     (baseDb.classes || []).map(mapClass)
   );
 
+  const effectiveSettings: InfirmarySettings = state.adminSettingsOverride
+    ? {
+        school_hours_start: normalizeHHMM(
+          state.adminSettingsOverride.school_hours_start,
+          DEFAULT_INFIRMARY_SETTINGS.school_hours_start
+        ),
+        school_hours_end: normalizeHHMM(
+          state.adminSettingsOverride.school_hours_end,
+          DEFAULT_INFIRMARY_SETTINGS.school_hours_end
+        ),
+        updated_at: state.adminSettingsOverride.updated_at,
+      }
+    : baseDb.settings || DEFAULT_INFIRMARY_SETTINGS;
+
   const mergedVisits = baseDb.visits.map((v) => {
     const stu = studentMap.get(v.student_id);
-    if (!stu) return { ...v, section: mapClass(v.section || v.class || ''), class: mapClass(v.class || v.section || '') };
-    return {
-      ...v,
-      student_name: stu.full_name,
-      section: stu.section,
-      class: stu.section,
-      roll_number: stu.roll_number,
-      roll_no: stu.roll_number,
-    };
+    const baseUpdated = !stu
+      ? {
+          ...v,
+          section: mapClass(v.section || v.class || ''),
+          class: mapClass(v.class || v.section || ''),
+        }
+      : {
+          ...v,
+          student_name: stu.full_name,
+          section: stu.section,
+          class: stu.section,
+          roll_number: stu.roll_number,
+          roll_no: stu.roll_number,
+        };
+    if (state.adminSettingsOverride && !baseUpdated.shift_overridden) {
+      return {
+        ...baseUpdated,
+        shift_period: classifyVisitShift(baseUpdated.visit_datetime, effectiveSettings),
+      };
+    }
+    return baseUpdated;
   });
 
   const mergedDispatches = (baseDb.dispatches || []).map((d) => {
@@ -353,6 +398,7 @@ function applyAdminOverridesToDb(
     dispatches: mergedDispatches,
     users: mergedUsers,
     classes: mergedClasses,
+    settings: effectiveSettings,
   };
 }
 
@@ -362,40 +408,50 @@ const KNOWN_PLACEHOLDER_PASSWORDS = [
   'CHANGE_WARDEN_PASSWORD',
 ];
 
+// Bounded cache of scrypt hashes already verified NOT to be poisoned placeholder passwords.
+// Prevents 6x synchronous scryptSync calls per user on every Google Sheets sync cycle (which froze the event loop).
+const verifiedNonPoisonedHashes = new Set<string>();
+const MAX_VERIFIED_HASH_CACHE = 1000;
+
 function isPoisonedPlaceholderPassword(storedPassword: string): boolean {
   if (isPlaceholderSheetPassword(storedPassword)) return true;
   if (isPasswordHash(storedPassword)) {
-    return KNOWN_PLACEHOLDER_PASSWORDS.some(
+    if (verifiedNonPoisonedHashes.has(storedPassword)) {
+      return false;
+    }
+    const poisoned = KNOWN_PLACEHOLDER_PASSWORDS.some(
       (placeholder) => verifyPassword(placeholder, storedPassword).valid
     );
+    if (!poisoned) {
+      if (verifiedNonPoisonedHashes.size >= MAX_VERIFIED_HASH_CACHE) {
+        verifiedNonPoisonedHashes.clear();
+      }
+      verifiedNonPoisonedHashes.add(storedPassword);
+    }
+    return poisoned;
   }
   return false;
 }
 
 function healPoisonedPlaceholderUsers(users: AppUserRecord[]): AppUserRecord[] {
-  let hadPoisoned = false;
   const cleaned: AppUserRecord[] = [];
   for (const u of users || []) {
     if (isPoisonedPlaceholderPassword(String(u.password || ''))) {
-      hadPoisoned = true;
-      const defaultMatch = SERVER_DEFAULT_USERS.find(
-        (d) => d.username.toLowerCase() === String(u.username || '').trim().toLowerCase()
-      );
-      if (defaultMatch) {
-        cleaned.push({ ...defaultMatch });
-      }
-      // Drop synthetic placeholder rows (e.g. 'warden' seeded with CHANGE_WARDEN_PASSWORD)
+      // Drop synthetic placeholder rows (e.g. 'warden' seeded with CHANGE_WARDEN_PASSWORD).
+      // Never re-inject deleted default/seed accounts (such as 'agnel' or 'nurse').
       continue;
     }
     cleaned.push(u);
   }
 
-  if (hadPoisoned) {
-    const present = new Set(cleaned.map((u) => u.username.toLowerCase()));
-    for (const defUser of SERVER_DEFAULT_USERS) {
-      if (!present.has(defUser.username.toLowerCase())) {
-        cleaned.push({ ...defUser });
-      }
+  // Only ensure at least one active admin exists so administrators can never be locked out
+  const hasActiveAdmin = cleaned.some(
+    (u) => u.role === 'admin' && u.active_status !== 'Inactive' && Boolean(u.username)
+  );
+  if (!hasActiveAdmin) {
+    const defaultAdmin = SERVER_DEFAULT_USERS.find((u) => u.role === 'admin');
+    if (defaultAdmin && !cleaned.some((u) => u.username.toLowerCase() === defaultAdmin.username.toLowerCase())) {
+      cleaned.unshift({ ...defaultAdmin });
     }
   }
 
@@ -414,6 +470,9 @@ function mergePreservingHashedPasswords(
     .filter((u) => !isPlaceholderSheetPassword(u.password))
     .map((u) => {
       const prev = existingMap.get(u.username.toLowerCase());
+      if (prev && prev.password === u.password) {
+        return u;
+      }
       if (prev && isPasswordHash(prev.password) && !isPasswordHash(u.password)) {
         if (!u.password || verifyPassword(u.password, prev.password).valid) {
           return { ...u, password: prev.password };
@@ -448,6 +507,8 @@ function loadServerState(): ServerState {
           adminUserOverrides: parsed.adminUserOverrides || {},
           deletedUsernames: Array.isArray(parsed.deletedUsernames) ? parsed.deletedUsernames : [],
           classRenames: parsed.classRenames || {},
+          adminSettingsOverride: parsed.adminSettingsOverride || null,
+          pendingSheetQueue: Array.isArray(parsed.pendingSheetQueue) ? parsed.pendingSheetQueue : [],
         };
         loaded.db = normalizeDbSections(applyAdminOverridesToDb(loaded.db, loaded));
         // Automatically heal any accounts poisoned by Google Sheet placeholder passwords & hash with salted scrypt
@@ -482,6 +543,8 @@ function loadServerState(): ServerState {
     adminUserOverrides: {},
     deletedUsernames: [],
     classRenames: {},
+    adminSettingsOverride: null,
+    pendingSheetQueue: [],
   };
   saveServerState(initial, true);
   return initial;
@@ -642,8 +705,250 @@ async function forwardToAppsScriptWithData(
 }
 
 async function forwardToAppsScript(payload: Record<string, unknown>): Promise<boolean> {
-  const result = await forwardToAppsScriptWithData(payload, 12000);
+  const result = await forwardToAppsScriptWithData(payload, 25000);
   return result.ok;
+}
+
+// Monotonic counter incremented on every local mutation so an in-flight background pull
+// from Google Sheets can NEVER overwrite newer local Admin/clinical changes.
+let mutationGeneration = 0;
+
+function markLocalMutation(): void {
+  mutationGeneration += 1;
+}
+
+function persistStateMetadataOnly(): void {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
+    }
+    const encryptedEnvelope = encryptStateFileEnvelope(JSON.stringify(serverState));
+    fs.writeFileSync(STATE_FILE, encryptedEnvelope, { encoding: 'utf-8', mode: 0o600 });
+    try {
+      fs.chmodSync(STATE_FILE, 0o600);
+    } catch {
+      // Ignore chmod on non-POSIX filesystems
+    }
+  } catch (err) {
+    console.error('Failed to persist queue state:', err);
+  }
+}
+
+const MAX_SHEET_WRITE_ATTEMPTS = 6;
+const MAX_PENDING_QUEUE_SIZE = 500;
+const SHEET_RETRY_BACKOFF_MS = [2000, 4000, 8000, 15000, 30000];
+let sheetWriteWorkerRunning = false;
+let inFlightQueueItemId: string | null = null;
+let sheetWriteRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function hasPendingSheetWrites(): boolean {
+  return sheetWriteWorkerRunning || (serverState.pendingSheetQueue?.length || 0) > 0;
+}
+
+function enqueueSheetWrite(
+  payload: Record<string, unknown>,
+  entityKey?: string
+): void {
+  markLocalMutation();
+  const queue = Array.isArray(serverState.pendingSheetQueue)
+    ? [...serverState.pendingSheetQueue]
+    : [];
+
+  // Coalesce superseded queued writes for the same entity (without disturbing an in-flight item)
+  const filtered = entityKey
+    ? queue.filter((item) => item.id === inFlightQueueItemId || item.entityKey !== entityKey)
+    : queue;
+
+  const entry: QueuedSheetWrite = {
+    id: crypto.randomUUID(),
+    action: String(payload.action || ''),
+    payload,
+    entityKey,
+    createdAt: new Date().toISOString(),
+    attempts: 0,
+  };
+  filtered.push(entry);
+
+  if (filtered.length > MAX_PENDING_QUEUE_SIZE) {
+    filtered.splice(0, filtered.length - MAX_PENDING_QUEUE_SIZE);
+  }
+  serverState.pendingSheetQueue = filtered;
+  persistStateMetadataOnly();
+  void drainSheetWriteQueue();
+}
+
+function enqueueSheetWritesBatch(
+  entries: Array<{ payload: Record<string, unknown>; entityKey?: string }>
+): void {
+  if (entries.length === 0) return;
+  markLocalMutation();
+  let queue = Array.isArray(serverState.pendingSheetQueue)
+    ? [...serverState.pendingSheetQueue]
+    : [];
+  const nowIso = new Date().toISOString();
+
+  for (const { payload, entityKey } of entries) {
+    if (entityKey) {
+      queue = queue.filter((item) => item.id === inFlightQueueItemId || item.entityKey !== entityKey);
+    }
+    queue.push({
+      id: crypto.randomUUID(),
+      action: String(payload.action || ''),
+      payload,
+      entityKey,
+      createdAt: nowIso,
+      attempts: 0,
+    });
+  }
+
+  if (queue.length > MAX_PENDING_QUEUE_SIZE) {
+    queue.splice(0, queue.length - MAX_PENDING_QUEUE_SIZE);
+  }
+  serverState.pendingSheetQueue = queue;
+  persistStateMetadataOnly();
+  void drainSheetWriteQueue();
+}
+
+function onSheetWriteSucceeded(item: QueuedSheetWrite): void {
+  const remainingQueue = serverState.pendingSheetQueue || [];
+  const hasNewerForSameEntity = Boolean(
+    item.entityKey && remainingQueue.some((q) => q.entityKey === item.entityKey)
+  );
+  if (hasNewerForSameEntity) return;
+
+  if (item.action === 'upsertUser' && item.entityKey?.startsWith('user:')) {
+    const uname = item.entityKey.slice('user:'.length).toLowerCase();
+    if (serverState.adminUserOverrides && uname in serverState.adminUserOverrides) {
+      const next = { ...serverState.adminUserOverrides };
+      delete next[uname];
+      serverState.adminUserOverrides = next;
+    }
+  } else if (item.action === 'deleteUser' && item.entityKey?.startsWith('user:')) {
+    const uname = item.entityKey.slice('user:'.length).toLowerCase();
+    serverState.deletedUsernames = (serverState.deletedUsernames || []).filter(
+      (u) => u.toLowerCase() !== uname
+    );
+  } else if (
+    (item.action === 'createStudent' || item.action === 'updateStudent') &&
+    item.entityKey?.startsWith('student:')
+  ) {
+    const sid = item.entityKey.slice('student:'.length);
+    if (serverState.adminStudentOverrides && sid in serverState.adminStudentOverrides) {
+      const next = { ...serverState.adminStudentOverrides };
+      delete next[sid];
+      serverState.adminStudentOverrides = next;
+    }
+  } else if (item.action === 'updateSettings' && item.entityKey === 'settings:hours') {
+    serverState.adminSettingsOverride = null;
+  } else if (item.action === 'renameClass' && item.entityKey?.startsWith('renameClass:')) {
+    const oldLower = item.entityKey.slice('renameClass:'.length).toLowerCase();
+    if (serverState.classRenames && oldLower in serverState.classRenames) {
+      const next = { ...serverState.classRenames };
+      delete next[oldLower];
+      serverState.classRenames = next;
+    }
+    // Also clear per-student overrides created by this class rename if no newer student write is queued
+    const newNameLower = String(item.payload.newName || '').trim().toLowerCase();
+    if (newNameLower && serverState.adminStudentOverrides) {
+      const nextStuOverrides = { ...serverState.adminStudentOverrides };
+      for (const [sid, stu] of Object.entries(nextStuOverrides)) {
+        const hasPendingStu = remainingQueue.some((q) => q.entityKey === `student:${sid}`);
+        if (!hasPendingStu && stu.section.toLowerCase() === newNameLower) {
+          delete nextStuOverrides[sid];
+        }
+      }
+      serverState.adminStudentOverrides = nextStuOverrides;
+    }
+  }
+}
+
+async function drainSheetWriteQueue(): Promise<void> {
+  if (sheetWriteWorkerRunning) return;
+  const url = serverState.appsScriptUrl.trim();
+  if (!url) return;
+
+  if (sheetWriteRetryTimer) {
+    clearTimeout(sheetWriteRetryTimer);
+    sheetWriteRetryTimer = null;
+  }
+
+  sheetWriteWorkerRunning = true;
+  try {
+    while (serverState.pendingSheetQueue && serverState.pendingSheetQueue.length > 0) {
+      const now = Date.now();
+      const readyIdx = serverState.pendingSheetQueue.findIndex(
+        (item) => !item.nextRetryAt || item.nextRetryAt <= now
+      );
+      if (readyIdx === -1) {
+        const earliest = Math.min(
+          ...serverState.pendingSheetQueue.map((i) => i.nextRetryAt || now + 3000)
+        );
+        const delay = Math.max(500, earliest - now);
+        sheetWriteRetryTimer = setTimeout(() => {
+          sheetWriteRetryTimer = null;
+          void drainSheetWriteQueue();
+        }, delay);
+        break;
+      }
+
+      const item = serverState.pendingSheetQueue[readyIdx];
+      inFlightQueueItemId = item.id;
+      const result = await forwardToAppsScriptWithData(item.payload, 25000);
+      inFlightQueueItemId = null;
+
+      if (result.ok) {
+        serverState.pendingSheetQueue = (serverState.pendingSheetQueue || []).filter(
+          (q) => q.id !== item.id
+        );
+        onSheetWriteSucceeded(item);
+        persistStateMetadataOnly();
+      } else {
+        const nextAttempts = (item.attempts || 0) + 1;
+        if (nextAttempts >= MAX_SHEET_WRITE_ATTEMPTS) {
+          console.error(
+            `Dropping Google Sheets write "${item.action}" after ${nextAttempts} failed attempts.`
+          );
+          serverState.pendingSheetQueue = (serverState.pendingSheetQueue || []).filter(
+            (q) => q.id !== item.id
+          );
+          persistStateMetadataOnly();
+        } else {
+          const backoffMs =
+            SHEET_RETRY_BACKOFF_MS[Math.min(nextAttempts - 1, SHEET_RETRY_BACKOFF_MS.length - 1)];
+          serverState.pendingSheetQueue = (serverState.pendingSheetQueue || []).map((q) =>
+            q.id === item.id
+              ? { ...q, attempts: nextAttempts, nextRetryAt: Date.now() + backoffMs }
+              : q
+          );
+          persistStateMetadataOnly();
+          sheetWriteRetryTimer = setTimeout(() => {
+            sheetWriteRetryTimer = null;
+            void drainSheetWriteQueue();
+          }, backoffMs);
+          break;
+        }
+      }
+    }
+  } finally {
+    inFlightQueueItemId = null;
+    sheetWriteWorkerRunning = false;
+  }
+}
+
+async function flushSheetWriteQueue(maxWaitMs: number = 18000): Promise<void> {
+  if (!serverState.pendingSheetQueue || serverState.pendingSheetQueue.length === 0) {
+    return;
+  }
+  // Clear backoff timers so manual sync flushes immediately
+  serverState.pendingSheetQueue = serverState.pendingSheetQueue.map((item) => ({
+    ...item,
+    nextRetryAt: undefined,
+  }));
+  void drainSheetWriteQueue();
+  const deadline = Date.now() + maxWaitMs;
+  while (hasPendingSheetWrites() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
 }
 
 async function pushMissingToAppsScript(remoteData: {
@@ -744,17 +1049,34 @@ async function pushMissingInBackground(remotePayload: {
 let lastSheetsSyncAt: string | null = null;
 let lastSheetsSyncMessage: string | null = null;
 
-async function pullFromAppsScript(waitForPush: boolean = false): Promise<{ ok: boolean; message: string }> {
+async function pullFromAppsScript(
+  waitForPush: boolean = false,
+  isManual: boolean = false
+): Promise<{ ok: boolean; message: string }> {
   const url = serverState.appsScriptUrl.trim();
   if (!url) {
     return { ok: false, message: 'No Google Apps Script URL configured yet.' };
   }
+
+  // Never let an automated background pull overwrite pending local writes that are still syncing
+  if (!isManual && hasPendingSheetWrites()) {
+    return {
+      ok: true,
+      message: 'Local changes are syncing to Google Sheets in the background.',
+    };
+  }
+
+  if (isManual && hasPendingSheetWrites()) {
+    await flushSheetWriteQueue(15000);
+  }
+
   if (inFlightSyncPromise) {
     return inFlightSyncPromise;
   }
 
   inFlightSyncPromise = (async () => {
     try {
+      const pullStartGen = mutationGeneration;
       const separator = url.includes('?') ? '&' : '?';
       const response = await fetchWithTimeout(
         `${url}${separator}action=getAll&t=${Date.now()}`,
@@ -762,7 +1084,7 @@ async function pullFromAppsScript(waitForPush: boolean = false): Promise<{ ok: b
           method: 'GET',
           redirect: 'follow',
         },
-        12000
+        15000
       );
       if (!response.ok) {
         return { ok: false, message: `Google Sheets returned status ${response.status}.` };
@@ -773,6 +1095,15 @@ async function pullFromAppsScript(waitForPush: boolean = false): Promise<{ ok: b
         return {
           ok: false,
           message: String(data?.message || 'Google Sheets returned an unexpected response.'),
+        };
+      }
+
+      // Guard against stale GET snapshots: if any local mutation occurred while this ~7.6s GET was in-flight,
+      // discard the stale snapshot so newly saved Admin/clinical changes are NEVER reverted!
+      if (mutationGeneration !== pullStartGen || (!isManual && hasPendingSheetWrites())) {
+        return {
+          ok: true,
+          message: 'Kept newer local changes; next sync will refresh after Google Sheets finishes saving.',
         };
       }
 
@@ -896,7 +1227,7 @@ async function startServer() {
     next();
   });
 
-  app.use(express.json({ limit: '6mb' }));
+  app.use(express.json({ limit: '25mb' }));
 
   // Global API defense layer: rate limiting, CSRF Origin check, prototype pollution & control-char guard
   app.use('/api', (req, res, next) => {
@@ -1076,7 +1407,10 @@ async function startServer() {
           [updatedUser.username.toLowerCase()]: updatedUser,
         };
         saveServerState(serverState, true);
-        void forwardToAppsScript({ action: 'upsertUser', user: updatedUser });
+        enqueueSheetWrite(
+          { action: 'upsertUser', user: updatedUser },
+          `user:${updatedUser.username.toLowerCase()}`
+        );
         recordSecurityEvent('password_rehashed', user.username, 'Upgraded legacy password to scrypt hash', clientIp);
       }
     }
@@ -1230,11 +1564,13 @@ async function startServer() {
             ? rawVisit.shift_period
             : classifyVisitShift(normalizedDt, serverState.db.settings);
 
-        const medQty =
+        const rawMedQty =
           rawVisit.medicine_status === 'given' && rawVisit.medicine_id
-            ? Math.max(0, Number(rawVisit.medicine_qty) || 0)
+            ? parseFractionalQuantity(rawVisit.medicine_qty) ?? 0
             : 0;
-        const itemQty = rawVisit.item_id ? Math.max(0, Number(rawVisit.item_qty) || 0) : 0;
+        const medQty = Math.min(10000, Math.max(0, rawMedQty));
+        const rawItemQty = rawVisit.item_id ? parseFractionalQuantity(rawVisit.item_qty) ?? 0 : 0;
+        const itemQty = Math.min(10000, Math.max(0, rawItemQty));
 
         const visit: VisitRecord = {
           ...rawVisit,
@@ -1353,32 +1689,350 @@ async function startServer() {
           return clean;
         };
 
-        const sheetSynced = await forwardToAppsScript({
-          action: 'createVisit',
-          visit: {
-            ...visit,
-            dosage: protectSheetText(visit.dosage),
-            student_name: stuName,
-            full_name: stuName,
-            class: stuSec,
-            section: stuSec,
-            roll_no: protectSheetText(stuR),
-            roll_number: protectSheetText(stuR),
+        enqueueSheetWrite(
+          {
+            action: 'createVisit',
+            visit: {
+              ...visit,
+              dosage: protectSheetText(visit.dosage),
+              student_name: stuName,
+              full_name: stuName,
+              class: stuSec,
+              section: stuSec,
+              roll_no: protectSheetText(stuR),
+              roll_number: protectSheetText(stuR),
+            },
           },
-        });
+          `visit:${visit.visit_id}`
+        );
         if (updatedMedForSheet) {
-          void forwardToAppsScript({ action: 'upsertMedicine', medicine: updatedMedForSheet });
+          enqueueSheetWrite(
+            { action: 'upsertMedicine', medicine: updatedMedForSheet },
+            `medicine:${updatedMedForSheet.medicine_id}`
+          );
         }
         if (updatedItemForSheet) {
-          void forwardToAppsScript({ action: 'upsertItem', item: updatedItemForSheet });
+          enqueueSheetWrite(
+            { action: 'upsertItem', item: updatedItemForSheet },
+            `item:${updatedItemForSheet.item_id}`
+          );
         }
         for (const txn of generatedTxns) {
-          void forwardToAppsScript({ action: 'addStockTransaction', transaction: txn });
+          enqueueSheetWrite({ action: 'addStockTransaction', transaction: txn }, `txn:${txn.txn_id}`);
         }
 
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
+          db: safeDb(),
+          updatedAt: serverState.updatedAt,
+        });
+      }
+
+      if (action === 'recordBulkVisits') {
+        const rawStudentIds: unknown[] = Array.isArray(body.studentIds) ? body.studentIds : [];
+        const uniqueStudentIds: string[] = Array.from(
+          new Set(
+            rawStudentIds
+              .map((id: unknown) => String(id ?? '').trim())
+              .filter((id: string) => id.length > 0 && id.length <= 64)
+          )
+        );
+        if (uniqueStudentIds.length === 0) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Please select at least one student for bulk visits.',
+          });
+        }
+        if (uniqueStudentIds.length > 300) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Bulk visits are limited to 300 students per batch.',
+          });
+        }
+
+        const tpl = (body.template && typeof body.template === 'object'
+          ? body.template
+          : {}) as Record<string, unknown>;
+        const reason = String(tpl.reason ?? '').trim().slice(0, 500);
+        const observations = String(tpl.observations ?? '').trim().slice(0, 1000);
+        const actionTaken = String(tpl.action_taken ?? '').trim().slice(0, 1000);
+        const rawMedStatus = String(tpl.medicine_status ?? 'none').trim();
+        const medicineStatus: 'given' | 'none' | 'not_recorded' =
+          rawMedStatus === 'given' || rawMedStatus === 'not_recorded' ? rawMedStatus : 'none';
+        const medicineNameInput = String(tpl.medicine_name ?? '').trim().slice(0, 160);
+        const medicineId =
+          medicineStatus === 'given' && tpl.medicine_id
+            ? String(tpl.medicine_id).trim().slice(0, 64)
+            : undefined;
+        const itemId = tpl.item_id ? String(tpl.item_id).trim().slice(0, 64) : undefined;
+        const itemNameInput = tpl.item_name ? String(tpl.item_name).trim().slice(0, 160) : undefined;
+        const dosage = medicineStatus === 'given' ? normalizeDosageString(String(tpl.dosage ?? '').trim().slice(0, 60)) : '';
+        const dosageUnit = medicineStatus === 'given' ? String(tpl.dosage_unit ?? '').trim().slice(0, 40) : '';
+        const route = medicineStatus === 'given' ? String(tpl.route ?? '').trim().slice(0, 60) : '';
+        const adminTime =
+          medicineStatus === 'given'
+            ? normalizeTimeOnlyString(String(tpl.administration_time ?? '').trim().slice(0, 20))
+            : '';
+        const notes = String(tpl.notes ?? '').trim().slice(0, 1000);
+        const recordedBy =
+          String(tpl.recorded_by ?? '').trim().slice(0, 100) ||
+          req.authUser?.displayName ||
+          'School Nurse';
+
+        if (!reason) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Reason for visit is required.',
+          });
+        }
+        if (!actionTaken) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Care provided / action taken is required.',
+          });
+        }
+        if (medicineStatus === 'given' && !medicineNameInput) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Medicine name is required when Medicine Given is selected.',
+          });
+        }
+
+        const studentMap = new Map(serverState.db.students.map((s) => [s.student_id, s]));
+        const matchedStudents = uniqueStudentIds
+          .map((id) => studentMap.get(id))
+          .filter((s): s is StudentRecord => Boolean(s));
+
+        if (matchedStudents.length === 0) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'No valid students were found for this bulk visit.',
+          });
+        }
+
+        const normalizedDt = normalizeDatetimeString(String(tpl.visit_datetime ?? ''));
+        const shiftOverridden = Boolean(tpl.shift_overridden);
+        const shiftPeriod =
+          shiftOverridden && (tpl.shift_period === 'school_hours' || tpl.shift_period === 'night')
+            ? tpl.shift_period
+            : classifyVisitShift(normalizedDt, serverState.db.settings);
+
+        const rawMedQty =
+          medicineStatus === 'given' && medicineId
+            ? parseFractionalQuantity(tpl.medicine_qty as string | number | undefined) ?? 0
+            : 0;
+        const medQtyPerStudent = Math.min(1000, Math.max(0, rawMedQty));
+        const rawItemQty = itemId
+          ? parseFractionalQuantity(tpl.item_qty as string | number | undefined) ?? 0
+          : 0;
+        const itemQtyPerStudent = Math.min(1000, Math.max(0, rawItemQty));
+
+        const nowIso = new Date().toISOString();
+        const existingVisitIds = [
+          ...serverState.db.visits.map((v) => v.visit_id),
+          ...Array.from(PURGED_TEST_VISIT_IDS),
+        ];
+
+        const resolvedItemName =
+          itemNameInput ||
+          (itemId ? (serverState.db.items || []).find((it) => it.item_id === itemId)?.name : undefined);
+
+        const createdVisits: VisitRecord[] = [];
+        for (const student of matchedStudents) {
+          const visitId = generatePermanentId('VIS', existingVisitIds);
+          existingVisitIds.push(visitId);
+
+          const stuSec = normalizeSectionName(student.section || '');
+          const rawR = String(student.roll_number || '').trim();
+          const stuR = /^\d+$/.test(rawR) ? rawR.padStart(2, '0') : rawR;
+
+          createdVisits.push({
+            visit_id: visitId,
+            student_id: student.student_id,
+            student_name: student.full_name,
+            section: stuSec,
+            class: stuSec,
+            roll_number: stuR,
+            roll_no: stuR,
+            visit_datetime: normalizedDt,
+            shift_period: shiftPeriod,
+            shift_overridden: shiftOverridden,
+            reason,
+            observations,
+            action_taken: actionTaken,
+            medicine_status: medicineStatus,
+            medicine_name:
+              medicineStatus === 'none'
+                ? 'None (No medicine given)'
+                : medicineStatus === 'not_recorded'
+                  ? 'Not recorded'
+                  : medicineNameInput,
+            medicine_id: medicineId,
+            medicine_qty: medQtyPerStudent > 0 ? medQtyPerStudent : undefined,
+            item_id: itemId,
+            item_name: resolvedItemName,
+            item_qty: itemQtyPerStudent > 0 ? itemQtyPerStudent : undefined,
+            dosage,
+            dosage_unit: dosageUnit,
+            route,
+            administration_time: adminTime,
+            notes,
+            recorded_by: recordedBy,
+            created_at: nowIso,
+          });
+        }
+
+        // Prepend created visits (preserving student order cleanly)
+        serverState.db.visits = [...createdVisits, ...serverState.db.visits];
+
+        const generatedTxns: StockTransactionRecord[] = [];
+        let updatedMedForSheet: MedicineInventoryRecord | null = null;
+        let updatedItemForSheet: ItemInventoryRecord | null = null;
+        let totalMedDeducted = 0;
+        let totalItemDeducted = 0;
+        const firstVisitId = createdVisits[0]?.visit_id || '';
+        const lastVisitId = createdVisits[createdVisits.length - 1]?.visit_id || '';
+        const bulkRef =
+          createdVisits.length === 1 ? firstVisitId : `${firstVisitId}..${lastVisitId}`;
+
+        // Single atomic medicine stock deduction for the entire batch
+        if (medicineId && medQtyPerStudent > 0) {
+          const meds = serverState.db.medicines || [];
+          const medIdx = meds.findIndex((m) => m.medicine_id === medicineId);
+          if (medIdx !== -1) {
+            const prevMed = meds[medIdx];
+            totalMedDeducted = Number((medQtyPerStudent * createdVisits.length).toFixed(2));
+            const nextStock = Math.max(0, Number((prevMed.current_stock - totalMedDeducted).toFixed(2)));
+            const updatedMed: MedicineInventoryRecord = {
+              ...prevMed,
+              current_stock: nextStock,
+              updated_at: nowIso,
+            };
+            serverState.db.medicines = meds.map((m, idx) => (idx === medIdx ? updatedMed : m));
+            updatedMedForSheet = updatedMed;
+            const txnId = generatePermanentId('TXN', [
+              ...(serverState.db.stockTransactions || []).map((t) => t.txn_id),
+              ...generatedTxns.map((t) => t.txn_id),
+            ]);
+            generatedTxns.push({
+              txn_id: txnId,
+              target_type: 'medicine',
+              target_id: prevMed.medicine_id,
+              target_name: prevMed.name,
+              change_qty: -totalMedDeducted,
+              balance_after: nextStock,
+              reason: 'visit',
+              reference_id: bulkRef,
+              notes: `Bulk visit (${createdVisits.length} students · ${medQtyPerStudent}/student): ${reason}`,
+              recorded_by: recordedBy,
+              created_at: nowIso,
+            });
+          }
+        }
+
+        // Single atomic infirmary item stock deduction for the entire batch
+        if (itemId && itemQtyPerStudent > 0) {
+          const items = serverState.db.items || [];
+          const itemIdx = items.findIndex((it) => it.item_id === itemId);
+          if (itemIdx !== -1) {
+            const prevItem = items[itemIdx];
+            totalItemDeducted = Number((itemQtyPerStudent * createdVisits.length).toFixed(2));
+            const nextStock = Math.max(0, Number((prevItem.current_stock - totalItemDeducted).toFixed(2)));
+            const updatedItem: ItemInventoryRecord = {
+              ...prevItem,
+              current_stock: nextStock,
+              updated_at: nowIso,
+            };
+            serverState.db.items = items.map((it, idx) => (idx === itemIdx ? updatedItem : it));
+            updatedItemForSheet = updatedItem;
+            const txnId = generatePermanentId('TXN', [
+              ...(serverState.db.stockTransactions || []).map((t) => t.txn_id),
+              ...generatedTxns.map((t) => t.txn_id),
+            ]);
+            generatedTxns.push({
+              txn_id: txnId,
+              target_type: 'item',
+              target_id: prevItem.item_id,
+              target_name: prevItem.name,
+              change_qty: -totalItemDeducted,
+              balance_after: nextStock,
+              reason: 'visit',
+              reference_id: bulkRef,
+              notes: `Bulk visit (${createdVisits.length} students · ${itemQtyPerStudent}/student): ${reason}`,
+              recorded_by: recordedBy,
+              created_at: nowIso,
+            });
+          }
+        }
+
+        if (generatedTxns.length > 0) {
+          serverState.db.stockTransactions = [
+            ...generatedTxns,
+            ...(serverState.db.stockTransactions || []),
+          ];
+        }
+
+        saveServerState(serverState, true);
+        broadcastStateUpdate(deviceId);
+
+        const protectSheetText = (val: string | undefined): string => {
+          const clean = String(val || '').trim();
+          if (!clean) return '';
+          if (/[/\-]/.test(clean) || /^0\d+$/.test(clean)) {
+            return `'${clean}`;
+          }
+          return clean;
+        };
+
+        const sheetBatch: Array<{ payload: Record<string, unknown>; entityKey?: string }> = [];
+        for (const visit of createdVisits) {
+          sheetBatch.push({
+            payload: {
+              action: 'createVisit',
+              visit: {
+                ...visit,
+                dosage: protectSheetText(visit.dosage),
+                student_name: visit.student_name || '',
+                full_name: visit.student_name || '',
+                class: visit.section || '',
+                section: visit.section || '',
+                roll_no: protectSheetText(visit.roll_no),
+                roll_number: protectSheetText(visit.roll_number),
+              },
+            },
+            entityKey: `visit:${visit.visit_id}`,
+          });
+        }
+        if (updatedMedForSheet) {
+          sheetBatch.push({
+            payload: { action: 'upsertMedicine', medicine: updatedMedForSheet },
+            entityKey: `medicine:${updatedMedForSheet.medicine_id}`,
+          });
+        }
+        if (updatedItemForSheet) {
+          sheetBatch.push({
+            payload: { action: 'upsertItem', item: updatedItemForSheet },
+            entityKey: `item:${updatedItemForSheet.item_id}`,
+          });
+        }
+        for (const txn of generatedTxns) {
+          sheetBatch.push({
+            payload: { action: 'addStockTransaction', transaction: txn },
+            entityKey: `txn:${txn.txn_id}`,
+          });
+        }
+        enqueueSheetWritesBatch(sheetBatch);
+
+        return res.json({
+          status: 'ok',
+          count: createdVisits.length,
+          visits: createdVisits,
+          totalMedDeducted,
+          totalItemDeducted,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -1388,8 +2042,10 @@ async function startServer() {
         const rawStudent = body.student as StudentRecord;
         const cleanSection = sanitizeClassSectionName(rawStudent.section) || normalizeSectionName(rawStudent.section);
         const rawRoll = String(rawStudent.roll_number || '').trim();
+        const cleanGr = String(rawStudent.gr_number || '').trim().slice(0, 40);
         const student: StudentRecord = {
           ...rawStudent,
+          gr_number: cleanGr,
           full_name: String(rawStudent.full_name || '').trim(),
           section: cleanSection,
           roll_number: /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll,
@@ -1409,10 +2065,11 @@ async function startServer() {
           saveServerState(serverState, true);
           broadcastStateUpdate(deviceId);
         }
-        const sheetSynced = await forwardToAppsScript({ action: 'createStudent', student });
+        enqueueSheetWrite({ action: 'createStudent', student }, `student:${student.student_id}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -1422,8 +2079,10 @@ async function startServer() {
         const rawStudent = body.student as StudentRecord;
         const cleanSection = sanitizeClassSectionName(rawStudent.section) || normalizeSectionName(rawStudent.section);
         const rawRoll = String(rawStudent.roll_number || '').trim();
+        const cleanGr = String(rawStudent.gr_number || '').trim().slice(0, 40);
         const updatedStudent: StudentRecord = {
           ...rawStudent,
+          gr_number: cleanGr,
           full_name: String(rawStudent.full_name || '').trim(),
           section: cleanSection,
           roll_number: /^\d+$/.test(rawRoll) ? rawRoll.padStart(2, '0') : rawRoll,
@@ -1520,13 +2179,17 @@ async function startServer() {
         };
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'updateStudent',
-          student: updatedStudent,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'updateStudent',
+            student: updatedStudent,
+          },
+          `student:${updatedStudent.student_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -1551,11 +2214,9 @@ async function startServer() {
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
         if (newlyAdded.length > 0) {
-          void (async () => {
-            for (const student of newlyAdded) {
-              await forwardToAppsScript({ action: 'createStudent', student });
-            }
-          })();
+          for (const student of newlyAdded) {
+            enqueueSheetWrite({ action: 'createStudent', student }, `student:${student.student_id}`);
+          }
         }
         return res.json({ status: 'ok', db: safeDb(), updatedAt: serverState.updatedAt });
       }
@@ -1574,13 +2235,17 @@ async function startServer() {
           saveServerState(serverState, true);
           broadcastStateUpdate(deviceId);
         }
-        const sheetSynced = await forwardToAppsScript({
-          action: 'addMeasurement',
-          measurement,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'addMeasurement',
+            measurement,
+          },
+          `measurement:${measurement.measurement_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -1601,13 +2266,17 @@ async function startServer() {
           saveServerState(serverState, true);
           broadcastStateUpdate(deviceId);
         }
-        const sheetSynced = await forwardToAppsScript({
-          action: 'addHealthProfile',
-          healthProfile,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'addHealthProfile',
+            healthProfile,
+          },
+          `healthProfile:${healthProfile.health_record_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -1622,6 +2291,7 @@ async function startServer() {
         const current = serverState.db.dispatches || [];
         const exists = current.some((d) => d.dispatch_id === dispatch.dispatch_id);
         if (!exists) {
+          markLocalMutation();
           serverState.db.dispatches = [dispatch, ...current];
           saveServerState(serverState, true);
           broadcastStateUpdate(deviceId);
@@ -1634,6 +2304,7 @@ async function startServer() {
       }
 
       if (action === 'updateDispatchStatus' && body.dispatch_id && body.status) {
+        markLocalMutation();
         const current = serverState.db.dispatches || [];
         serverState.db.dispatches = current.map((d) =>
           d.dispatch_id === body.dispatch_id
@@ -1661,6 +2332,7 @@ async function startServer() {
             message: 'Please enter a valid section name without grade numbers.',
           });
         }
+        markLocalMutation();
         serverState.db.classes = getAllClassSections(serverState.db.students, [
           ...(serverState.db.classes || []),
           cleanName,
@@ -1719,7 +2391,10 @@ async function startServer() {
         }
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        void forwardToAppsScript({ action: 'renameClass', oldName, newName });
+        enqueueSheetWrite(
+          { action: 'renameClass', oldName, newName },
+          `renameClass:${oldLower}`
+        );
         return res.json({
           status: 'ok',
           oldName,
@@ -1740,6 +2415,7 @@ async function startServer() {
             message: 'Move or reassign students out of this class before deleting it.',
           });
         }
+        markLocalMutation();
         serverState.db.classes = (serverState.db.classes || []).filter(
           (c) => c.toLowerCase() !== targetLower
         );
@@ -1840,10 +2516,11 @@ async function startServer() {
           req.ip
         );
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'upsertUser', user: userRecord });
+        enqueueSheetWrite({ action: 'upsertUser', user: userRecord }, `user:${username}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           user: { ...userRecord, password: '' },
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -1871,10 +2548,11 @@ async function startServer() {
         recordSecurityEvent('user_deleted', req.authUser!.username, `Deleted account "${target}"`, req.ip);
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'deleteUser', username: target });
+        enqueueSheetWrite({ action: 'deleteUser', username: target }, `user:${target}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -1895,6 +2573,7 @@ async function startServer() {
           updated_at: new Date().toISOString(),
         };
         serverState.db.settings = nextSettings;
+        serverState.adminSettingsOverride = nextSettings;
         // Reclassify non-overridden visits using the updated school timing window
         serverState.db.visits = (serverState.db.visits || []).map((v) =>
           v.shift_overridden
@@ -1909,13 +2588,22 @@ async function startServer() {
           req.ip
         );
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'updateSettings',
-          settings: nextSettings,
-        });
+        // Prefix HH:MM with leading apostrophe so Google Sheets stores literal Plain Text (never 1899 Date objects)
+        enqueueSheetWrite(
+          {
+            action: 'updateSettings',
+            settings: {
+              ...nextSettings,
+              school_hours_start: `'${start}`,
+              school_hours_end: `'${end}`,
+            },
+          },
+          'settings:hours'
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           settings: nextSettings,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -1976,13 +2664,20 @@ async function startServer() {
         }
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'upsertMedicine', medicine: record });
+        enqueueSheetWrite(
+          { action: 'upsertMedicine', medicine: record },
+          `medicine:${record.medicine_id}`
+        );
         if (openingTxn) {
-          void forwardToAppsScript({ action: 'addStockTransaction', transaction: openingTxn });
+          enqueueSheetWrite(
+            { action: 'addStockTransaction', transaction: openingTxn },
+            `txn:${openingTxn.txn_id}`
+          );
         }
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           medicine: record,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -1996,10 +2691,11 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'deleteMedicine', medicine_id: medId });
+        enqueueSheetWrite({ action: 'deleteMedicine', medicine_id: medId }, `medicine:${medId}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -2056,13 +2752,17 @@ async function startServer() {
         }
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'upsertItem', item: record });
+        enqueueSheetWrite({ action: 'upsertItem', item: record }, `item:${record.item_id}`);
         if (openingTxn) {
-          void forwardToAppsScript({ action: 'addStockTransaction', transaction: openingTxn });
+          enqueueSheetWrite(
+            { action: 'addStockTransaction', transaction: openingTxn },
+            `txn:${openingTxn.txn_id}`
+          );
         }
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           item: record,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2074,10 +2774,11 @@ async function startServer() {
         serverState.db.items = (serverState.db.items || []).filter((it) => it.item_id !== itemId);
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'deleteItem', item_id: itemId });
+        enqueueSheetWrite({ action: 'deleteItem', item_id: itemId }, `item:${itemId}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -2149,17 +2850,20 @@ async function startServer() {
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
 
-        let sheetSynced = false;
         if (updatedMed) {
-          sheetSynced = await forwardToAppsScript({ action: 'upsertMedicine', medicine: updatedMed });
+          enqueueSheetWrite(
+            { action: 'upsertMedicine', medicine: updatedMed },
+            `medicine:${updatedMed.medicine_id}`
+          );
         } else if (updatedItem) {
-          sheetSynced = await forwardToAppsScript({ action: 'upsertItem', item: updatedItem });
+          enqueueSheetWrite({ action: 'upsertItem', item: updatedItem }, `item:${updatedItem.item_id}`);
         }
-        void forwardToAppsScript({ action: 'addStockTransaction', transaction: txn });
+        enqueueSheetWrite({ action: 'addStockTransaction', transaction: txn }, `txn:${txn.txn_id}`);
 
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           transaction: txn,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2336,23 +3040,21 @@ async function startServer() {
 
         // Send bill metadata (without large base64 data URL) to Google Sheets
         const { image_data_url: _omitDataUrl, ...billForSheet } = billRecord;
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertBill',
-          bill: billForSheet,
-        });
+        enqueueSheetWrite({ action: 'upsertBill', bill: billForSheet }, `bill:${billRecord.bill_id}`);
         for (const m of touchedMeds) {
-          void forwardToAppsScript({ action: 'upsertMedicine', medicine: m });
+          enqueueSheetWrite({ action: 'upsertMedicine', medicine: m }, `medicine:${m.medicine_id}`);
         }
         for (const it of touchedItems) {
-          void forwardToAppsScript({ action: 'upsertItem', item: it });
+          enqueueSheetWrite({ action: 'upsertItem', item: it }, `item:${it.item_id}`);
         }
         for (const txn of createdTxns) {
-          void forwardToAppsScript({ action: 'addStockTransaction', transaction: txn });
+          enqueueSheetWrite({ action: 'addStockTransaction', transaction: txn }, `txn:${txn.txn_id}`);
         }
 
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           driveUploaded: Boolean(driveFileId || imageUrl),
           bill: billRecord,
           db: safeDb(),
@@ -2446,10 +3148,11 @@ async function startServer() {
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
         const { image_data_url: _omitDataUrl, ...billForSheet } = updated;
-        const sheetSynced = await forwardToAppsScript({ action: 'upsertBill', bill: billForSheet });
+        enqueueSheetWrite({ action: 'upsertBill', bill: billForSheet }, `bill:${updated.bill_id}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           bill: updated,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2461,10 +3164,11 @@ async function startServer() {
         serverState.db.bills = (serverState.db.bills || []).filter((b) => b.bill_id !== billId);
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'deleteBill', bill_id: billId });
+        enqueueSheetWrite({ action: 'deleteBill', bill_id: billId }, `bill:${billId}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -2507,13 +3211,17 @@ async function startServer() {
           : [sessionRecord, ...existingList];
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertDoctorVisit',
-          doctorVisit: sessionRecord,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'upsertDoctorVisit',
+            doctorVisit: sessionRecord,
+          },
+          `doctorVisit:${sessionRecord.doctor_visit_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           doctorVisit: sessionRecord,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2530,13 +3238,17 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'deleteDoctorVisit',
-          doctor_visit_id: visitId,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'deleteDoctorVisit',
+            doctor_visit_id: visitId,
+          },
+          `doctorVisit:${visitId}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -2594,13 +3306,17 @@ async function startServer() {
           : [caseRecord, ...existingList];
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertDoctorVisitCase',
-          doctorVisitCase: caseRecord,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'upsertDoctorVisitCase',
+            doctorVisitCase: caseRecord,
+          },
+          `doctorVisitCase:${caseRecord.case_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           doctorVisitCase: caseRecord,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2614,17 +3330,145 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'deleteDoctorVisitCase',
-          case_id: caseId,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'deleteDoctorVisitCase',
+            case_id: caseId,
+          },
+          `doctorVisitCase:${caseId}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
       }
+
+      const MAX_OPD_IMAGES = 15;
+      const isValidOpdDataUrl = (val: unknown): val is string =>
+        typeof val === 'string' &&
+        /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(val) &&
+        val.length <= 2_500_000;
+      const sanitizeOpdHttpsUrl = (val: unknown): string | undefined =>
+        typeof val === 'string' && /^https:\/\/[^\s]+$/i.test(val.trim())
+          ? val.trim().slice(0, 400)
+          : undefined;
+      const serializeOpdForSheet = (record: OpdRecord) => {
+        const imgs = getOpdImages(record);
+        const driveIds = imgs.map((i) => i.drive_file_id).filter(Boolean).join('\n');
+        const imageUrls = imgs.map((i) => i.image_url).filter(Boolean).join('\n');
+        const { image_data_url: _omitImg, images: _omitImages, ...rest } = record;
+        return {
+          ...rest,
+          drive_file_id: driveIds,
+          image_url: imageUrls,
+        };
+      };
+      const processIncomingOpdImages = async (
+        opdId: string,
+        studentName: string,
+        raw: Partial<OpdRecord>,
+        existing?: OpdRecord
+      ): Promise<OpdImageAttachment[]> => {
+        const existingImages = getOpdImages(existing);
+        let candidateList: OpdImageAttachment[];
+
+        if (Array.isArray(raw.images)) {
+          candidateList = raw.images
+            .slice(0, MAX_OPD_IMAGES)
+            .map((item): OpdImageAttachment | null => {
+              if (!item || typeof item !== 'object') return null;
+              const rec = item as Partial<OpdImageAttachment>;
+              const drive_file_id = String(rec.drive_file_id || '').trim().slice(0, 128) || undefined;
+              const image_url = sanitizeOpdHttpsUrl(rec.image_url);
+              const image_data_url = isValidOpdDataUrl(rec.image_data_url) ? rec.image_data_url : undefined;
+              const label = String(rec.label || '').trim().slice(0, 80) || undefined;
+              if (!drive_file_id && !image_url && !image_data_url) return null;
+              return { drive_file_id, image_url, image_data_url, label };
+            })
+            .filter((x): x is OpdImageAttachment => x !== null);
+        } else if (
+          raw.image_data_url !== undefined ||
+          raw.image_url !== undefined ||
+          raw.drive_file_id !== undefined
+        ) {
+          const drive_file_id = String(raw.drive_file_id || '').trim().slice(0, 128) || undefined;
+          const image_url = sanitizeOpdHttpsUrl(raw.image_url);
+          const image_data_url = isValidOpdDataUrl(raw.image_data_url) ? raw.image_data_url : undefined;
+          candidateList =
+            drive_file_id || image_url || image_data_url
+              ? [{ drive_file_id, image_url, image_data_url }]
+              : [];
+        } else {
+          candidateList = existingImages;
+        }
+
+        const safeStuSlug = studentName.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 24) || 'Student';
+        const resolved: OpdImageAttachment[] = new Array(candidateList.length);
+
+        const processOne = async (i: number): Promise<void> => {
+          const item = candidateList[i];
+          const matchedExisting = existingImages.find(
+            (ex) =>
+              (item.drive_file_id && ex.drive_file_id === item.drive_file_id) ||
+              (item.image_url && ex.image_url === item.image_url) ||
+              (item.image_data_url && ex.image_data_url === item.image_data_url)
+          );
+
+          let drive_file_id = item.drive_file_id || matchedExisting?.drive_file_id;
+          let image_url = item.image_url || matchedExisting?.image_url;
+          const image_data_url = item.image_data_url || matchedExisting?.image_data_url;
+
+          if (image_data_url && !drive_file_id && !image_url) {
+            const commaIdx = image_data_url.indexOf(',');
+            const header = image_data_url.slice(0, commaIdx);
+            const mimeMatch = header.match(/data:(image\/[a-z+]+);base64/i);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            const base64Data = image_data_url.slice(commaIdx + 1);
+            const suffix = candidateList.length > 1 ? `_${i + 1}` : '';
+            const filename = `${opdId}_${safeStuSlug}${suffix}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
+            const driveUpload = await forwardToAppsScriptWithData(
+              {
+                action: 'uploadOpdImage',
+                opd_id: opdId,
+                filename,
+                mimeType,
+                base64Data,
+              },
+              20000
+            );
+            if (driveUpload.ok && driveUpload.data) {
+              if (typeof driveUpload.data.drive_file_id === 'string' && driveUpload.data.drive_file_id) {
+                drive_file_id = driveUpload.data.drive_file_id;
+              }
+              if (typeof driveUpload.data.image_url === 'string' && driveUpload.data.image_url) {
+                image_url = driveUpload.data.image_url;
+              }
+            }
+          }
+
+          resolved[i] = {
+            drive_file_id,
+            image_url,
+            image_data_url,
+            label: item.label,
+          };
+        };
+
+        // Upload new photos in parallel batches of 4 so up to 15 photos finish quickly without timing out
+        const CONCURRENCY = 4;
+        for (let start = 0; start < candidateList.length; start += CONCURRENCY) {
+          const batchIndices: number[] = [];
+          for (let j = start; j < Math.min(start + CONCURRENCY, candidateList.length); j++) {
+            batchIndices.push(j);
+          }
+          await Promise.all(batchIndices.map((idx) => processOne(idx)));
+        }
+
+        return resolved;
+      };
 
       if (action === 'createOpd' && body.opd) {
         const raw = body.opd as Partial<OpdRecord>;
@@ -2651,46 +3495,8 @@ async function startServer() {
         const status: OpdStatus =
           rawStatus === 'Returned' || rawStatus === 'Follow-up' ? rawStatus : 'Referred';
 
-        // Strict validation of compressed OPD slip photo data URL (max ~2.5MB)
-        let driveFileId = String(raw.drive_file_id || '').trim() || undefined;
-        let imageUrl =
-          typeof raw.image_url === 'string' && /^https:\/\/[^\s]+$/i.test(raw.image_url.trim())
-            ? raw.image_url.trim().slice(0, 400)
-            : undefined;
-        const imageDataUrl =
-          typeof raw.image_data_url === 'string' &&
-          /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.image_data_url) &&
-          raw.image_data_url.length <= 2_500_000
-            ? raw.image_data_url
-            : undefined;
-
-        if (imageDataUrl) {
-          const commaIdx = imageDataUrl.indexOf(',');
-          const header = imageDataUrl.slice(0, commaIdx);
-          const mimeMatch = header.match(/data:(image\/[a-z+]+);base64/i);
-          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-          const base64Data = imageDataUrl.slice(commaIdx + 1);
-          const safeStuSlug = student.full_name.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 24) || 'Student';
-          const filename = `${opdId}_${safeStuSlug}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
-          const driveUpload = await forwardToAppsScriptWithData(
-            {
-              action: 'uploadOpdImage',
-              opd_id: opdId,
-              filename,
-              mimeType,
-              base64Data,
-            },
-            20000
-          );
-          if (driveUpload.ok && driveUpload.data) {
-            if (typeof driveUpload.data.drive_file_id === 'string' && driveUpload.data.drive_file_id) {
-              driveFileId = driveUpload.data.drive_file_id;
-            }
-            if (typeof driveUpload.data.image_url === 'string' && driveUpload.data.image_url) {
-              imageUrl = driveUpload.data.image_url;
-            }
-          }
-        }
+        const resolvedImages = await processIncomingOpdImages(opdId, student.full_name, raw);
+        const primaryImg = resolvedImages[0];
 
         const rawFollowUp = String(raw.follow_up_date || '').trim();
         const opdRecord: OpdRecord = {
@@ -2711,9 +3517,10 @@ async function startServer() {
             String(raw.diagnosis_and_advice || '').trim().slice(0, 500) || undefined,
           follow_up_date: rawFollowUp ? normalizeDateOnlyString(rawFollowUp, '') : undefined,
           status,
-          drive_file_id: driveFileId,
-          image_url: imageUrl,
-          image_data_url: imageDataUrl,
+          drive_file_id: primaryImg?.drive_file_id,
+          image_url: primaryImg?.image_url,
+          image_data_url: primaryImg?.image_data_url,
+          images: resolvedImages.length > 0 ? resolvedImages : undefined,
           notes: String(raw.notes || '').trim().slice(0, 400) || undefined,
           recorded_by: req.authUser!.displayName,
           created_at: nowIso,
@@ -2723,15 +3530,19 @@ async function startServer() {
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
 
-        const { image_data_url: _omitOpdImg, ...opdForSheet } = opdRecord;
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertOpd',
-          opd: opdForSheet,
-        });
+        const opdForSheet = serializeOpdForSheet(opdRecord);
+        enqueueSheetWrite(
+          {
+            action: 'upsertOpd',
+            opd: opdForSheet,
+          },
+          `opd:${opdRecord.opd_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
-          driveUploaded: Boolean(driveFileId || imageUrl),
+          sheetSynced: true,
+          sheetQueued: true,
+          driveUploaded: resolvedImages.some((img) => Boolean(img.drive_file_id || img.image_url)),
           opd: opdRecord,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2756,48 +3567,13 @@ async function startServer() {
         const status: OpdStatus =
           rawStatus === 'Returned' || rawStatus === 'Follow-up' ? rawStatus : 'Referred';
 
-        let driveFileId = existing.drive_file_id;
-        let imageUrl = existing.image_url;
-        let imageDataUrl = existing.image_data_url;
-
-        const incomingImageDataUrl =
-          typeof raw.image_data_url === 'string' &&
-          /^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(raw.image_data_url) &&
-          raw.image_data_url.length <= 2_500_000
-            ? raw.image_data_url
-            : undefined;
-
-        if (incomingImageDataUrl && incomingImageDataUrl !== existing.image_data_url) {
-          imageDataUrl = incomingImageDataUrl;
-          const commaIdx = incomingImageDataUrl.indexOf(',');
-          const header = incomingImageDataUrl.slice(0, commaIdx);
-          const mimeMatch = header.match(/data:(image\/[a-z+]+);base64/i);
-          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-          const base64Data = incomingImageDataUrl.slice(commaIdx + 1);
-          const safeStuSlug =
-            (student?.full_name || existing.student_name || 'Student')
-              .replace(/[^a-zA-Z0-9]+/g, '_')
-              .slice(0, 24) || 'Student';
-          const filename = `${opdId}_${safeStuSlug}.${mimeType.includes('png') ? 'png' : 'jpg'}`;
-          const driveUpload = await forwardToAppsScriptWithData(
-            {
-              action: 'uploadOpdImage',
-              opd_id: opdId,
-              filename,
-              mimeType,
-              base64Data,
-            },
-            20000
-          );
-          if (driveUpload.ok && driveUpload.data) {
-            if (typeof driveUpload.data.drive_file_id === 'string' && driveUpload.data.drive_file_id) {
-              driveFileId = driveUpload.data.drive_file_id;
-            }
-            if (typeof driveUpload.data.image_url === 'string' && driveUpload.data.image_url) {
-              imageUrl = driveUpload.data.image_url;
-            }
-          }
-        }
+        const resolvedImages = await processIncomingOpdImages(
+          opdId,
+          student?.full_name || existing.student_name || 'Student',
+          raw,
+          existing
+        );
+        const primaryImg = resolvedImages[0];
 
         const rawFollowUp =
           raw.follow_up_date !== undefined ? String(raw.follow_up_date || '').trim() : undefined;
@@ -2832,9 +3608,10 @@ async function startServer() {
                 : undefined
               : existing.follow_up_date,
           status,
-          drive_file_id: driveFileId,
-          image_url: imageUrl,
-          image_data_url: imageDataUrl,
+          drive_file_id: primaryImg?.drive_file_id,
+          image_url: primaryImg?.image_url,
+          image_data_url: primaryImg?.image_data_url,
+          images: resolvedImages.length > 0 ? resolvedImages : undefined,
           notes:
             raw.notes !== undefined
               ? String(raw.notes).trim().slice(0, 400) || undefined
@@ -2845,11 +3622,12 @@ async function startServer() {
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
 
-        const { image_data_url: _omitOpdImg, ...opdForSheet } = updated;
-        const sheetSynced = await forwardToAppsScript({ action: 'upsertOpd', opd: opdForSheet });
+        const opdForSheet = serializeOpdForSheet(updated);
+        enqueueSheetWrite({ action: 'upsertOpd', opd: opdForSheet }, `opd:${updated.opd_id}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           opd: updated,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2863,10 +3641,11 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({ action: 'deleteOpd', opd_id: opdId });
+        enqueueSheetWrite({ action: 'deleteOpd', opd_id: opdId }, `opd:${opdId}`);
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -2908,13 +3687,17 @@ async function startServer() {
           : [campRecord, ...existingList];
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertMedicalCamp',
-          medicalCamp: campRecord,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'upsertMedicalCamp',
+            medicalCamp: campRecord,
+          },
+          `medicalCamp:${campRecord.camp_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           medicalCamp: campRecord,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -2931,13 +3714,17 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'deleteMedicalCamp',
-          camp_id: campId,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'deleteMedicalCamp',
+            camp_id: campId,
+          },
+          `medicalCamp:${campId}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -2992,13 +3779,17 @@ async function startServer() {
           : [screeningRecord, ...existingList];
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertCampScreening',
-          campScreening: screeningRecord,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'upsertCampScreening',
+            campScreening: screeningRecord,
+          },
+          `campScreening:${screeningRecord.screening_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           campScreening: screeningRecord,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -3012,13 +3803,17 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'deleteCampScreening',
-          screening_id: screeningId,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'deleteCampScreening',
+            screening_id: screeningId,
+          },
+          `campScreening:${screeningId}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -3111,17 +3906,21 @@ async function startServer() {
           if (!val) return undefined;
           return /[/\-]/.test(val) ? `'${val}` : val;
         };
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertAnnualCheckup',
-          annualCheckup: {
-            ...checkupRecord,
-            vision_left: sheetSafeSlash(checkupRecord.vision_left),
-            vision_right: sheetSafeSlash(checkupRecord.vision_right),
+        enqueueSheetWrite(
+          {
+            action: 'upsertAnnualCheckup',
+            annualCheckup: {
+              ...checkupRecord,
+              vision_left: sheetSafeSlash(checkupRecord.vision_left),
+              vision_right: sheetSafeSlash(checkupRecord.vision_right),
+            },
           },
-        });
+          `annualCheckup:${checkupRecord.checkup_id}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           annualCheckup: checkupRecord,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -3135,13 +3934,17 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'deleteAnnualCheckup',
-          checkup_id: checkupId,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'deleteAnnualCheckup',
+            checkup_id: checkupId,
+          },
+          `annualCheckup:${checkupId}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -3260,19 +4063,29 @@ async function startServer() {
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
 
-        const sheetSynced = await forwardToAppsScript({
-          action: 'upsertMenstrualLog',
-          menstrualLog: menstrualRecord,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'upsertMenstrualLog',
+            menstrualLog: menstrualRecord,
+          },
+          `menstrualLog:${menstrualRecord.menstrual_id}`
+        );
         if (updatedItemRecord) {
-          void forwardToAppsScript({ action: 'upsertItem', item: updatedItemRecord });
+          enqueueSheetWrite(
+            { action: 'upsertItem', item: updatedItemRecord },
+            `item:${updatedItemRecord.item_id}`
+          );
         }
         if (stockTxnRecord) {
-          void forwardToAppsScript({ action: 'addStockTransaction', transaction: stockTxnRecord });
+          enqueueSheetWrite(
+            { action: 'addStockTransaction', transaction: stockTxnRecord },
+            `txn:${stockTxnRecord.txn_id}`
+          );
         }
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           menstrualLog: menstrualRecord,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
@@ -3286,13 +4099,17 @@ async function startServer() {
         );
         saveServerState(serverState, true);
         broadcastStateUpdate(deviceId);
-        const sheetSynced = await forwardToAppsScript({
-          action: 'deleteMenstrualLog',
-          menstrual_id: menstrualId,
-        });
+        enqueueSheetWrite(
+          {
+            action: 'deleteMenstrualLog',
+            menstrual_id: menstrualId,
+          },
+          `menstrualLog:${menstrualId}`
+        );
         return res.json({
           status: 'ok',
-          sheetSynced,
+          sheetSynced: true,
+          sheetQueued: true,
           db: safeDb(),
           updatedAt: serverState.updatedAt,
         });
@@ -3357,9 +4174,25 @@ async function startServer() {
     const safeState = sanitizeStateForRole(serverState, 'admin', DEFAULT_APPS_SCRIPT_URL);
 
     if (serverState.appsScriptUrl && body.triggerSync) {
+      await flushSheetWriteQueue(15000);
       if (body.pushBackup) {
         const billsForSheet = (serverState.db.bills || []).map(({ image_data_url: _omit, ...rest }) => rest);
-        const opdForSheet = (serverState.db.opdRecords || []).map(({ image_data_url: _omit, ...rest }) => rest);
+        const opdForSheet = (serverState.db.opdRecords || []).map((o) => {
+          const imgs = getOpdImages(o);
+          const { image_data_url: _omit, images: _omitImages, ...rest } = o;
+          return {
+            ...rest,
+            drive_file_id: imgs.map((i) => i.drive_file_id).filter(Boolean).join('\n'),
+            image_url: imgs.map((i) => i.image_url).filter(Boolean).join('\n'),
+          };
+        });
+        const safeSettingsForSheet = serverState.db.settings
+          ? {
+              ...serverState.db.settings,
+              school_hours_start: `'${normalizeHHMM(serverState.db.settings.school_hours_start, DEFAULT_INFIRMARY_SETTINGS.school_hours_start)}`,
+              school_hours_end: `'${normalizeHHMM(serverState.db.settings.school_hours_end, DEFAULT_INFIRMARY_SETTINGS.school_hours_end)}`,
+            }
+          : undefined;
         await forwardToAppsScript({
           action: 'syncFullDatabase',
           db: {
@@ -3367,10 +4200,11 @@ async function startServer() {
             bills: billsForSheet,
             opdRecords: opdForSheet,
             users: ensureUsersHashed(serverState.db.users || []).users,
+            settings: safeSettingsForSheet,
           },
         });
       }
-      const syncResult = await pullFromAppsScript();
+      const syncResult = await pullFromAppsScript(false, true);
       const updatedSafe = sanitizeStateForRole(serverState, 'admin', DEFAULT_APPS_SCRIPT_URL);
       return res.json({
         status: 'ok',
@@ -3391,7 +4225,7 @@ async function startServer() {
 
   // 5. Pull latest records from Google Sheets & push any missing local records (Admin ONLY)
   app.post('/api/sheets-sync', requireAuth, requireAdmin, async (_req: AuthedRequest, res) => {
-    const result = await pullFromAppsScript();
+    const result = await pullFromAppsScript(false, true);
     const safeState = sanitizeStateForRole(serverState, 'admin', DEFAULT_APPS_SCRIPT_URL);
     res.json({
       status: result.ok ? 'ok' : 'error',
@@ -3402,8 +4236,24 @@ async function startServer() {
 
   // 6. Push full shared database in plain readable format to Google Sheets (Admin ONLY)
   app.post('/api/sheets-push', requireAuth, requireAdmin, async (_req: AuthedRequest, res) => {
+    await flushSheetWriteQueue(15000);
     const billsForSheet = (serverState.db.bills || []).map(({ image_data_url: _omit, ...rest }) => rest);
-    const opdForSheet = (serverState.db.opdRecords || []).map(({ image_data_url: _omit, ...rest }) => rest);
+    const opdForSheet = (serverState.db.opdRecords || []).map((o) => {
+      const imgs = getOpdImages(o);
+      const { image_data_url: _omit, images: _omitImages, ...rest } = o;
+      return {
+        ...rest,
+        drive_file_id: imgs.map((i) => i.drive_file_id).filter(Boolean).join('\n'),
+        image_url: imgs.map((i) => i.image_url).filter(Boolean).join('\n'),
+      };
+    });
+    const safeSettingsForSheet = serverState.db.settings
+      ? {
+          ...serverState.db.settings,
+          school_hours_start: `'${normalizeHHMM(serverState.db.settings.school_hours_start, DEFAULT_INFIRMARY_SETTINGS.school_hours_start)}`,
+          school_hours_end: `'${normalizeHHMM(serverState.db.settings.school_hours_end, DEFAULT_INFIRMARY_SETTINGS.school_hours_end)}`,
+        }
+      : undefined;
     const pushedFull = await forwardToAppsScript({
       action: 'syncFullDatabase',
       db: {
@@ -3411,9 +4261,10 @@ async function startServer() {
         bills: billsForSheet,
         opdRecords: opdForSheet,
         users: ensureUsersHashed(serverState.db.users || []).users,
+        settings: safeSettingsForSheet,
       },
     });
-    const result = await pullFromAppsScript(true);
+    const result = await pullFromAppsScript(true, true);
     if (!pushedFull && !result.ok) {
       return res.status(502).json({
         status: 'error',
@@ -3449,7 +4300,7 @@ async function startServer() {
       return res.status(400).json({
         status: 'error',
         message:
-          'Invalid sheet requested. Allowed sheets: Students, Visits, Measurements, Health Profiles, Medicines, Items, Bills, Doctor Visits, External OPD, Medical Camps, Annual Checkups, Menstrual Log, or All.',
+          'Invalid sheet requested. Allowed sheets: Students, Visits, Measurements, Health Profiles, Medicines, Items, Bills, Stock Ledger, Doctor Visits, External OPD, Medical Camps, Annual Checkups, Menstrual Log, or All.',
       });
     }
 
@@ -3490,15 +4341,21 @@ async function startServer() {
     return res.status(400).json({ status: 'error', message: 'Invalid request.' });
   });
 
-  // Initial sync on server startup
-  void pullFromAppsScript();
+  // Initial sync on server startup: flush any persisted queued writes first, then pull latest from Google Sheets
+  void (async () => {
+    if (serverState.pendingSheetQueue && serverState.pendingSheetQueue.length > 0) {
+      await drainSheetWriteQueue();
+    }
+    await pullFromAppsScript();
+  })();
 
-  // Automated background Google Sheets sync on the server (every 10s)
+  // Automated background Google Sheets sync on the server (every 45s to avoid LockService contention with writes;
+  // local edits already propagate instantly across connected devices via Server-Sent Events)
   setInterval(() => {
     if (serverState.appsScriptUrl && serverState.autoSyncEnabled) {
       void pullFromAppsScript();
     }
-  }, 10000);
+  }, 45000);
 
   // Never expose chat/workspace upload attachments or archives publicly
   app.use('/assets/aistudio', (_req, res) => {

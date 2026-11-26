@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useDeferredValue } from 'react';
+import React, { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import {
   Users,
   UserPlus,
@@ -47,7 +47,8 @@ interface AdminPanelViewProps {
     fullName: string,
     section: string,
     rollNumber: string,
-    activeStatus?: 'Active' | 'Inactive'
+    activeStatus?: 'Active' | 'Inactive',
+    grNumber?: string
   ) => Promise<AdminActionResult>;
   onUpdateStudent: (student: StudentRecord) => Promise<AdminActionResult>;
   onCreateClass: (className: string) => Promise<AdminActionResult>;
@@ -67,7 +68,7 @@ const ROLE_LABELS: Record<AuthRole, { label: string; defaultBadge: string; pillC
   admin: {
     label: 'Admin',
     defaultBadge: 'System Admin',
-    pillClass: 'bg-zinc-900 text-white',
+    pillClass: 'bg-slate-900 text-white',
   },
   nurse: {
     label: 'Nurse',
@@ -112,6 +113,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [hoursEnd, setHoursEnd] = useState(
     settings.school_hours_end || DEFAULT_INFIRMARY_SETTINGS.school_hours_end
   );
+
+  useEffect(() => {
+    setHoursStart(settings.school_hours_start || DEFAULT_INFIRMARY_SETTINGS.school_hours_start);
+    setHoursEnd(settings.school_hours_end || DEFAULT_INFIRMARY_SETTINGS.school_hours_end);
+  }, [settings.school_hours_start, settings.school_hours_end]);
 
   // ============================================================================
   // USERS & ROLES STATE
@@ -176,12 +182,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [createStuName, setCreateStuName] = useState('');
   const [createStuClass, setCreateStuClass] = useState(classes[0] || 'Sparkle');
   const [createStuRoll, setCreateStuRoll] = useState('');
+  const [createStuGrNumber, setCreateStuGrNumber] = useState('');
   const [createStuStatus, setCreateStuStatus] = useState<'Active' | 'Inactive'>('Active');
 
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
   const [editStuName, setEditStuName] = useState('');
   const [editStuClass, setEditStuClass] = useState('');
   const [editStuRoll, setEditStuRoll] = useState('');
+  const [editStuGrNumber, setEditStuGrNumber] = useState('');
   const [editStuStatus, setEditStuStatus] = useState<'Active' | 'Inactive'>('Active');
 
   const deferredStudentSearch = useDeferredValue(studentSearch);
@@ -375,11 +383,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     }
     setBusy(true);
     try {
-      const res = await onCreateStudent(name, sec, roll, createStuStatus);
+      const res = await onCreateStudent(name, sec, roll, createStuStatus, createStuGrNumber.trim());
       showToast(res);
       if (res.ok) {
         setCreateStuName('');
         setCreateStuRoll('');
+        setCreateStuGrNumber('');
         setCreateStuStatus('Active');
         setShowCreateStudentCard(false);
       }
@@ -393,6 +402,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     setEditStuName(student.full_name);
     setEditStuClass(student.section);
     setEditStuRoll(student.roll_number);
+    setEditStuGrNumber(student.gr_number || '');
     setEditStuStatus(student.active_status === 'Inactive' ? 'Inactive' : 'Active');
     setFeedback(null);
   };
@@ -411,6 +421,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     try {
       const res = await onUpdateStudent({
         ...editingStudent,
+        gr_number: editStuGrNumber.trim(),
         full_name: name,
         section: sec,
         roll_number: /^\d+$/.test(roll) ? roll.padStart(2, '0') : roll,
@@ -432,7 +443,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         <button
           type="button"
           onClick={onBackToHome}
-          className="px-3.5 py-2 text-xs font-medium text-zinc-700 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors inline-flex items-center gap-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to Infirmary Desk
@@ -441,7 +452,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         <button
           type="button"
           onClick={onOpenSheetsSetup}
-          className="px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-xl transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          className="px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-xl transition-colors inline-flex items-center gap-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] cursor-pointer"
         >
           <FileSpreadsheet className="w-3.5 h-3.5" />
           <span>Google Sheets &amp; Excel Backup</span>
@@ -449,26 +460,26 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       </div>
 
       {/* Page Heading */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 sm:gap-3 border-b border-stone-200/80 pb-3.5 sm:pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 sm:gap-3 border-b border-slate-200/80 pb-3.5 sm:pb-4">
         <div className="min-w-0">
           <p className="text-[11px] sm:text-xs font-semibold text-teal-700 flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
             <span className="truncate">Administrator Portal · {currentUser.displayName}</span>
           </p>
-          <h1 className="text-xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-tight">
+          <h1 className="text-xl sm:text-3xl font-semibold text-slate-900 font-display tracking-tight mt-0.5 leading-tight">
             <span className="sm:hidden">Admin Console</span>
             <span className="hidden sm:inline">Users, Classes &amp; Student Management</span>
           </h1>
-          <p className="hidden sm:block text-sm text-zinc-500 mt-1">
+          <p className="hidden sm:block text-sm text-slate-500 mt-1">
             Create staff accounts with roles, manage classes by section name, and add or edit student records.
           </p>
         </div>
 
-        <div className="flex items-center gap-3 sm:gap-4 text-xs font-mono tabular-nums text-zinc-500 shrink-0">
+        <div className="flex items-center gap-3 sm:gap-4 text-xs font-mono tabular-nums text-slate-500 shrink-0">
           <span>{effectiveUsers.length} users</span>
-          <span className="text-stone-300">·</span>
+          <span className="text-slate-300">·</span>
           <span>{classes.length} classes</span>
-          <span className="text-stone-300">·</span>
+          <span className="text-slate-300">·</span>
           <span>{students.length} students</span>
         </div>
       </div>
@@ -494,7 +505,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           <button
             type="button"
             onClick={() => setFeedback(null)}
-            className="text-zinc-500 hover:text-zinc-900 p-0.5 cursor-pointer"
+            className="text-slate-500 hover:text-slate-900 p-0.5 cursor-pointer"
             aria-label="Dismiss notification"
           >
             <X className="w-3.5 h-3.5" />
@@ -506,7 +517,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       <div
         role="tablist"
         aria-label="Admin management sections"
-        className={`grid ${onUpdateSchoolHours ? 'grid-cols-4' : 'grid-cols-3'} sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/70 rounded-xl w-full sm:w-auto`}
+        className={`grid ${onUpdateSchoolHours ? 'grid-cols-4' : 'grid-cols-3'} sm:inline-flex items-center gap-1 p-1 bg-slate-100/90 border border-slate-200/70 rounded-xl w-full sm:w-auto`}
       >
         <button
           type="button"
@@ -518,14 +529,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           }}
           className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'users'
-              ? 'bg-white text-zinc-900 shadow-xs'
-              : 'text-zinc-600 hover:text-zinc-900'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <UserPlus className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span className="sm:hidden">Users</span>
           <span className="hidden sm:inline">Staff Users &amp; Roles</span>
-          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({effectiveUsers.length})</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-slate-400">({effectiveUsers.length})</span>
         </button>
 
         <button
@@ -538,14 +549,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           }}
           className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'classes'
-              ? 'bg-white text-zinc-900 shadow-xs'
-              : 'text-zinc-600 hover:text-zinc-900'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Layers className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span className="sm:hidden">Classes</span>
           <span className="hidden sm:inline">Classes (Sections)</span>
-          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({classes.length})</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-slate-400">({classes.length})</span>
         </button>
 
         <button
@@ -558,13 +569,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           }}
           className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'students'
-              ? 'bg-white text-zinc-900 shadow-xs'
-              : 'text-zinc-600 hover:text-zinc-900'
+              ? 'bg-white text-slate-900 shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <GraduationCap className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span>Students</span>
-          <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({students.length})</span>
+          <span className="hidden sm:inline font-mono text-[11px] text-slate-400">({students.length})</span>
         </button>
 
         {onUpdateSchoolHours && (
@@ -584,8 +595,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             }}
             className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'hours'
-                ? 'bg-white text-zinc-900 shadow-xs'
-                : 'text-zinc-600 hover:text-zinc-900'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Clock className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
@@ -603,14 +614,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           {/* Left: Create / Edit User Form */}
           <form
             onSubmit={handleSaveUserSubmit}
-            className="lg:col-span-5 bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4"
+            className="lg:col-span-5 bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4"
           >
-            <div className="flex items-center justify-between gap-2 pb-3 border-b border-stone-100">
+            <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100">
               <div>
-                <h2 className="text-base font-semibold text-zinc-900 font-display">
+                <h2 className="text-base font-semibold text-slate-900 font-display">
                   {editingUsername ? `Edit User: ${editingUsername}` : 'Create New User'}
                 </h2>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Assign a login ID, password, and portal role.
                 </p>
               </div>
@@ -618,7 +629,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 <button
                   type="button"
                   onClick={resetUserForm}
-                  className="text-xs font-medium text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                  className="text-xs font-medium text-slate-500 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -627,7 +638,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
             <div className="space-y-3.5">
               <div>
-                <label htmlFor="admin-user-id" className="block text-xs font-semibold text-zinc-700 mb-1">
+                <label htmlFor="admin-user-id" className="block text-xs font-semibold text-slate-700 mb-1">
                   User ID (Login Username) *
                 </label>
                 <input
@@ -637,12 +648,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   disabled={Boolean(editingUsername)}
                   onChange={(e) => setUserIdInput(e.target.value)}
                   placeholder="e.g. nurse2, warden_priya"
-                  className="w-full h-10 px-3 text-sm font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900 disabled:opacity-60 disabled:bg-stone-100"
+                  className="w-full h-10 px-3 text-sm font-mono bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900 disabled:opacity-60 disabled:bg-slate-100"
                 />
               </div>
 
               <div>
-                <label htmlFor="admin-user-password" className="block text-xs font-semibold text-zinc-700 mb-1">
+                <label htmlFor="admin-user-password" className="block text-xs font-semibold text-slate-700 mb-1">
                   {editingUsername ? 'Reset Password (Optional)' : 'Password *'}
                 </label>
                 <div className="relative">
@@ -656,25 +667,25 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                         ? 'Leave blank to keep current password'
                         : 'Minimum 6 characters (scrypt hashed)'
                     }
-                    className="w-full h-10 pl-3 pr-10 text-sm font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                    className="w-full h-10 pl-3 pr-10 text-sm font-mono bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
                   />
                   <button
                     type="button"
                     onClick={() => setShowFormPassword((v) => !v)}
                     aria-label={showFormPassword ? 'Hide password' : 'Show password'}
-                    className="absolute right-2.5 top-2.5 p-1 text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                    className="absolute right-2.5 top-2.5 p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
                   >
                     {showFormPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-[11px] text-zinc-500 mt-1">
+                <p className="text-[11px] text-slate-500 mt-1">
                   Passwords are one-way hashed with salted scrypt and never stored or displayed in plain text.
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="admin-user-role" className="block text-xs font-semibold text-zinc-700 mb-1">
+                  <label htmlFor="admin-user-role" className="block text-xs font-semibold text-slate-700 mb-1">
                     Defined Role *
                   </label>
                   <CustomSelect
@@ -693,7 +704,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 </div>
 
                 <div>
-                  <label htmlFor="admin-user-status" className="block text-xs font-semibold text-zinc-700 mb-1">
+                  <label htmlFor="admin-user-status" className="block text-xs font-semibold text-slate-700 mb-1">
                     Account Status
                   </label>
                   <CustomSelect
@@ -712,7 +723,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               </div>
 
               <div>
-                <label htmlFor="admin-user-display" className="block text-xs font-semibold text-zinc-700 mb-1">
+                <label htmlFor="admin-user-display" className="block text-xs font-semibold text-slate-700 mb-1">
                   Display Name
                 </label>
                 <input
@@ -721,12 +732,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   value={displayNameInput}
                   onChange={(e) => setDisplayNameInput(e.target.value)}
                   placeholder="e.g. Sister Meera / Warden Rahul"
-                  className="w-full h-10 px-3 text-sm bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                  className="w-full h-10 px-3 text-sm bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
                 />
               </div>
 
               <div>
-                <label htmlFor="admin-user-badge" className="block text-xs font-semibold text-zinc-700 mb-1">
+                <label htmlFor="admin-user-badge" className="block text-xs font-semibold text-slate-700 mb-1">
                   Title / Label (Optional)
                 </label>
                 <input
@@ -735,7 +746,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   value={badgeTitleInput}
                   onChange={(e) => setBadgeTitleInput(e.target.value)}
                   placeholder={ROLE_LABELS[roleInput].defaultBadge}
-                  className="w-full h-10 px-3 text-sm bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                  className="w-full h-10 px-3 text-sm bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
                 />
               </div>
             </div>
@@ -743,7 +754,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             <button
               type="submit"
               disabled={busy}
-              className="w-full h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] rounded-xl transition-all inline-flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
+              className="w-full h-10 px-4 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:scale-[0.99] rounded-xl transition-all inline-flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
             >
               <Check className="w-4 h-4" />
               <span>{editingUsername ? 'Save User Changes' : 'Create User Account'}</span>
@@ -751,34 +762,34 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           </form>
 
           {/* Right: Existing Staff Accounts List */}
-          <div className="lg:col-span-7 bg-white border border-stone-200/90 rounded-2xl shadow-xs overflow-hidden">
-            <div className="px-5 py-4 border-b border-stone-100 flex items-center justify-between">
+          <div className="lg:col-span-7 bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-semibold text-zinc-900 font-display">
+                <h2 className="text-base font-semibold text-slate-900 font-display">
                   Authorized Staff Accounts
                 </h2>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Changes apply immediately at login and sync with your school backend.
                 </p>
               </div>
             </div>
 
-            <div className="divide-y divide-stone-100">
+            <div className="divide-y divide-slate-100">
               {effectiveUsers.map((u) => {
                 const isSelf = u.username.toLowerCase() === currentUser.username.toLowerCase();
                 const roleMeta = ROLE_LABELS[u.role];
                 return (
                   <div
                     key={u.username}
-                    className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-stone-50/60 transition-colors"
+                    className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 transition-colors"
                   >
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-zinc-900">
+                        <span className="text-sm font-semibold text-slate-900">
                           {u.display_name || u.username}
                         </span>
                         <span
-                          className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded-md ${roleMeta.pillClass}`}
+                          className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${roleMeta.pillClass}`}
                         >
                           {roleMeta.label}
                         </span>
@@ -794,9 +805,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500 font-mono">
-                        <span>ID: <strong className="text-zinc-800">{u.username}</strong></span>
-                        <span className="text-stone-300">·</span>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 font-mono">
+                        <span>ID: <strong className="text-slate-800">{u.username}</strong></span>
+                        <span className="text-slate-300">·</span>
                         <span className="inline-flex items-center gap-1.5 text-teal-700">
                           <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                           <span>Hashed (scrypt)</span>
@@ -808,7 +819,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       <button
                         type="button"
                         onClick={() => startEditUser(u)}
-                        className="h-8 px-3 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="h-8 px-3 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/80 rounded-lg inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                         <span>Edit</span>
@@ -828,7 +839,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteUser(null)}
-                              className="h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                              className="h-8 px-2 text-xs text-slate-500 hover:text-slate-900 cursor-pointer"
                             >
                               Cancel
                             </button>
@@ -861,20 +872,20 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           {/* Create Class Card */}
           <form
             onSubmit={handleCreateClassSubmit}
-            className="lg:col-span-5 bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4"
+            className="lg:col-span-5 bg-white border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4"
           >
-            <div className="pb-3 border-b border-stone-100">
-              <h2 className="text-base font-semibold text-zinc-900 font-display">
+            <div className="pb-3 border-b border-slate-100">
+              <h2 className="text-base font-semibold text-slate-900 font-display">
                 Create New Class
               </h2>
-              <p className="text-xs text-zinc-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Use the section name only (for example: <strong>Sapphire</strong>,{' '}
                 <strong>Pearl</strong>, <strong>Coral</strong>). Grade numbers are not used.
               </p>
             </div>
 
             <div>
-              <label htmlFor="admin-new-class" className="block text-xs font-semibold text-zinc-700 mb-1">
+              <label htmlFor="admin-new-class" className="block text-xs font-semibold text-slate-700 mb-1">
                 Class Section Name *
               </label>
               <input
@@ -883,10 +894,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 value={newClassInput}
                 onChange={(e) => setNewClassInput(e.target.value)}
                 placeholder="e.g. Sapphire"
-                className="w-full h-10 px-3 text-sm bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                className="w-full h-10 px-3 text-sm bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
               />
               {newClassInput.trim() && (
-                <p className="text-[11px] mt-1.5 text-zinc-500">
+                <p className="text-[11px] mt-1.5 text-slate-500">
                   {sanitizedNewClassPreview ? (
                     <>
                       Will be saved as section:{' '}
@@ -904,7 +915,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             <button
               type="submit"
               disabled={busy || !sanitizedNewClassPreview}
-              className="w-full h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] rounded-xl transition-all inline-flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+              className="w-full h-10 px-4 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:scale-[0.99] rounded-xl transition-all inline-flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Add Class Section</span>
@@ -912,24 +923,24 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           </form>
 
           {/* Existing Classes List */}
-          <div className="lg:col-span-7 bg-white border border-stone-200/90 rounded-2xl shadow-xs overflow-hidden">
-            <div className="px-5 py-4 border-b border-stone-100">
-              <h2 className="text-base font-semibold text-zinc-900 font-display">
+          <div className="lg:col-span-7 bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="text-base font-semibold text-slate-900 font-display">
                 Active School Classes ({classes.length})
               </h2>
-              <p className="text-xs text-zinc-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Renaming a class automatically updates all students and visit records in that section.
               </p>
             </div>
 
-            <div className="divide-y divide-stone-100">
+            <div className="divide-y divide-slate-100">
               {classes.map((cls) => {
                 const count = studentCountByClass.get(cls.toLowerCase()) || 0;
                 const isRenaming = renamingClass === cls;
                 return (
                   <div
                     key={cls}
-                    className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-stone-50/60 transition-colors"
+                    className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 transition-colors"
                   >
                     {isRenaming ? (
                       <div className="flex-1 flex flex-wrap items-center gap-2">
@@ -939,13 +950,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                           value={renameClassInput}
                           onChange={(e) => setRenameClassInput(e.target.value)}
                           placeholder="New section name"
-                          className="h-9 px-3 text-sm bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-zinc-900 flex-1 min-w-[140px]"
+                          className="h-9 px-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-slate-900 flex-1 min-w-[140px]"
                         />
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => handleRenameClassSubmit(cls)}
-                          className="h-9 px-3 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-lg inline-flex items-center gap-1 cursor-pointer"
+                          className="h-9 px-3 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg inline-flex items-center gap-1 cursor-pointer"
                         >
                           <Check className="w-3.5 h-3.5" />
                           Update
@@ -956,7 +967,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                             setRenamingClass(null);
                             setRenameClassInput('');
                           }}
-                          className="h-9 px-2.5 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                          className="h-9 px-2.5 text-xs text-slate-500 hover:text-slate-900 cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -968,8 +979,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                             {cls.slice(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <h3 className="text-sm font-semibold text-zinc-900">{cls}</h3>
-                            <p className="text-xs font-mono tabular-nums text-zinc-500">
+                            <h3 className="text-sm font-semibold text-slate-900">{cls}</h3>
+                            <p className="text-xs font-mono tabular-nums text-slate-500">
                               {count} {count === 1 ? 'student' : 'students'}
                             </p>
                           </div>
@@ -995,7 +1006,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                               setRenameClassInput(cls);
                               setConfirmDeleteClass(null);
                             }}
-                            className="h-8 px-2.5 text-xs font-medium text-zinc-700 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            className="h-8 px-2.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200/80 rounded-lg inline-flex items-center gap-1 transition-colors cursor-pointer"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                             <span>Rename</span>
@@ -1015,7 +1026,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setConfirmDeleteClass(null)}
-                                  className="h-8 px-2 text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                                  className="h-8 px-2 text-xs text-slate-500 hover:text-slate-900 cursor-pointer"
                                 >
                                   Cancel
                                 </button>
@@ -1051,19 +1062,19 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 flex-1">
               <div className="relative flex-1 min-w-[200px]">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-3 pointer-events-none" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
                 <input
                   type="text"
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
                   placeholder="Search student name, roll #, or section..."
-                  className="w-full h-10 pl-9 pr-8 text-sm bg-white border border-stone-200 rounded-xl focus:outline-none focus:border-zinc-900"
+                  className="w-full h-10 pl-9 pr-8 text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-slate-900"
                 />
                 {studentSearch && (
                   <button
                     type="button"
                     onClick={() => setStudentSearch('')}
-                    className="absolute right-2.5 top-3 text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                    className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-700 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1111,7 +1122,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 }
                 setShowCreateStudentCard((v) => !v);
               }}
-              className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center justify-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+              className="h-10 px-4 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl inline-flex items-center justify-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>{showCreateStudentCard ? 'Close Form' : 'New Student'}</span>
@@ -1122,24 +1133,24 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           {showCreateStudentCard && (
             <form
               onSubmit={handleCreateStudentSubmit}
-              className="bg-white border border-stone-200/90 rounded-2xl p-5 shadow-xs space-y-4"
+              className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-4"
             >
-              <div className="flex items-center justify-between pb-2.5 border-b border-stone-100">
-                <h2 className="text-base font-semibold text-zinc-900 font-display">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                <h2 className="text-base font-semibold text-slate-900 font-display">
                   Add New Student
                 </h2>
                 <button
                   type="button"
                   onClick={() => setShowCreateStudentCard(false)}
-                  className="text-xs text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                  className="text-xs text-slate-500 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
                 </button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                <div className="sm:col-span-5">
-                  <label htmlFor="admin-create-stu-name" className="block text-xs font-semibold text-zinc-700 mb-1">
+                <div className="sm:col-span-4">
+                  <label htmlFor="admin-create-stu-name" className="block text-xs font-semibold text-slate-700 mb-1">
                     Full Name *
                   </label>
                   <input
@@ -1148,13 +1159,27 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     value={createStuName}
                     onChange={(e) => setCreateStuName(e.target.value)}
                     placeholder="Student full name"
-                    className="w-full h-10 px-3 text-sm bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                    className="w-full h-10 px-3 text-sm bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
                   />
                 </div>
 
-                <div className="sm:col-span-3">
-                  <label htmlFor="admin-create-stu-class" className="block text-xs font-semibold text-zinc-700 mb-1">
-                    Class (Section Name) *
+                <div className="sm:col-span-2">
+                  <label htmlFor="admin-create-stu-gr" className="block text-xs font-semibold text-slate-700 mb-1">
+                    GR Number
+                  </label>
+                  <input
+                    id="admin-create-stu-gr"
+                    type="text"
+                    value={createStuGrNumber}
+                    onChange={(e) => setCreateStuGrNumber(e.target.value)}
+                    placeholder="Optional"
+                    className="w-full h-10 px-3 text-sm font-mono bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label htmlFor="admin-create-stu-class" className="block text-xs font-semibold text-slate-700 mb-1">
+                    Class *
                   </label>
                   <CustomSelect
                     id="admin-create-stu-class"
@@ -1168,7 +1193,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label htmlFor="admin-create-stu-roll" className="block text-xs font-semibold text-zinc-700 mb-1">
+                  <label htmlFor="admin-create-stu-roll" className="block text-xs font-semibold text-slate-700 mb-1">
                     Roll Number *
                   </label>
                   <input
@@ -1177,12 +1202,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     value={createStuRoll}
                     onChange={(e) => setCreateStuRoll(e.target.value)}
                     placeholder="e.g. 31"
-                    className="w-full h-10 px-3 text-sm font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                    className="w-full h-10 px-3 text-sm font-mono bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label htmlFor="admin-create-stu-status" className="block text-xs font-semibold text-zinc-700 mb-1">
+                  <label htmlFor="admin-create-stu-status" className="block text-xs font-semibold text-slate-700 mb-1">
                     Status
                   </label>
                   <CustomSelect
@@ -1204,7 +1229,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                  className="h-9 px-4 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>Save Student</span>
@@ -1214,33 +1239,33 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           )}
 
           {/* Student List */}
-          <div className="bg-white border border-stone-200/90 rounded-2xl shadow-xs overflow-hidden">
-            <div className="px-5 py-3 bg-stone-50/70 border-b border-stone-100 flex items-center justify-between text-xs text-zinc-500">
+          <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+            <div className="px-5 py-3 bg-slate-50/70 border-b border-slate-100 flex items-center justify-between text-xs text-slate-500">
               <span>
-                Showing <strong className="text-zinc-900 font-mono">{filteredStudents.length}</strong>{' '}
+                Showing <strong className="text-slate-900 font-mono">{filteredStudents.length}</strong>{' '}
                 of <span className="font-mono">{students.length}</span> students
               </span>
               <span>Click Edit to update name, class section, roll number, or status</span>
             </div>
 
-            <div className="divide-y divide-stone-100 max-h-[560px] overflow-y-auto smooth-scroll-list">
+            <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto smooth-scroll-list">
               {filteredStudents.length === 0 ? (
-                <div className="py-12 text-center text-xs text-zinc-500">
+                <div className="py-12 text-center text-xs text-slate-500">
                   No students match your current search or filter.
                 </div>
               ) : (
                 filteredStudents.map((stu) => (
                   <div
                     key={stu.student_id}
-                    className="list-row-opt px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-stone-50/70 transition-colors"
+                    className="list-row-opt px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50/70 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span className="w-8 h-8 rounded-lg bg-stone-100 text-zinc-700 font-mono tabular-nums text-xs font-semibold flex items-center justify-center shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 font-mono tabular-nums text-xs font-semibold flex items-center justify-center shrink-0">
                         {stu.roll_number}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-zinc-900 truncate">
+                          <span className="text-sm font-semibold text-slate-900 truncate">
                             {stu.full_name}
                           </span>
                           {stu.active_status === 'Inactive' && (
@@ -1249,11 +1274,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-zinc-500 mt-0.5">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                           <span className="font-medium text-teal-800">{stu.section}</span>
-                          <span className="text-stone-300">·</span>
-                          <span className="font-mono text-[11px] text-zinc-400">
-                            {stu.student_id}
+                          <span className="text-slate-300">·</span>
+                          <span className="font-mono text-[11px] text-slate-400">
+                            {stu.gr_number ? `GR No: ${stu.gr_number}` : 'GR No: Not set'}
                           </span>
                         </div>
                       </div>
@@ -1263,7 +1288,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       <button
                         type="button"
                         onClick={() => openEditStudentModal(stu)}
-                        className="h-8 px-3 text-xs font-semibold text-zinc-800 bg-stone-100 hover:bg-stone-200/80 rounded-lg inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="h-8 px-3 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200/80 rounded-lg inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                         <span>Edit</span>
@@ -1288,12 +1313,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           TAB 4: INFIRMARY HOURS (SCHOOL HOURS VS NIGHT CLASSIFICATION)
       ======================================================================== */}
       {activeTab === 'hours' && onUpdateSchoolHours && (
-        <div className="max-w-xl bg-white border border-stone-200/90 rounded-2xl p-4 sm:p-6 shadow-2xs space-y-5">
-          <div className="pb-3 border-b border-stone-100">
-            <h2 className="text-base font-semibold text-zinc-900 font-display">
+        <div className="max-w-xl bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)] space-y-5">
+          <div className="pb-3 border-b border-slate-100">
+            <h2 className="text-base font-semibold text-slate-900 font-display">
               School Hours vs. Night Visit Timings
             </h2>
-            <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
               Visits recorded within this window are tagged as{' '}
               <strong className="text-teal-800">School Hours</strong>; visits outside it are tagged as{' '}
               <strong className="text-indigo-700">Night</strong>. Staff can still manually override on any visit.
@@ -1301,7 +1326,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <span className="block text-[11px] font-semibold text-zinc-500">Quick Timings</span>
+            <span className="block text-[11px] font-semibold text-slate-500">Quick Timings</span>
             <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5">
               {[
                 { short: '7:30 – 3:30', label: '7:30 AM – 3:30 PM', start: '07:30', end: '15:30' },
@@ -1319,8 +1344,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     }}
                     className={`h-9 sm:h-8 px-2 sm:px-3 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap text-center font-mono sm:font-sans cursor-pointer ${
                       isSelected
-                        ? 'bg-zinc-900 text-white border-zinc-900 font-semibold'
-                        : 'bg-white text-zinc-700 border-stone-200 hover:bg-stone-50'
+                        ? 'bg-slate-900 text-white border-slate-900 font-semibold'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     <span className="sm:hidden">{preset.short}</span>
@@ -1350,7 +1375,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           >
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label htmlFor="school-hours-start" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                <label htmlFor="school-hours-start" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   School Hours Start
                 </label>
                 <input
@@ -1359,11 +1384,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   required
                   value={hoursStart}
                   onChange={(e) => setHoursStart(e.target.value)}
-                  className="w-full h-11 sm:h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                  className="w-full h-11 sm:h-10 px-3 text-sm font-mono tabular-nums bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
                 />
               </div>
               <div>
-                <label htmlFor="school-hours-end" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+                <label htmlFor="school-hours-end" className="block text-xs font-semibold text-slate-700 mb-1.5">
                   School Hours End
                 </label>
                 <input
@@ -1372,7 +1397,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   required
                   value={hoursEnd}
                   onChange={(e) => setHoursEnd(e.target.value)}
-                  className="w-full h-11 sm:h-10 px-3 text-sm font-mono tabular-nums bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900"
+                  className="w-full h-11 sm:h-10 px-3 text-sm font-mono tabular-nums bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900"
                 />
               </div>
             </div>
@@ -1382,16 +1407,16 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 School Hours End must be later than School Hours Start.
               </div>
             ) : (
-              <div className="rounded-xl bg-stone-50/90 border border-stone-200/70 grid grid-cols-2 divide-x divide-stone-200/80">
+              <div className="rounded-xl bg-slate-50/90 border border-slate-200/70 grid grid-cols-2 divide-x divide-slate-200/80">
                 <div className="p-3 sm:p-3.5 min-w-0">
                   <span className="block text-[11px] font-semibold text-teal-800">School Hours</span>
-                  <span className="block text-xs font-mono tabular-nums font-semibold text-zinc-900 mt-0.5">
+                  <span className="block text-xs font-mono tabular-nums font-semibold text-slate-900 mt-0.5">
                     {formatHHMMTo12h(hoursStart)} – {formatHHMMTo12h(hoursEnd)}
                   </span>
                 </div>
                 <div className="p-3 sm:p-3.5 min-w-0">
                   <span className="block text-[11px] font-semibold text-indigo-700">Night / After-Hours</span>
-                  <span className="block text-xs text-zinc-600 mt-0.5">
+                  <span className="block text-xs text-slate-600 mt-0.5">
                     Before {formatHHMMTo12h(hoursStart)} or after {formatHHMMTo12h(hoursEnd)}
                   </span>
                 </div>
@@ -1405,14 +1430,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   setHoursStart(DEFAULT_INFIRMARY_SETTINGS.school_hours_start);
                   setHoursEnd(DEFAULT_INFIRMARY_SETTINGS.school_hours_end);
                 }}
-                className="h-10 px-2 text-xs font-medium text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                className="h-10 px-2 text-xs font-medium text-slate-500 hover:text-slate-900 cursor-pointer"
               >
                 Reset default
               </button>
               <button
                 type="submit"
                 disabled={busy || !hoursStart || !hoursEnd || hoursEnd <= hoursStart}
-                className="h-10 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 disabled:opacity-60 cursor-pointer whitespace-nowrap shrink-0"
+                className="h-10 px-4 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl inline-flex items-center gap-1.5 disabled:opacity-60 cursor-pointer whitespace-nowrap shrink-0"
               >
                 <Check className="w-4 h-4" />
                 <span>{busy ? 'Saving...' : 'Save School Hours'}</span>
@@ -1429,7 +1454,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         open={Boolean(editingStudent)}
         onClose={() => setEditingStudent(null)}
         title="Edit Student Information"
-        subtitle={editingStudent ? `Permanent ID · ${editingStudent.student_id}` : undefined}
+        subtitle={
+          editingStudent
+            ? editingStudent.gr_number
+              ? `GR Number · ${editingStudent.gr_number}`
+              : 'GR Number · Not uploaded'
+            : undefined
+        }
         icon={<Pencil className="w-4 h-4 text-teal-700" />}
         titleId="edit-student-modal-title"
         footer={
@@ -1437,7 +1468,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             <button
               type="button"
               onClick={() => setEditingStudent(null)}
-              className="h-9 px-3.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 bg-white border border-stone-200 hover:bg-stone-50 rounded-xl transition-colors cursor-pointer"
+              className="h-9 px-3.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -1445,7 +1476,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               type="submit"
               form="admin-edit-student-form"
               disabled={busy}
-              className="h-9 px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 rounded-xl inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+              className="h-9 px-4 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-xl inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-60"
             >
               <Check className="w-3.5 h-3.5" />
               <span>Save Changes</span>
@@ -1459,7 +1490,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           className="space-y-4"
         >
           <div>
-            <label htmlFor="edit-stu-name" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+            <label htmlFor="edit-stu-name" className="block text-xs font-semibold text-slate-700 mb-1.5">
               Full Name *
             </label>
             <input
@@ -1467,13 +1498,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               type="text"
               value={editStuName}
               onChange={(e) => setEditStuName(e.target.value)}
-              className="w-full h-10 px-3 text-sm bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 transition-all"
+              className="w-full h-10 px-3 text-sm bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition-all"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="edit-stu-class" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+              <label htmlFor="edit-stu-class" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Class (Section Name) *
               </label>
               <CustomSelect
@@ -1493,7 +1524,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
 
             <div>
-              <label htmlFor="edit-stu-roll" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+              <label htmlFor="edit-stu-roll" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Roll Number *
               </label>
               <input
@@ -1501,13 +1532,27 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 type="text"
                 value={editStuRoll}
                 onChange={(e) => setEditStuRoll(e.target.value)}
-                className="w-full h-10 px-3 text-sm font-mono bg-stone-50/80 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 transition-all"
+                className="w-full h-10 px-3 text-sm font-mono bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition-all"
               />
             </div>
           </div>
 
           <div>
-            <label htmlFor="edit-stu-status" className="block text-xs font-semibold text-zinc-700 mb-1.5">
+            <label htmlFor="edit-stu-gr" className="block text-xs font-semibold text-slate-700 mb-1.5">
+              GR Number
+            </label>
+            <input
+              id="edit-stu-gr"
+              type="text"
+              value={editStuGrNumber}
+              onChange={(e) => setEditStuGrNumber(e.target.value)}
+              placeholder="Optional — enter or upload later"
+              className="w-full h-10 px-3 text-sm font-mono bg-slate-50/80 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition-all"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="edit-stu-status" className="block text-xs font-semibold text-slate-700 mb-1.5">
               Enrollment Status
             </label>
             <CustomSelect

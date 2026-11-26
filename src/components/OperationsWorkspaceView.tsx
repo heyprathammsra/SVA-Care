@@ -18,16 +18,26 @@ import {
   CheckCircle2,
   ArrowUpDown,
   Image as ImageIcon,
+  FileText,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import {
   getStockStatus,
   getExpiryStatus,
+  mergeUniqueCategories,
   type MedicineInventoryRecord,
   type ItemInventoryRecord,
   type StockTransactionRecord,
   type BillRecord,
   type BillCategory,
+  type NurseDatabase,
 } from '../utils/nurseLogic';
+import {
+  downloadSheetPdf,
+  type DownloadableExcelTab,
+  type DownloadableSheetTab,
+} from '../utils/pdfExport';
 import { getTodayLocalDateString } from '../utils/seedData';
 import { CustomSelect } from './CustomSelect';
 import { ModalDialog } from './ModalDialog';
@@ -65,6 +75,7 @@ interface OperationsWorkspaceViewProps {
   ) => Promise<OperationsActionResult>;
   onUpdateBill: (bill: Partial<BillRecord>) => Promise<OperationsActionResult>;
   onDeleteBill: (billId: string) => Promise<OperationsActionResult>;
+  onDownloadExcelSheet?: (tab: DownloadableExcelTab) => Promise<OperationsActionResult>;
 }
 
 type OperationsTab = 'medicines' | 'items' | 'bills' | 'ledger';
@@ -93,6 +104,34 @@ const ITEM_CATEGORIES = [
 const ITEM_UNITS = ['pcs', 'packs', 'rolls', 'boxes', 'bottles', 'pairs', 'kits'];
 
 const BILL_CATEGORIES: BillCategory[] = ['Medicines', 'Items', 'Equipment', 'Camp', 'Other'];
+
+const CUSTOM_CATEGORY_VALUE = '__CUSTOM_CATEGORY__';
+const CUSTOM_MED_CATEGORIES_KEY = 'sva_custom_medicine_categories';
+const CUSTOM_ITEM_CATEGORIES_KEY = 'sva_custom_item_categories';
+
+function loadStoredCategories(storageKey: string): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => String(item ?? '').replace(/\s+/g, ' ').trim().slice(0, 60))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredCategories(storageKey: string, categories: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(categories));
+  } catch {
+    // Ignore storage quota or private-mode errors
+  }
+}
 
 /**
  * Compresses an uploaded bill photo in the browser to a lightweight JPEG data URL
@@ -158,10 +197,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   onCreateBill,
   onUpdateBill,
   onDeleteBill,
+  onDownloadExcelSheet,
 }) => {
   const [activeTab, setActiveTab] = useState<OperationsTab>('medicines');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'xlsx' | null>(null);
 
   // Filters
   const [medSearch, setMedSearch] = useState('');
@@ -180,6 +221,11 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   const [editingMed, setEditingMed] = useState<MedicineInventoryRecord | null>(null);
   const [medName, setMedName] = useState('');
   const [medCategory, setMedCategory] = useState('Fever & Pain');
+  const [isCustomMedCategory, setIsCustomMedCategory] = useState(false);
+  const [customMedCategoryInput, setCustomMedCategoryInput] = useState('');
+  const [storedCustomMedCategories, setStoredCustomMedCategories] = useState<string[]>(() =>
+    loadStoredCategories(CUSTOM_MED_CATEGORIES_KEY)
+  );
   const [medFormStrength, setMedFormStrength] = useState('');
   const [medUnit, setMedUnit] = useState('tablets');
   const [medBatch, setMedBatch] = useState('');
@@ -194,11 +240,36 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   const [editingItem, setEditingItem] = useState<ItemInventoryRecord | null>(null);
   const [itemName, setItemName] = useState('');
   const [itemCategory, setItemCategory] = useState('First Aid');
+  const [isCustomItemCategory, setIsCustomItemCategory] = useState(false);
+  const [customItemCategoryInput, setCustomItemCategoryInput] = useState('');
+  const [storedCustomItemCategories, setStoredCustomItemCategories] = useState<string[]>(() =>
+    loadStoredCategories(CUSTOM_ITEM_CATEGORIES_KEY)
+  );
   const [itemUnit, setItemUnit] = useState('pcs');
   const [itemStock, setItemStock] = useState('10');
   const [itemMinAlert, setItemMinAlert] = useState('5');
   const [itemNotes, setItemNotes] = useState('');
   const [confirmDeleteItemId, setConfirmDeleteItemId] = useState<string | null>(null);
+
+  const availableMedCategories = useMemo(
+    () =>
+      mergeUniqueCategories(
+        MEDICINE_CATEGORIES,
+        medicines.map((m) => m.category),
+        storedCustomMedCategories
+      ),
+    [medicines, storedCustomMedCategories]
+  );
+
+  const availableItemCategories = useMemo(
+    () =>
+      mergeUniqueCategories(
+        ITEM_CATEGORIES,
+        items.map((it) => it.category),
+        storedCustomItemCategories
+      ),
+    [items, storedCustomItemCategories]
+  );
 
   // Stock adjustment modal state
   const [adjustTarget, setAdjustTarget] = useState<{
@@ -231,6 +302,47 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
 
   const showToast = (res: OperationsActionResult) => {
     setFeedback({ type: res.ok ? 'success' : 'error', text: res.message });
+  };
+
+  const activeExportTab: DownloadableSheetTab & DownloadableExcelTab =
+    activeTab === 'medicines'
+      ? 'Medicines'
+      : activeTab === 'items'
+        ? 'Items'
+        : activeTab === 'bills'
+          ? 'Bills'
+          : 'Stock Ledger';
+
+  const handleDownloadCurrentPdf = () => {
+    if (exportingFormat) return;
+    setExportingFormat('pdf');
+    try {
+      const exportDb: NurseDatabase = {
+        students: [],
+        visits: [],
+        measurements: [],
+        healthProfiles: [],
+        medicines,
+        items,
+        stockTransactions,
+        bills,
+      };
+      const res = downloadSheetPdf(activeExportTab, exportDb);
+      showToast({ ok: res.ok, message: res.message });
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  const handleDownloadCurrentExcel = async () => {
+    if (!onDownloadExcelSheet || exportingFormat) return;
+    setExportingFormat('xlsx');
+    try {
+      const res = await onDownloadExcelSheet(activeExportTab);
+      showToast(res);
+    } finally {
+      setExportingFormat(null);
+    }
   };
 
   // Computed KPIs
@@ -326,6 +438,8 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     setEditingMed(null);
     setMedName('');
     setMedCategory('Fever & Pain');
+    setIsCustomMedCategory(false);
+    setCustomMedCategoryInput('');
     setMedFormStrength('');
     setMedUnit('tablets');
     setMedBatch('');
@@ -339,7 +453,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   const openEditMedicine = (m: MedicineInventoryRecord) => {
     setEditingMed(m);
     setMedName(m.name);
-    setMedCategory(m.category || 'General');
+    const existingCat = (m.category || 'General').trim() || 'General';
+    const canonicalCat =
+      availableMedCategories.find((c) => c.toLowerCase() === existingCat.toLowerCase()) || existingCat;
+    setMedCategory(canonicalCat);
+    setIsCustomMedCategory(false);
+    setCustomMedCategoryInput('');
     setMedFormStrength(m.form_strength || '');
     setMedUnit(m.unit || 'tablets');
     setMedBatch(m.batch_number || '');
@@ -354,6 +473,8 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
     setEditingItem(null);
     setItemName('');
     setItemCategory('First Aid');
+    setIsCustomItemCategory(false);
+    setCustomItemCategoryInput('');
     setItemUnit('pcs');
     setItemStock('10');
     setItemMinAlert('5');
@@ -364,7 +485,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   const openEditItem = (it: ItemInventoryRecord) => {
     setEditingItem(it);
     setItemName(it.name);
-    setItemCategory(it.category || 'First Aid');
+    const existingCat = (it.category || 'First Aid').trim() || 'First Aid';
+    const canonicalCat =
+      availableItemCategories.find((c) => c.toLowerCase() === existingCat.toLowerCase()) || existingCat;
+    setItemCategory(canonicalCat);
+    setIsCustomItemCategory(false);
+    setCustomItemCategoryInput('');
     setItemUnit(it.unit || 'pcs');
     setItemStock(String(it.current_stock));
     setItemMinAlert(String(it.min_stock_alert));
@@ -420,12 +546,22 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
       showToast({ ok: false, message: 'Medicine name is required.' });
       return;
     }
+    const rawCategory = isCustomMedCategory ? customMedCategoryInput : medCategory;
+    const cleanedCategory = rawCategory.replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!cleanedCategory) {
+      showToast({ ok: false, message: 'Please enter a category name.' });
+      return;
+    }
+    const finalCategory =
+      availableMedCategories.find((c) => c.toLowerCase() === cleanedCategory.toLowerCase()) ||
+      cleanedCategory;
+
     setBusy(true);
     try {
       const res = await onUpsertMedicine({
         medicine_id: editingMed?.medicine_id,
         name: medName.trim(),
-        category: medCategory,
+        category: finalCategory,
         form_strength: medFormStrength.trim(),
         unit: medUnit,
         batch_number: medBatch.trim(),
@@ -435,7 +571,17 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         notes: medNotes.trim() || undefined,
       });
       showToast(res);
-      if (res.ok) setShowMedModal(false);
+      if (res.ok) {
+        if (
+          !MEDICINE_CATEGORIES.some((c) => c.toLowerCase() === finalCategory.toLowerCase()) &&
+          !storedCustomMedCategories.some((c) => c.toLowerCase() === finalCategory.toLowerCase())
+        ) {
+          const nextStored = [...storedCustomMedCategories, finalCategory];
+          setStoredCustomMedCategories(nextStored);
+          saveStoredCategories(CUSTOM_MED_CATEGORIES_KEY, nextStored);
+        }
+        setShowMedModal(false);
+      }
     } finally {
       setBusy(false);
     }
@@ -447,19 +593,39 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
       showToast({ ok: false, message: 'Item name is required.' });
       return;
     }
+    const rawCategory = isCustomItemCategory ? customItemCategoryInput : itemCategory;
+    const cleanedCategory = rawCategory.replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!cleanedCategory) {
+      showToast({ ok: false, message: 'Please enter a category name.' });
+      return;
+    }
+    const finalCategory =
+      availableItemCategories.find((c) => c.toLowerCase() === cleanedCategory.toLowerCase()) ||
+      cleanedCategory;
+
     setBusy(true);
     try {
       const res = await onUpsertItem({
         item_id: editingItem?.item_id,
         name: itemName.trim(),
-        category: itemCategory,
+        category: finalCategory,
         unit: itemUnit,
         current_stock: Math.max(0, Number(itemStock) || 0),
         min_stock_alert: Math.max(0, Number(itemMinAlert) || 0),
         notes: itemNotes.trim() || undefined,
       });
       showToast(res);
-      if (res.ok) setShowItemModal(false);
+      if (res.ok) {
+        if (
+          !ITEM_CATEGORIES.some((c) => c.toLowerCase() === finalCategory.toLowerCase()) &&
+          !storedCustomItemCategories.some((c) => c.toLowerCase() === finalCategory.toLowerCase())
+        ) {
+          const nextStored = [...storedCustomItemCategories, finalCategory];
+          setStoredCustomItemCategories(nextStored);
+          saveStoredCategories(CUSTOM_ITEM_CATEGORIES_KEY, nextStored);
+        }
+        setShowItemModal(false);
+      }
     } finally {
       setBusy(false);
     }
@@ -573,29 +739,58 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+    <div className="max-w-5xl mx-auto space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center sm:items-end justify-between gap-3 border-b border-stone-200/80 pb-3.5 sm:pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] sm:text-xs font-medium text-teal-700">
-            Infirmary Stock &amp; Expense Register
-          </p>
-          <h1 className="text-xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-tight truncate">
+          <h1 className="text-xl sm:text-2xl font-semibold text-zinc-950 font-display tracking-tight truncate">
             Inventory &amp; Bills
           </h1>
-          <p className="hidden sm:block text-sm text-zinc-500 mt-1">
-            Track medicines, first-aid supplies, purchase bills with receipts, and live stock movements.
+          <p className="text-xs text-zinc-500 mt-1">
+            Track medicines, first-aid supplies, purchase bills with receipts, and stock movements.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={exportingFormat !== null}
+            onClick={handleDownloadCurrentPdf}
+            title={`Download ${activeExportTab} as PDF`}
+            className="h-9 px-3 text-xs font-medium text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200/90 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all disabled:opacity-60 cursor-pointer"
+          >
+            {exportingFormat === 'pdf' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-zinc-400" />
+            )}
+            <span>PDF</span>
+          </button>
+
+          {onDownloadExcelSheet && (
+            <button
+              type="button"
+              disabled={exportingFormat !== null}
+              onClick={() => void handleDownloadCurrentExcel()}
+              title={`Download password-protected ${activeExportTab} Excel (.xlsx)`}
+              className="h-9 px-3 text-xs font-medium text-zinc-700 bg-white hover:bg-zinc-50 border border-zinc-200/90 rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all disabled:opacity-60 cursor-pointer"
+            >
+              {exportingFormat === 'xlsx' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-zinc-400" />
+              )}
+              <span>Excel</span>
+            </button>
+          )}
+
           {activeTab === 'medicines' && (
             <button
               type="button"
               onClick={openAddMedicine}
-              className="h-9 sm:h-10 px-3 sm:px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap transition-all cursor-pointer"
+              className="h-9 px-3.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span className="sm:hidden">Add Med</span>
               <span className="hidden sm:inline">Add Medicine</span>
             </button>
@@ -604,9 +799,9 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             <button
               type="button"
               onClick={openAddItem}
-              className="h-9 sm:h-10 px-3 sm:px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap transition-all cursor-pointer"
+              className="h-9 px-3.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>Add Item</span>
             </button>
           )}
@@ -614,9 +809,9 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
             <button
               type="button"
               onClick={openAddBill}
-              className="h-9 sm:h-10 px-3 sm:px-4 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 shadow-xs whitespace-nowrap transition-all cursor-pointer"
+              className="h-9 px-3.5 text-xs font-semibold text-white bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>Record Bill</span>
             </button>
           )}
@@ -652,24 +847,23 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
         </div>
       )}
 
-      {/* Segmented Workspace Tabs (Single row on mobile & desktop) */}
+      {/* Segmented Workspace Tabs */}
       <div
         role="tablist"
         aria-label="Inventory and bills sections"
-        className="grid grid-cols-4 sm:inline-flex items-center gap-1 p-1 bg-stone-100/90 border border-stone-200/70 rounded-xl w-full sm:w-auto"
+        className="grid grid-cols-4 sm:inline-flex items-center gap-1 p-1 bg-zinc-200/60 rounded-xl w-full sm:w-auto"
       >
         <button
           type="button"
           role="tab"
           aria-selected={activeTab === 'medicines'}
           onClick={() => setActiveTab('medicines')}
-          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+          className={`px-2 sm:px-3.5 py-2 text-xs font-medium rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'medicines'
-              ? 'bg-white text-zinc-900 shadow-xs'
+              ? 'bg-white text-zinc-950 shadow-2xs font-semibold'
               : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Pill className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span>Medicines</span>
           <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({medicines.length})</span>
         </button>
@@ -679,13 +873,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           role="tab"
           aria-selected={activeTab === 'items'}
           onClick={() => setActiveTab('items')}
-          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+          className={`px-2 sm:px-3.5 py-2 text-xs font-medium rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'items'
-              ? 'bg-white text-zinc-900 shadow-xs'
+              ? 'bg-white text-zinc-950 shadow-2xs font-semibold'
               : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Package className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span className="sm:hidden">Items</span>
           <span className="hidden sm:inline">Items &amp; Supplies</span>
           <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({items.length})</span>
@@ -696,13 +889,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           role="tab"
           aria-selected={activeTab === 'bills'}
           onClick={() => setActiveTab('bills')}
-          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+          className={`px-2 sm:px-3.5 py-2 text-xs font-medium rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'bills'
-              ? 'bg-white text-zinc-900 shadow-xs'
+              ? 'bg-white text-zinc-950 shadow-2xs font-semibold'
               : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <Receipt className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span className="sm:hidden">Bills</span>
           <span className="hidden sm:inline">Bills &amp; Receipts</span>
           <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({bills.length})</span>
@@ -713,13 +905,12 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
           role="tab"
           aria-selected={activeTab === 'ledger'}
           onClick={() => setActiveTab('ledger')}
-          className={`px-1.5 sm:px-3.5 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
+          className={`px-2 sm:px-3.5 py-2 text-xs font-medium rounded-lg transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
             activeTab === 'ledger'
-              ? 'bg-white text-zinc-900 shadow-xs'
+              ? 'bg-white text-zinc-950 shadow-2xs font-semibold'
               : 'text-zinc-600 hover:text-zinc-900'
           }`}
         >
-          <History className="hidden sm:block w-4 h-4 shrink-0 text-teal-700" />
           <span className="sm:hidden">History</span>
           <span className="hidden sm:inline">Stock History</span>
           <span className="hidden sm:inline font-mono text-[11px] text-zinc-400">({stockTransactions.length})</span>
@@ -1615,18 +1806,64 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="med-category" className="block text-xs font-semibold text-zinc-700 mb-1">
-                Category
-              </label>
-              <CustomSelect
-                id="med-category"
-                ariaLabel="Medicine category"
-                value={medCategory}
-                onChange={setMedCategory}
-                variant="subtle"
-                className="w-full"
-                options={MEDICINE_CATEGORIES.map((c) => ({ value: c, label: c }))}
-              />
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <label
+                  htmlFor={isCustomMedCategory ? 'med-category-custom' : 'med-category'}
+                  className="block text-xs font-semibold text-zinc-700"
+                >
+                  Category
+                </label>
+                {isCustomMedCategory && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomMedCategory(false);
+                      setCustomMedCategoryInput('');
+                    }}
+                    className="text-[11px] font-medium text-teal-700 hover:text-teal-800 cursor-pointer"
+                  >
+                    Choose from list
+                  </button>
+                )}
+              </div>
+              {isCustomMedCategory ? (
+                <div>
+                  <input
+                    id="med-category-custom"
+                    type="text"
+                    required
+                    autoFocus
+                    maxLength={60}
+                    value={customMedCategoryInput}
+                    onChange={(e) => setCustomMedCategoryInput(e.target.value)}
+                    placeholder="Type new category name..."
+                    className="w-full h-10 px-3 text-sm bg-white border border-teal-600 rounded-xl focus:outline-none focus:border-zinc-900"
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Saved to dropdown for future medicines
+                  </p>
+                </div>
+              ) : (
+                <CustomSelect
+                  id="med-category"
+                  ariaLabel="Medicine category"
+                  value={medCategory}
+                  onChange={(val) => {
+                    if (val === CUSTOM_CATEGORY_VALUE) {
+                      setIsCustomMedCategory(true);
+                      setCustomMedCategoryInput('');
+                    } else {
+                      setMedCategory(val);
+                    }
+                  }}
+                  variant="subtle"
+                  className="w-full"
+                  options={[
+                    ...availableMedCategories.map((c) => ({ value: c, label: c })),
+                    { value: CUSTOM_CATEGORY_VALUE, label: '+ Add custom category...' },
+                  ]}
+                />
+              )}
             </div>
             <div>
               <label htmlFor="med-strength" className="block text-xs font-semibold text-zinc-700 mb-1">
@@ -1781,18 +2018,64 @@ export const OperationsWorkspaceView: React.FC<OperationsWorkspaceViewProps> = (
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="item-cat" className="block text-xs font-semibold text-zinc-700 mb-1">
-                Category
-              </label>
-              <CustomSelect
-                id="item-cat"
-                ariaLabel="Item category"
-                value={itemCategory}
-                onChange={setItemCategory}
-                variant="subtle"
-                className="w-full"
-                options={ITEM_CATEGORIES.map((c) => ({ value: c, label: c }))}
-              />
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <label
+                  htmlFor={isCustomItemCategory ? 'item-cat-custom' : 'item-cat'}
+                  className="block text-xs font-semibold text-zinc-700"
+                >
+                  Category
+                </label>
+                {isCustomItemCategory && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomItemCategory(false);
+                      setCustomItemCategoryInput('');
+                    }}
+                    className="text-[11px] font-medium text-teal-700 hover:text-teal-800 cursor-pointer"
+                  >
+                    Choose from list
+                  </button>
+                )}
+              </div>
+              {isCustomItemCategory ? (
+                <div>
+                  <input
+                    id="item-cat-custom"
+                    type="text"
+                    required
+                    autoFocus
+                    maxLength={60}
+                    value={customItemCategoryInput}
+                    onChange={(e) => setCustomItemCategoryInput(e.target.value)}
+                    placeholder="Type new category name..."
+                    className="w-full h-10 px-3 text-sm bg-white border border-teal-600 rounded-xl focus:outline-none focus:border-zinc-900"
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Saved to dropdown for future items
+                  </p>
+                </div>
+              ) : (
+                <CustomSelect
+                  id="item-cat"
+                  ariaLabel="Item category"
+                  value={itemCategory}
+                  onChange={(val) => {
+                    if (val === CUSTOM_CATEGORY_VALUE) {
+                      setIsCustomItemCategory(true);
+                      setCustomItemCategoryInput('');
+                    } else {
+                      setItemCategory(val);
+                    }
+                  }}
+                  variant="subtle"
+                  className="w-full"
+                  options={[
+                    ...availableItemCategories.map((c) => ({ value: c, label: c })),
+                    { value: CUSTOM_CATEGORY_VALUE, label: '+ Add custom category...' },
+                  ]}
+                />
+              )}
             </div>
             <div>
               <label htmlFor="item-unit" className="block text-xs font-semibold text-zinc-700 mb-1">

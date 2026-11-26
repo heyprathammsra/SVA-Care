@@ -26,24 +26,34 @@ import {
   TrendingUp,
   ArrowLeft,
   ArrowRight,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import {
   formatTimeFromDatetime,
   getCurrentAcademicYear,
   computeFrequentVisitors,
   computeCommonIssues,
+  getOpdImages,
   type StudentRecord,
   type VisitRecord,
   type ItemInventoryRecord,
   type DoctorVisitSession,
   type DoctorVisitCase,
   type OpdRecord,
+  type OpdImageAttachment,
   type OpdStatus,
   type MedicalCampRecord,
   type CampScreeningRecord,
   type AnnualCheckupRecord,
   type MenstrualLogRecord,
+  type NurseDatabase,
 } from '../utils/nurseLogic';
+import {
+  downloadSheetPdf,
+  type DownloadableExcelTab,
+  type DownloadableSheetTab,
+} from '../utils/pdfExport';
 import { getTodayLocalDateString, getNowLocalDatetimeString } from '../utils/seedData';
 import { CustomSelect } from './CustomSelect';
 import { ModalDialog } from './ModalDialog';
@@ -83,6 +93,7 @@ interface ProgramsWorkspaceViewProps {
   onDeleteAnnualCheckup: (checkupId: string) => Promise<ProgramsActionResult>;
   onUpsertMenstrualLog: (record: Partial<MenstrualLogRecord>) => Promise<ProgramsActionResult>;
   onDeleteMenstrualLog: (menstrualId: string) => Promise<ProgramsActionResult>;
+  onDownloadExcelSheet?: (tab: DownloadableExcelTab) => Promise<ProgramsActionResult>;
   onSelectStudent?: (student: StudentRecord) => void;
   initialTab?: ProgramsTab;
   initialTabNonce?: number;
@@ -319,6 +330,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
   onDeleteAnnualCheckup,
   onUpsertMenstrualLog,
   onDeleteMenstrualLog,
+  onDownloadExcelSheet,
   onSelectStudent,
   initialTab = 'hub',
   initialTabNonce = 0,
@@ -326,6 +338,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
   const [activeTab, setActiveTab] = useState<ProgramsTab>(initialTab);
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [exportingProgramKey, setExportingProgramKey] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialTabNonce > 0) {
@@ -375,11 +388,12 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
   const [opdFollowUpDate, setOpdFollowUpDate] = useState('');
   const [opdStatus, setOpdStatus] = useState<OpdStatus>('Referred');
   const [opdNotes, setOpdNotes] = useState('');
-  const [opdImageDataUrl, setOpdImageDataUrl] = useState<string | undefined>(undefined);
-  const [opdImageSizeKb, setOpdImageSizeKb] = useState<number | null>(null);
+  const [opdImages, setOpdImages] = useState<Array<OpdImageAttachment & { sizeKb?: number }>>([]);
   const [opdImageCompressing, setOpdImageCompressing] = useState(false);
   const opdFileInputRef = useRef<HTMLInputElement | null>(null);
+  const opdCameraInputRef = useRef<HTMLInputElement | null>(null);
   const [lightboxOpd, setLightboxOpd] = useState<OpdRecord | null>(null);
+  const [lightboxImageIndex, setLightboxImageIndex] = useState(0);
 
   // ---- Medical Camp Modal State ----
   const [campModalOpen, setCampModalOpen] = useState(false);
@@ -417,6 +431,62 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
 
   const showToast = (type: 'success' | 'error', text: string) => {
     setBanner({ type, text });
+  };
+
+  const buildProgramsExportDb = (): NurseDatabase => ({
+    students,
+    visits,
+    measurements: [],
+    healthProfiles: [],
+    items,
+    doctorVisits,
+    doctorVisitCases,
+    opdRecords,
+    medicalCamps,
+    campScreenings,
+    annualCheckups,
+    menstrualLogs,
+  });
+
+  const getProgramExportMeta = (
+    tab: Exclude<ProgramsTab, 'hub'>
+  ): { sheetTab: DownloadableSheetTab; excelTab: DownloadableExcelTab | null } => {
+    switch (tab) {
+      case 'doctor':
+        return { sheetTab: 'Doctor Visits', excelTab: 'Doctor Visits' };
+      case 'opd':
+        return { sheetTab: 'External OPD', excelTab: 'External OPD' };
+      case 'camps':
+        return { sheetTab: 'Medical Camps', excelTab: 'Medical Camps' };
+      case 'checkups':
+        return { sheetTab: 'Annual Checkups', excelTab: 'Annual Checkups' };
+      case 'menstrual':
+        return { sheetTab: 'Menstrual Log', excelTab: 'Menstrual Log' };
+      case 'insights':
+        return { sheetTab: 'Health Insights', excelTab: null };
+    }
+  };
+
+  const handleDownloadProgramPdf = (sheetTab: DownloadableSheetTab) => {
+    if (exportingProgramKey) return;
+    setExportingProgramKey(`pdf:${sheetTab}`);
+    try {
+      const res = downloadSheetPdf(sheetTab, buildProgramsExportDb());
+      showToast(res.ok ? 'success' : 'error', res.message);
+    } finally {
+      setExportingProgramKey(null);
+    }
+  };
+
+  const handleDownloadProgramExcel = async (excelTab: DownloadableExcelTab) => {
+    if (!onDownloadExcelSheet || exportingProgramKey) return;
+    setExportingProgramKey(`xlsx:${excelTab}`);
+    try {
+      const res = await onDownloadExcelSheet(excelTab);
+      showToast(res.ok ? 'success' : 'error', res.message);
+    } finally {
+      setExportingProgramKey(null);
+    }
   };
 
   // ---- Derived Data: Weekly Doctor Visits ----
@@ -502,7 +572,10 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
     [opdRecords]
   );
   const opdSlipsCount = useMemo(
-    () => opdRecords.filter((o) => isSafeImageSrc(o.image_url || o.image_data_url)).length,
+    () =>
+      opdRecords.filter((o) =>
+        getOpdImages(o).some((img) => isSafeImageSrc(img.image_data_url || img.image_url))
+      ).length,
     [opdRecords]
   );
 
@@ -613,8 +686,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
     setOpdFollowUpDate('');
     setOpdStatus('Referred');
     setOpdNotes('');
-    setOpdImageDataUrl(undefined);
-    setOpdImageSizeKb(null);
+    setOpdImages([]);
     setOpdModalOpen(true);
   };
 
@@ -630,8 +702,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
     setOpdFollowUpDate(o.follow_up_date || '');
     setOpdStatus(o.status || 'Referred');
     setOpdNotes(o.notes || '');
-    setOpdImageDataUrl(o.image_data_url);
-    setOpdImageSizeKb(null);
+    setOpdImages(getOpdImages(o));
     setOpdModalOpen(true);
   };
 
@@ -743,26 +814,55 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
     }
   };
 
+  const MAX_OPD_PHOTOS = 15;
+
   const handleOpdPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      showToast('error', 'Please select a valid photo file (JPG, PNG, or WebP).');
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const remainingSlots = Math.max(0, MAX_OPD_PHOTOS - opdImages.length);
+    if (remainingSlots === 0) {
+      showToast('error', `You can attach up to ${MAX_OPD_PHOTOS} photos per OPD record.`);
+      e.target.value = '';
       return;
     }
+
+    const validFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (validFiles.length === 0) {
+      showToast('error', 'Please select valid photo files (JPG, PNG, or WebP).');
+      e.target.value = '';
+      return;
+    }
+
+    const toProcess = validFiles.slice(0, remainingSlots);
+    const skippedCount = validFiles.length - toProcess.length;
+
     setOpdImageCompressing(true);
     try {
-      const { dataUrl, sizeKb } = await compressOpdImageFile(file);
-      setOpdImageDataUrl(dataUrl);
-      setOpdImageSizeKb(sizeKb);
+      const newlyCompressed: Array<OpdImageAttachment & { sizeKb?: number }> = [];
+      for (const file of toProcess) {
+        const { dataUrl, sizeKb } = await compressOpdImageFile(file);
+        newlyCompressed.push({
+          image_data_url: dataUrl,
+          sizeKb,
+        });
+      }
+      setOpdImages((prev) => [...prev, ...newlyCompressed].slice(0, MAX_OPD_PHOTOS));
+      if (skippedCount > 0) {
+        showToast(
+          'error',
+          `Maximum ${MAX_OPD_PHOTOS} photos allowed per OPD record (${skippedCount} extra skipped).`
+        );
+      }
     } catch (err) {
       showToast(
         'error',
-        err instanceof Error ? err.message : 'Unable to process the selected OPD slip photo.'
+        err instanceof Error ? err.message : 'Unable to process the selected OPD photo.'
       );
     } finally {
       setOpdImageCompressing(false);
       if (opdFileInputRef.current) opdFileInputRef.current.value = '';
+      if (opdCameraInputRef.current) opdCameraInputRef.current.value = '';
     }
   };
 
@@ -778,6 +878,15 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
     }
     setSaving(true);
     try {
+      const cleanedImages: OpdImageAttachment[] = opdImages.map(
+        ({ drive_file_id, image_url, image_data_url, label }) => ({
+          drive_file_id,
+          image_url,
+          image_data_url,
+          label,
+        })
+      );
+      const firstImg = cleanedImages[0];
       const payload: Partial<OpdRecord> = {
         opd_id: editingOpd?.opd_id,
         student_id: opdStudentId,
@@ -790,7 +899,10 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
         follow_up_date: editingOpd ? opdFollowUpDate.trim() : opdFollowUpDate || undefined,
         status: opdStatus,
         notes: editingOpd ? opdNotes.trim() : opdNotes.trim() || undefined,
-        image_data_url: opdImageDataUrl,
+        images: cleanedImages,
+        drive_file_id: firstImg?.drive_file_id,
+        image_url: firstImg?.image_url,
+        image_data_url: firstImg?.image_data_url,
       };
       const res = editingOpd ? await onUpdateOpd(payload) : await onCreateOpd(payload);
       if (res.ok) {
@@ -997,34 +1109,31 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-8">
+    <div className="space-y-5 sm:space-y-6 pb-8">
       {/* Header: Clean Hub Title OR Focused Breadcrumb + Module Switcher */}
       {activeTab === 'hub' ? (
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-teal-700">
-              Campus Health &amp; Preventive Care
-            </p>
-            <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 font-display tracking-tight mt-0.5 leading-tight">
+            <h1 className="text-xl sm:text-2xl font-semibold text-zinc-950 font-display tracking-tight">
               Clinical Programs
             </h1>
-            <p className="text-xs sm:text-sm text-zinc-500 mt-1">
-              Choose a section below to view trends, log doctor rounds, manage referrals, or run annual checkups.
+            <p className="text-xs text-zinc-500 mt-1">
+              Choose a module below to view campus health trends, log doctor rounds, manage referrals, or run annual checkups.
             </p>
           </div>
         </div>
       ) : (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-zinc-200/80">
           <div className="min-w-0">
             <button
               type="button"
               onClick={() => setActiveTab('hub')}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-900 transition-colors cursor-pointer mb-1"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-950 transition-colors cursor-pointer mb-1"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>All Programs</span>
             </button>
-            <h1 className="text-xl sm:text-2xl font-semibold text-zinc-900 font-display tracking-tight truncate">
+            <h1 className="text-xl sm:text-2xl font-semibold text-zinc-950 font-display tracking-tight truncate">
               {MODULE_META[activeTab].title}
             </h1>
             <p className="hidden sm:block text-xs text-zinc-500 mt-0.5">
@@ -1032,7 +1141,7 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <div className="w-44 sm:w-48">
               <CustomSelect
                 ariaLabel="Switch clinical program"
@@ -1050,11 +1159,54 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
               />
             </div>
 
+            {(() => {
+              const meta = getProgramExportMeta(activeTab);
+              const isBusyPdf = exportingProgramKey === `pdf:${meta.sheetTab}`;
+              const isBusyExcel = meta.excelTab
+                ? exportingProgramKey === `xlsx:${meta.excelTab}`
+                : false;
+              return (
+                <>
+                  <button
+                    type="button"
+                    disabled={exportingProgramKey !== null}
+                    onClick={() => handleDownloadProgramPdf(meta.sheetTab)}
+                    title={`Download ${meta.sheetTab} as PDF`}
+                    className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200/90 text-zinc-700 text-xs font-medium transition-colors whitespace-nowrap shrink-0 disabled:opacity-60 cursor-pointer"
+                  >
+                    {isBusyPdf ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    )}
+                    <span>PDF</span>
+                  </button>
+
+                  {meta.excelTab && onDownloadExcelSheet && (
+                    <button
+                      type="button"
+                      disabled={exportingProgramKey !== null}
+                      onClick={() => void handleDownloadProgramExcel(meta.excelTab!)}
+                      title={`Download password-protected ${meta.excelTab} Excel (.xlsx)`}
+                      className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200/90 text-zinc-700 text-xs font-medium transition-colors whitespace-nowrap shrink-0 disabled:opacity-60 cursor-pointer"
+                    >
+                      {isBusyExcel ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      )}
+                      <span>Excel</span>
+                    </button>
+                  )}
+                </>
+              );
+            })()}
+
             {showTopPrimaryAction && (
               <button
                 type="button"
                 onClick={handlePrimaryAction}
-                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 shrink-0" />
                 <span>{primaryActionLabel}</span>
@@ -1096,103 +1248,177 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
       {/* HUB OVERVIEW: 6 CALM, SCANNABLE PROGRAM CARDS                     */}
       {/* ================================================================= */}
       {activeTab === 'hub' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[
-            {
-              id: 'insights' as const,
-              title: 'Health Insights',
-              description: 'Spot students visiting frequently and common illnesses spreading by class.',
-              icon: TrendingUp,
-              statPrimary: `${insightsPreview.repeatCount} repeat visitor${insightsPreview.repeatCount === 1 ? '' : 's'} (30d)`,
-              statSecondary: insightsPreview.topIssue
-                ? `Top: ${insightsPreview.topIssue}`
-                : 'Live from visits & OPD',
-              accent: false,
-            },
-            {
-              id: 'doctor' as const,
-              title: 'Weekly Doctor Visits',
-              description: 'Log visiting physician sessions, student findings, prescriptions, and follow-ups.',
-              icon: Stethoscope,
-              statPrimary: `${doctorVisits.length} session${doctorVisits.length === 1 ? '' : 's'}`,
-              statSecondary: `${doctorVisitCases.length} seen${doctorFollowUpCount > 0 ? ` · ${doctorFollowUpCount} follow-up` : ''}`,
-              accent: false,
-            },
-            {
-              id: 'opd' as const,
-              title: 'External OPD Register',
-              description: 'Track outside hospital referrals, prescription slip photos, and return status.',
-              icon: Building2,
-              statPrimary: `${opdRecords.length} referral${opdRecords.length === 1 ? '' : 's'}`,
-              statSecondary: activeOpdCount > 0 ? `${activeOpdCount} open / follow-up` : 'All settled',
-              accent: activeOpdCount > 0,
-            },
-            {
-              id: 'camps' as const,
-              title: 'Medical Camps',
-              description: 'Manage dental, eye, or general camps with rapid student-by-student screening.',
-              icon: HeartPulse,
-              statPrimary: `${medicalCamps.length} camp${medicalCamps.length === 1 ? '' : 's'}`,
-              statSecondary: `${campScreenings.length} screened${campReferralsCount > 0 ? ` · ${campReferralsCount} referred` : ''}`,
-              accent: false,
-            },
-            {
-              id: 'checkups' as const,
-              title: 'Annual Health Checkups',
-              description: 'Class-wise annual physical exams with auto-BMI, vision, dental, and fitness status.',
-              icon: ClipboardCheck,
-              statPrimary: `${annualScreenedCount} / ${activeStudentCount} screened`,
-              statSecondary: `Academic year ${currentAcademicYear}`,
-              accent: false,
-            },
-            {
-              id: 'menstrual' as const,
-              title: 'Menstrual Health Care',
-              description: 'Discreet, nurse-only cycle care log with optional sanitary pad stock deduction.',
-              icon: Lock,
-              statPrimary: `${menstrualLogs.length} entr${menstrualLogs.length === 1 ? 'y' : 'ies'}`,
-              statSecondary: 'Nurse & Admin only · Private',
-              accent: false,
-            },
-          ].map((card) => {
-            const Icon = card.icon;
-            return (
-              <button
-                key={card.id}
-                type="button"
-                onClick={() => setActiveTab(card.id)}
-                className="group text-left bg-white border border-stone-200/80 hover:border-stone-300 rounded-2xl p-5 shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between gap-4 cursor-pointer"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="w-9 h-9 rounded-xl bg-stone-100 text-teal-800 group-hover:bg-teal-50 flex items-center justify-center transition-colors">
-                      <Icon className="w-4.5 h-4.5" />
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              {
+                id: 'insights' as const,
+                title: 'Health Insights',
+                description: 'Spot students visiting frequently and common illnesses spreading by class.',
+                icon: TrendingUp,
+                statPrimary: `${insightsPreview.repeatCount} repeat visitor${insightsPreview.repeatCount === 1 ? '' : 's'} (30d)`,
+                statSecondary: insightsPreview.topIssue
+                  ? `Top: ${insightsPreview.topIssue}`
+                  : 'Live from visits & OPD',
+                accent: false,
+              },
+              {
+                id: 'doctor' as const,
+                title: 'Weekly Doctor Visits',
+                description: 'Log visiting physician sessions, student findings, prescriptions, and follow-ups.',
+                icon: Stethoscope,
+                statPrimary: `${doctorVisits.length} session${doctorVisits.length === 1 ? '' : 's'}`,
+                statSecondary: `${doctorVisitCases.length} seen${doctorFollowUpCount > 0 ? ` · ${doctorFollowUpCount} follow-up` : ''}`,
+                accent: false,
+              },
+              {
+                id: 'opd' as const,
+                title: 'External OPD Register',
+                description: 'Track outside hospital referrals, prescription slip photos, and return status.',
+                icon: Building2,
+                statPrimary: `${opdRecords.length} referral${opdRecords.length === 1 ? '' : 's'}`,
+                statSecondary: activeOpdCount > 0 ? `${activeOpdCount} open / follow-up` : 'All settled',
+                accent: activeOpdCount > 0,
+              },
+              {
+                id: 'camps' as const,
+                title: 'Medical Camps',
+                description: 'Manage dental, eye, or general camps with rapid student-by-student screening.',
+                icon: HeartPulse,
+                statPrimary: `${medicalCamps.length} camp${medicalCamps.length === 1 ? '' : 's'}`,
+                statSecondary: `${campScreenings.length} screened${campReferralsCount > 0 ? ` · ${campReferralsCount} referred` : ''}`,
+                accent: false,
+              },
+              {
+                id: 'checkups' as const,
+                title: 'Annual Health Checkups',
+                description: 'Class-wise annual physical exams with auto-BMI, vision, dental, and fitness status.',
+                icon: ClipboardCheck,
+                statPrimary: `${annualScreenedCount} / ${activeStudentCount} screened`,
+                statSecondary: `Academic year ${currentAcademicYear}`,
+                accent: false,
+              },
+              {
+                id: 'menstrual' as const,
+                title: 'Menstrual Health Care',
+                description: 'Discreet, nurse-only cycle care log with optional sanitary pad stock deduction.',
+                icon: Lock,
+                statPrimary: `${menstrualLogs.length} entr${menstrualLogs.length === 1 ? 'y' : 'ies'}`,
+                statSecondary: 'Nurse & Admin only · Private',
+                accent: false,
+              },
+            ].map((card) => {
+              const Icon = card.icon;
+              return (
+                <button
+                  key={card.id}
+                  type="button"
+                  onClick={() => setActiveTab(card.id)}
+                  className="group text-left bg-white border border-zinc-200/80 hover:border-zinc-300 rounded-2xl p-5 transition-all flex flex-col justify-between gap-4 cursor-pointer"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="w-9 h-9 rounded-xl bg-zinc-100 text-zinc-700 group-hover:bg-zinc-900 group-hover:text-white flex items-center justify-center transition-colors">
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-700 group-hover:translate-x-0.5 transition-all" />
                     </div>
-                    <ArrowRight className="w-4 h-4 text-zinc-300 group-hover:text-zinc-700 group-hover:translate-x-0.5 transition-all" />
+                    <div>
+                      <h2 className="text-base font-semibold text-zinc-950 font-display">
+                        {card.title}
+                      </h2>
+                      <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                        {card.description}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-zinc-900 font-display group-hover:text-teal-800 transition-colors">
-                      {card.title}
-                    </h2>
-                    <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-                      {card.description}
-                    </p>
-                  </div>
-                </div>
 
-                <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2 text-xs">
-                  <span
-                    className={`tabular-nums font-semibold ${
-                      card.accent ? 'text-amber-700' : 'text-zinc-800'
-                    }`}
+                  <div className="pt-3 border-t border-zinc-100 flex items-center justify-between gap-2 text-xs">
+                    <span
+                      className={`tabular-nums font-medium ${
+                        card.accent ? 'text-amber-700' : 'text-zinc-900'
+                      }`}
+                    >
+                      {card.statPrimary}
+                    </span>
+                    <span className="text-zinc-400 truncate">{card.statSecondary}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Direct Program Sheets Download Strip */}
+          <section className="bg-white border border-stone-200/80 rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-900 font-display">
+                  Download Program Registers
+                </h2>
+                <p className="text-xs text-zinc-500">
+                  Export any clinical program register directly as a printable PDF or password-protected Excel sheet.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {(
+                [
+                  { label: 'Doctor Visits', sheetTab: 'Doctor Visits' as const, excelTab: 'Doctor Visits' as const },
+                  { label: 'External OPD', sheetTab: 'External OPD' as const, excelTab: 'External OPD' as const },
+                  { label: 'Medical Camps', sheetTab: 'Medical Camps' as const, excelTab: 'Medical Camps' as const },
+                  { label: 'Annual Checkups', sheetTab: 'Annual Checkups' as const, excelTab: 'Annual Checkups' as const },
+                  { label: 'Health Insights', sheetTab: 'Health Insights' as const, excelTab: null },
+                  { label: 'Menstrual Log (Private)', sheetTab: 'Menstrual Log' as const, excelTab: 'Menstrual Log' as const },
+                ]
+              ).map((item) => {
+                const isBusyPdf = exportingProgramKey === `pdf:${item.sheetTab}`;
+                const isBusyExcel = item.excelTab
+                  ? exportingProgramKey === `xlsx:${item.excelTab}`
+                  : false;
+                return (
+                  <div
+                    key={item.sheetTab}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-stone-50/80 border border-stone-200/70"
                   >
-                    {card.statPrimary}
-                  </span>
-                  <span className="text-zinc-400 truncate">{card.statSecondary}</span>
-                </div>
-              </button>
-            );
-          })}
+                    <span className="text-xs font-semibold text-zinc-800 truncate">
+                      {item.label}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        disabled={exportingProgramKey !== null}
+                        onClick={() => handleDownloadProgramPdf(item.sheetTab)}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-lg inline-flex items-center gap-1 transition-colors disabled:opacity-60 cursor-pointer"
+                      >
+                        {isBusyPdf ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <FileText className="w-3 h-3" />
+                        )}
+                        <span>PDF</span>
+                      </button>
+                      {item.excelTab && onDownloadExcelSheet && (
+                        <button
+                          type="button"
+                          disabled={exportingProgramKey !== null}
+                          onClick={() => void handleDownloadProgramExcel(item.excelTab!)}
+                          className="px-2.5 py-1 text-[11px] font-semibold text-zinc-800 bg-white hover:bg-stone-100 border border-stone-200 rounded-lg inline-flex items-center gap-1 transition-colors disabled:opacity-60 cursor-pointer"
+                        >
+                          {isBusyExcel ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-teal-700" />
+                          ) : (
+                            <Download className="w-3 h-3 text-teal-700" />
+                          )}
+                          <span>Excel</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         </div>
       )}
 
@@ -1594,12 +1820,13 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                 const name = o.student_name || stu?.full_name || o.student_id;
                 const sec = o.section || stu?.section || '—';
                 const roll = o.roll_number || stu?.roll_number || '—';
-                const previewSrc = isSafeImageSrc(o.image_data_url)
-                  ? o.image_data_url
-                  : isSafeImageSrc(o.image_url)
-                    ? o.image_url
-                    : undefined;
-                const driveHref = isSafeExternalLink(o.image_url) ? o.image_url : undefined;
+                const opdPhotos = getOpdImages(o).filter((img) =>
+                  isSafeImageSrc(img.image_data_url || img.image_url)
+                );
+                const photoCount = opdPhotos.length;
+                const driveHref = isSafeExternalLink(opdPhotos[0]?.image_url || o.image_url)
+                  ? opdPhotos[0]?.image_url || o.image_url
+                  : undefined;
 
                 const statusStyles =
                   o.status === 'Returned'
@@ -1675,14 +1902,21 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
                     {/* Footer: Slip Preview + Actions */}
                     <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-stone-100">
                       <div className="flex items-center gap-2 min-w-0">
-                        {previewSrc ? (
+                        {photoCount > 0 ? (
                           <button
                             type="button"
-                            onClick={() => setLightboxOpd(o)}
+                            onClick={() => {
+                              setLightboxImageIndex(0);
+                              setLightboxOpd(o);
+                            }}
                             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-stone-100 hover:bg-stone-200/80 text-zinc-800 text-[12px] font-semibold cursor-pointer whitespace-nowrap"
                           >
                             <Eye className="w-3.5 h-3.5 text-teal-700" />
-                            <span>View OPD Slip</span>
+                            <span>
+                              {photoCount === 1
+                                ? 'View OPD Slip'
+                                : `View Photos (${photoCount})`}
+                            </span>
                           </button>
                         ) : (
                           <span className="text-[11.5px] text-zinc-400 inline-flex items-center gap-1">
@@ -2425,74 +2659,105 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
             />
           </div>
 
-          {/* OPD Slip Photo Upload */}
+          {/* OPD Slip / Prescription / Report Photos (Multi-Upload up to 15) */}
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-1.5">
-              OPD Slip / Prescription Photo (Saved to Google Drive)
-            </label>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                OPD Slips / Prescriptions / Reports (Saved to Google Drive)
+              </label>
+              <span className="text-[11px] font-medium text-zinc-500 tabular-nums">
+                {opdImages.length} / {MAX_OPD_PHOTOS}
+              </span>
+            </div>
+
+            {/* Camera input (single capture on mobile) */}
             <input
-              ref={opdFileInputRef}
+              ref={opdCameraInputRef}
               type="file"
               accept="image/*"
               capture="environment"
               onChange={handleOpdPhotoChange}
               className="hidden"
             />
-            {opdImageDataUrl || isSafeImageSrc(editingOpd?.image_url) ? (
-              <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-stone-200 bg-stone-50">
-                <div className="flex items-center gap-3 min-w-0">
-                  <img
-                    src={opdImageDataUrl || editingOpd?.image_url}
-                    alt="OPD slip preview"
-                    className="w-14 h-14 rounded-lg object-cover border border-stone-200 bg-white shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <div className="text-[12.5px] font-semibold text-zinc-800 flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="truncate">OPD slip ready</span>
-                    </div>
-                    <div className="text-[11.5px] text-zinc-500">
-                      {opdImageSizeKb ? `Compressed ~${opdImageSizeKb} KB` : 'Existing slip attached'}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => opdFileInputRef.current?.click()}
-                    className="h-8 px-2.5 rounded-lg bg-white border border-stone-200 text-[12px] font-semibold text-zinc-700 hover:bg-stone-100 cursor-pointer"
-                  >
-                    Replace
-                  </button>
-                  {opdImageDataUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOpdImageDataUrl(undefined);
-                        setOpdImageSizeKb(null);
-                      }}
-                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                      aria-label="Remove slip photo"
+            {/* Gallery / Multi-file input */}
+            <input
+              ref={opdFileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleOpdPhotoChange}
+              className="hidden"
+            />
+
+            {opdImages.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2.5 max-h-64 overflow-y-auto pr-0.5">
+                {opdImages.map((img, idx) => {
+                  const thumbSrc = img.image_data_url || img.image_url;
+                  return (
+                    <div
+                      key={`${img.drive_file_id || img.image_url || 'local'}-${idx}`}
+                      className="relative group rounded-xl border border-stone-200 bg-stone-50 overflow-hidden"
                     >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+                      {isSafeImageSrc(thumbSrc) ? (
+                        <img
+                          src={thumbSrc}
+                          alt={`OPD photo ${idx + 1}`}
+                          className="w-full h-24 object-cover bg-white"
+                        />
+                      ) : (
+                        <div className="w-full h-24 flex items-center justify-center text-zinc-400">
+                          <ImageIcon className="w-5 h-5" />
+                        </div>
+                      )}
+                      <div className="px-2 py-1 flex items-center justify-between gap-1 bg-white/95 border-t border-stone-100">
+                        <span className="text-[10.5px] font-semibold text-zinc-700 truncate">
+                          Photo {idx + 1}
+                          {img.sizeKb ? ` · ${img.sizeKb} KB` : img.image_url ? ' · Drive' : ''}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpdImages((prev) => prev.filter((_, i) => i !== idx))
+                        }
+                        aria-label={`Remove OPD photo ${idx + 1}`}
+                        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-zinc-900/80 hover:bg-rose-600 text-white flex items-center justify-center shadow-xs cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => opdFileInputRef.current?.click()}
-                disabled={opdImageCompressing}
-                className="w-full py-3.5 px-4 rounded-xl border border-dashed border-stone-300 bg-stone-50/70 hover:bg-teal-50/40 hover:border-teal-400 transition-colors flex items-center justify-center gap-2 text-[13px] font-semibold text-zinc-700 cursor-pointer"
-              >
-                <Camera className="w-4 h-4 text-teal-700" />
-                <span>
-                  {opdImageCompressing
-                    ? 'Compressing photo...'
-                    : 'Take Photo or Upload OPD Slip'}
-                </span>
-              </button>
+            )}
+
+            {opdImages.length < MAX_OPD_PHOTOS && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => opdCameraInputRef.current?.click()}
+                  disabled={opdImageCompressing}
+                  className="py-2.5 px-3 rounded-xl border border-dashed border-stone-300 bg-stone-50/70 hover:bg-teal-50/40 hover:border-teal-400 transition-colors flex items-center justify-center gap-1.5 text-[12.5px] font-semibold text-zinc-700 cursor-pointer disabled:opacity-50"
+                >
+                  <Camera className="w-4 h-4 text-teal-700 shrink-0" />
+                  <span>{opdImageCompressing ? 'Processing...' : 'Take Photo'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => opdFileInputRef.current?.click()}
+                  disabled={opdImageCompressing}
+                  className="py-2.5 px-3 rounded-xl border border-dashed border-stone-300 bg-stone-50/70 hover:bg-teal-50/40 hover:border-teal-400 transition-colors flex items-center justify-center gap-1.5 text-[12.5px] font-semibold text-zinc-700 cursor-pointer disabled:opacity-50"
+                >
+                  <ImageIcon className="w-4 h-4 text-teal-700 shrink-0" />
+                  <span>
+                    {opdImageCompressing
+                      ? 'Processing...'
+                      : opdImages.length > 0
+                        ? 'Add More Photos'
+                        : 'Upload Photos'}
+                  </span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -2529,15 +2794,18 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
       </ModalDialog>
 
       {/* ================================================================= */}
-      {/* MODAL 4: OPD SLIP LIGHTBOX PREVIEW                                */}
+      {/* MODAL 4: OPD SLIP MULTI-PHOTO LIGHTBOX PREVIEW                    */}
       {/* ================================================================= */}
       <ModalDialog
         open={Boolean(lightboxOpd)}
-        onClose={() => setLightboxOpd(null)}
+        onClose={() => {
+          setLightboxOpd(null);
+          setLightboxImageIndex(0);
+        }}
         title={
           lightboxOpd
-            ? `OPD Slip — ${lightboxOpd.student_name || lightboxOpd.student_id}`
-            : 'OPD Slip'
+            ? `OPD Photos — ${lightboxOpd.student_name || lightboxOpd.student_id}`
+            : 'OPD Photos'
         }
         subtitle={
           lightboxOpd
@@ -2546,48 +2814,128 @@ export const ProgramsWorkspaceView: React.FC<ProgramsWorkspaceViewProps> = ({
         }
         maxWidthClass="max-w-2xl"
       >
-        {lightboxOpd && (
-          <div className="space-y-3">
-            <div className="rounded-xl overflow-hidden border border-stone-200 bg-stone-900/5 flex items-center justify-center max-h-[62vh]">
-              {isSafeImageSrc(lightboxOpd.image_data_url || lightboxOpd.image_url) ? (
-                <img
-                  src={lightboxOpd.image_data_url || lightboxOpd.image_url}
-                  alt="OPD slip"
-                  className="max-h-[60vh] w-auto object-contain"
-                />
-              ) : (
-                <div className="py-12 text-center text-zinc-400 text-[13px] flex flex-col items-center gap-2">
-                  <ImageIcon className="w-8 h-8" />
-                  <span>Preview unavailable</span>
+        {lightboxOpd && (() => {
+          const allImgs = getOpdImages(lightboxOpd).filter((img) =>
+            isSafeImageSrc(img.image_data_url || img.image_url)
+          );
+          const safeIdx = Math.min(lightboxImageIndex, Math.max(0, allImgs.length - 1));
+          const activeImg = allImgs[safeIdx];
+          const activeSrc = activeImg?.image_data_url || activeImg?.image_url;
+          const activeDriveLink = isSafeExternalLink(activeImg?.image_url)
+            ? activeImg?.image_url
+            : undefined;
+
+          return (
+            <div className="space-y-3">
+              {allImgs.length > 1 && (
+                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-zinc-600">
+                  <span>
+                    Photo {safeIdx + 1} of {allImgs.length}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightboxImageIndex((prev) =>
+                          prev <= 0 ? allImgs.length - 1 : prev - 1
+                        )
+                      }
+                      className="h-8 px-2.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-zinc-700 inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Prev</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightboxImageIndex((prev) =>
+                          prev >= allImgs.length - 1 ? 0 : prev + 1
+                        )
+                      }
+                      className="h-8 px-2.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-zinc-700 inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Next</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               )}
-            </div>
-            <div className="flex items-center justify-between gap-2 pt-1">
-              {isSafeExternalLink(lightboxOpd.image_url) ? (
-                <a
-                  href={lightboxOpd.image_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-teal-50 text-teal-800 hover:bg-teal-100 text-[13px] font-semibold"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  <span>Open in Google Drive</span>
-                </a>
-              ) : (
-                <span className="text-[12px] text-zinc-500">
-                  Saved locally (syncs to Drive when updated Apps Script is deployed)
-                </span>
+
+              <div className="rounded-xl overflow-hidden border border-stone-200 bg-stone-900/5 flex items-center justify-center max-h-[58vh]">
+                {isSafeImageSrc(activeSrc) ? (
+                  <img
+                    src={activeSrc}
+                    alt={`OPD photo ${safeIdx + 1}`}
+                    className="max-h-[56vh] w-auto object-contain"
+                  />
+                ) : (
+                  <div className="py-12 text-center text-zinc-400 text-[13px] flex flex-col items-center gap-2">
+                    <ImageIcon className="w-8 h-8" />
+                    <span>Preview unavailable</span>
+                  </div>
+                )}
+              </div>
+
+              {allImgs.length > 1 && (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {allImgs.map((img, idx) => {
+                    const thumb = img.image_data_url || img.image_url;
+                    const isCurrent = idx === safeIdx;
+                    return (
+                      <button
+                        key={`${img.drive_file_id || img.image_url || 'thumb'}-${idx}`}
+                        type="button"
+                        onClick={() => setLightboxImageIndex(idx)}
+                        className={`relative w-14 h-14 rounded-lg overflow-hidden border-2 shrink-0 cursor-pointer transition-all ${
+                          isCurrent
+                            ? 'border-teal-700 ring-2 ring-teal-500/20'
+                            : 'border-stone-200 opacity-75 hover:opacity-100'
+                        }`}
+                      >
+                        <img
+                          src={thumb}
+                          alt={`Thumbnail ${idx + 1}`}
+                          className="w-full h-full object-cover bg-white"
+                        />
+                        <span className="absolute bottom-0.5 right-0.5 px-1 text-[9px] font-bold bg-zinc-900/75 text-white rounded">
+                          {idx + 1}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-              <button
-                type="button"
-                onClick={() => setLightboxOpd(null)}
-                className="h-9 px-4 rounded-xl bg-stone-900 text-white text-[13px] font-semibold cursor-pointer"
-              >
-                Close
-              </button>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                {activeDriveLink ? (
+                  <a
+                    href={activeDriveLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-teal-50 text-teal-800 hover:bg-teal-100 text-[13px] font-semibold"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Open in Google Drive</span>
+                  </a>
+                ) : (
+                  <span className="text-[12px] text-zinc-500">
+                    Saved locally (syncs to Drive when updated Apps Script is deployed)
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLightboxOpd(null);
+                    setLightboxImageIndex(0);
+                  }}
+                  className="h-9 px-4 rounded-xl bg-stone-900 text-white text-[13px] font-semibold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </ModalDialog>
 
       {/* ================================================================= */}
